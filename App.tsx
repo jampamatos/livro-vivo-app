@@ -1,6 +1,7 @@
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { HomeScreen } from "./src/screens/HomeScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
 
 export default function App() {
@@ -37,22 +38,11 @@ export default function App() {
     return <LoginScreen onSubmitToken={handleSubmitToken} />;
   }
 
-  return (
-    <View style={styles.center}>
-      <Text style={styles.title}>Você está logado!</Text>
-      <Text style={styles.mono}>Token: {token.slice(0, 8)}...</Text>
+  return <HomeScreen onLogout={handleLogout} />;
 
-      <Pressable style={styles.button} onPress={handleLogout}>
-        <Text style={styles.buttonText}>Sair</Text>
-      </Pressable>
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
-  title: { fontSize: 22, fontWeight: '700' },
-  mono: { fontFamily: 'monospace', color: '#444' },
-  button: { marginTop: 8, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#111' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 })
