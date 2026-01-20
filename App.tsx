@@ -1,5 +1,6 @@
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { AccountScreen } from "./src/screens/AccountScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
@@ -38,8 +39,7 @@ export default function App() {
     return <LoginScreen onSubmitToken={handleSubmitToken} />;
   }
 
-  return <HomeScreen onLogout={handleLogout} />;
-
+  return <AccountScreen token={token} onLogout={handleLogout} />;
 }
 
 const styles = StyleSheet.create({
