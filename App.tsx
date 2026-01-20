@@ -3,11 +3,13 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
+import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
 
 export default function App() {
   const [loading, setLoading] = React.useState(true);
   const [token, setToken] = React.useState<string | null>(null);
+  const [route, setRoute] = React.useState<'account' | 'library'>('account');
 
   React.useEffect(() => {
     (async () => {
@@ -20,11 +22,13 @@ export default function App() {
   const handleSubmitToken = async (newToken: string) => {
     await setAuthToken(newToken);
     setToken(newToken);
+    setRoute('account');
   };
 
   const handleLogout = async () => {
     await clearAuthToken();
     setToken(null);
+    setRoute('account');
   };
 
   if (loading) {
@@ -39,7 +43,17 @@ export default function App() {
     return <LoginScreen onSubmitToken={handleSubmitToken} />;
   }
 
-  return <AccountScreen token={token} onLogout={handleLogout} />;
+  if (route === "library") {
+    return <LibraryScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
+  }
+
+  return (
+    <AccountScreen
+      token={token}
+      onLogout={handleLogout}
+      onOpenLibrary={() => setRoute("library")}
+    />
+  );  
 }
 
 const styles = StyleSheet.create({

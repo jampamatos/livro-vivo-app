@@ -6,9 +6,10 @@ import { ApiError } from "../api/http";
 type Props = {
     token: string;
     onLogout: () => Promise<void> | void;
+    onOpenLibrary: () => void;
 };
 
-export function AccountScreen({ token, onLogout }: Props) {
+export function AccountScreen({ token, onLogout, onOpenLibrary }: Props) {
     const [loading, setLoading] = React.useState(true);
     const [data, setData] = React.useState<unknown>(null);
     const [error, setError] = React.useState<string | null>(null);
@@ -49,6 +50,10 @@ export function AccountScreen({ token, onLogout }: Props) {
             )}
 
             <View style={styles.row}>
+                <Pressable style={styles.button} onPress={onOpenLibrary}>
+                    <Text style={styles.buttonText}>Biblioteca</Text>
+                </Pressable>
+                
                 <Pressable style={styles.button} onPress={load}>
                     <Text style={styles.buttonText}>Recarregar</Text>
                 </Pressable>
