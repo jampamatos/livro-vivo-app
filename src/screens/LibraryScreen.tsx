@@ -1,7 +1,10 @@
 import React from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ApiError } from "../api/http";
-import { listBooks, listBookVersions, Book, BookVersion } from "../api/books";
+import { listBooks, listBookVersions, Book, BookVersion, getVersionDownloadUrl } from "../api/books";
+import { downloadPdfToPath, getPdfPath, isPdfCached } from "../storage/pdfCache";
+
+
 
 type Props = {
   token: string;
@@ -18,6 +21,10 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [versionsLoading, setVersionsLoading] = React.useState(false);
   const [versions, setVersions] = React.useState<BookVersion[]>([]);
   const [versionsError, setVersionsError] = React.useState<string | null>(null);
+
+  const [downloadByVersion, setDownloadByVersion] = React.useState<Record<number, "idle" | "downloading" | "downloaded" | "error">>({});
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+
 
   const loadBooks = React.useCallback(async () => {
     setLoading(true);
@@ -41,6 +48,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBookId(null);
         setVersions([]);
         setVersionsError(null);
+        setDownloadError(null);
         return;
       }
 
@@ -52,6 +60,19 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       try {
         const res = await listBookVersions(token, bookId);
         setVersions(res.versions);
+        const checks = await Promise.all(
+          res.versions.map(async (v) => {
+            const path = getPdfPath(bookId, v.id);
+            const cached = await isPdfCached(path);
+            return [v.id, cached ? 'downloaded' : 'idle'] as const;
+          })
+        );
+
+        setDownloadByVersion((prev) => {
+          const next = { ...prev};
+          for (const [vid, state] of checks) next[vid] = state;
+          return next;
+        });
       } catch (e) {
         const msg =
           e instanceof ApiError
@@ -68,6 +89,51 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   React.useEffect(() => {
     loadBooks();
   }, [loadBooks]);
+
+  const downloadVersion = React.useCallback(
+    async (bookId: number, versionId: number) => {
+      setDownloadError(null);
+  
+      // Web: não dá cache local confiável; abre o link (fallback dev-friendly)
+      if (Platform.OS === "web") {
+        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloading" }));
+        try {
+          const { url } = await getVersionDownloadUrl(token, bookId, versionId);
+          const res = await fetch(url, { headers: { Authorization: `Token ${token}` } });
+          if (!res.ok) {
+            throw new Error(`Download falhou (${res.status})`);
+          }
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `book-${bookId}-version-${versionId}.pdf`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+          setDownloadByVersion((prev) => ({ ...prev, [versionId]: "idle" })); // no web não cacheia
+        } catch (e) {
+          setDownloadByVersion((prev) => ({ ...prev, [versionId]: "error" }));
+          setDownloadError(String(e));
+        }
+        return;
+      }
+  
+      setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloading" }));
+  
+      try {
+        const { url } = await getVersionDownloadUrl(token, bookId, versionId);
+        const path = getPdfPath(bookId, versionId);
+  
+        await downloadPdfToPath({ url, token, path });
+  
+        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloaded" }));
+      } catch (e) {
+        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "error" }));
+        setDownloadError(String(e));
+      }
+    },
+    [token]
+  );
 
   return (
     <View style={styles.root}>
@@ -104,6 +170,9 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
 
               {openBookId === b.id ? (
                 <View style={styles.versions}>
+                  
+                  {downloadError ? <Text style={styles.error}>{downloadError}</Text> : null}
+                  
                   {versionsLoading ? (
                     <ActivityIndicator />
                   ) : versionsError ? (
@@ -111,17 +180,40 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                   ) : versions.length === 0 ? (
                     <Text style={styles.empty}>Sem versões.</Text>
                   ) : (
-                    versions.map((v) => (
-                      <View key={v.id} style={styles.versionRow}>
-                        <Text style={styles.versionTitle}>{v.version}</Text>
-                        <Text style={styles.versionMeta}>
-                          {v.status} • publicado em {v.published_at}
-                        </Text>
-                        <Text style={styles.versionChangelog} numberOfLines={4}>
-                          {v.changelog}
-                        </Text>
-                      </View>
-                    ))
+                    versions.map((v) => {
+                      const dState = downloadByVersion[v.id] ?? "idle";
+                      const isDownloading = dState === "downloading";
+                      const isDownloaded = dState === "downloaded";
+                      const hasError = dState === 'error';
+                      
+                      return (
+                        <View key={v.id} style={styles.versionRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.versionTitle}>{v.version}</Text>
+                            <Text style={styles.versionMeta}>
+                              {v.status} • publicado em {v.published_at}
+                            </Text>
+                            <Text style={styles.versionChangelog} numberOfLines={4}>
+                              {v.changelog}
+                            </Text>
+                          </View>
+                        
+                          <Pressable
+                            onPress={() => downloadVersion(b.id, v.id)}
+                            disabled={isDownloading || (Platform.OS !== 'web' && isDownloaded)}
+                            style={[
+                              styles.downloadBtn,
+                              isDownloaded ? styles.downloadBtnDone : null,
+                              isDownloading ? styles.downloadBtnDisabled : null,
+                            ]}
+                          >
+                            <Text style={styles.downloadBtnText}>
+                              {isDownloaded ? "Baixado" : isDownloading ? "Baixando..." : hasError ? "Tentar novamente" : "Baixar"}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      );
+                    })
                   )}
                 </View>
               ) : null}
@@ -160,4 +252,10 @@ const styles = StyleSheet.create({
   versionMeta: { fontSize: 12, color: "#666" },
   versionChangelog: { fontSize: 13, color: "#222" },
   empty: { color: "#666" },
+
+  downloadBtn: { alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, backgroundColor: "#111" },
+  downloadBtnDone: { backgroundColor: "#2e7d32" },
+  downloadBtnDisabled: { opacity: 0.7 },
+  downloadBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+
 });
