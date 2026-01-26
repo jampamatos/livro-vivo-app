@@ -1,3 +1,10 @@
+import * as Sharing from "expo-sharing"
+
+jest.mock("expo-sharing", () => ({
+  isAvailableAsync: jest.fn(async () => true),
+  shareAsync: jest.fn(async () => {}),
+}));
+
 jest.mock("expo-file-system", () => {
   const dirExists = new Map<string, boolean>();
   const fileExists = new Map<string, boolean>();
@@ -55,7 +62,8 @@ jest.mock("expo-file-system", () => {
 });
 
 import * as FileSystem from "expo-file-system";
-import { ensurePdfCacheDir, getPdfPath, isPdfCached, downloadPdfToPath } from "../src/storage/pdfCache";
+import { ensurePdfCacheDir, getPdfPath, isPdfCached, downloadPdfToPath, openPdfAtPath } from "../src/storage/pdfCache";
+import { isAvailableAsync, shareAsync } from "expo-sharing";
 
 describe("pdfCache", () => {
   beforeEach(() => {
@@ -92,5 +100,16 @@ describe("pdfCache", () => {
     expect(destination.uri).toBe("file:///doc/pdf-cache/x.pdf");
     expect(options).toEqual({ headers: { Authorization: "Token TOK" }, idempotent: true });
     expect(uri).toBe("file:///doc/pdf-cache/x.pdf");
+  });
+
+  it("openPdfAtPath chama shareAsync quando o arquivo existe", async () => {
+    (FileSystem as any).__setFileExists("file:///doc/pdf-cache/x.pdf", true);
+
+    await openPdfAtPath("file:///doc/pdf-cache/x.pdf");
+
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(
+      "file:///doc/pdf-cache/x.pdf",
+      expect.objectContaining({ mimeType: "application/pdf" })
+    );
   });
 });

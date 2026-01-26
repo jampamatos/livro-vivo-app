@@ -2,7 +2,7 @@ import React from "react";
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ApiError } from "../api/http";
 import { listBooks, listBookVersions, Book, BookVersion, getVersionDownloadUrl } from "../api/books";
-import { downloadPdfToPath, getPdfPath, isPdfCached } from "../storage/pdfCache";
+import { downloadPdfToPath, getPdfPath, isPdfCached, openPdfAtPath } from "../storage/pdfCache";
 
 
 
@@ -135,6 +135,19 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     [token]
   );
 
+  const openVersion = React.useCallback(
+    async (bookId: number, versionId: number) => {
+      setDownloadError(null);
+      try {
+        const path = getPdfPath(bookId, versionId);
+        await openPdfAtPath(path);
+      } catch (e) {
+        setDownloadError(String(e));
+      }
+    },
+    []
+  );
+
   return (
     <View style={styles.root}>
       <Text style={styles.title}>Biblioteca</Text>
@@ -199,8 +212,8 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                           </View>
                         
                           <Pressable
-                            onPress={() => downloadVersion(b.id, v.id)}
-                            disabled={isDownloading || (Platform.OS !== 'web' && isDownloaded)}
+                            onPress={() => (isDownloaded ? openVersion(b.id, v.id) : downloadVersion(b.id, v.id))}
+                            disabled={isDownloading}
                             style={[
                               styles.downloadBtn,
                               isDownloaded ? styles.downloadBtnDone : null,
@@ -208,7 +221,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                             ]}
                           >
                             <Text style={styles.downloadBtnText}>
-                              {isDownloaded ? "Baixado" : isDownloading ? "Baixando..." : hasError ? "Tentar novamente" : "Baixar"}
+                              {isDownloaded ? "Abrir" : isDownloading ? "Baixando..." : hasError ? "Tentar novamente" : "Baixar"}
                             </Text>
                           </Pressable>
                         </View>

@@ -1,6 +1,9 @@
 import { Platform } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
 
+import * as Sharing from "expo-sharing";
+import { openPdfInViewer } from "./pdfViewer";
+
 let cacheDir: Directory | null = null;
 
 function getCacheDir() {
@@ -45,4 +48,24 @@ export async function downloadPdfToPath(params: { url: string; token: string; pa
   });
 
   return res.uri; // caminho local salvo
+}
+
+export async function openPdfAtPath(path: string) {
+  if (Platform.OS === "web") {
+    throw new Error("Abrir PDF não é suportado no web.");
+  }
+
+  const exists = await isPdfCached(path);
+  if (!exists) {
+    throw new Error("PDF não encontrado no cache local.");
+  }
+
+  try {
+    await openPdfInViewer(path);
+  } catch {
+    await Sharing.shareAsync(path, {
+      mimeType: "application/pdf",
+      UTI: "com.adobe.pdf", // iOS
+    });
+  }
 }
