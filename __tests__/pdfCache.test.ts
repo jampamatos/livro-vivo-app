@@ -61,9 +61,14 @@ jest.mock("expo-file-system", () => {
   };
 });
 
+jest.mock("../src/storage/pdfViewer", () => ({
+  openPdfInViewer: jest.fn(async () => {}),
+}));
+
 import * as FileSystem from "expo-file-system";
 import { ensurePdfCacheDir, getPdfPath, isPdfCached, downloadPdfToPath, openPdfAtPath } from "../src/storage/pdfCache";
 import { isAvailableAsync, shareAsync } from "expo-sharing";
+import { openPdfInViewer } from "../src/storage/pdfViewer";
 
 describe("pdfCache", () => {
   beforeEach(() => {
@@ -102,8 +107,9 @@ describe("pdfCache", () => {
     expect(uri).toBe("file:///doc/pdf-cache/x.pdf");
   });
 
-  it("openPdfAtPath chama shareAsync quando o arquivo existe", async () => {
+  it("openPdfAtPath chama shareAsync quando o viewer falha", async () => {
     (FileSystem as any).__setFileExists("file:///doc/pdf-cache/x.pdf", true);
+    (openPdfInViewer as jest.Mock).mockRejectedValueOnce(new Error("viewer fail"));
 
     await openPdfAtPath("file:///doc/pdf-cache/x.pdf");
 

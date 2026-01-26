@@ -1,4 +1,4 @@
-import { listBooks, listBookVersions } from "../src/api/books";
+import { listBooks, listBookVersions, searchBook } from "../src/api/books";
 import { apiFetch } from "../src/api/http";
 
 jest.mock("../src/api/http", () => ({
@@ -20,5 +20,11 @@ describe("api/books", () => {
     apiFetchMock.mockResolvedValueOnce({ book: {}, versions: [] });
     await listBookVersions("t123", 1);
     expect(apiFetchMock).toHaveBeenCalledWith("/books/1/versions/", { token: "t123" });
+  });
+
+  it("searchBook chama /books/:id/search/?q=... com token", async () => {
+    apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, result: [] });
+    await searchBook("t123", 1, "foo");
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo", { token: "t123" });
   });
 });

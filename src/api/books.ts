@@ -1,6 +1,5 @@
 import { apiFetch } from "./http";
 import { API_BASE_URL } from "../config/api";
-import { version } from "react";
 
 export type Book = {
     id: number;
@@ -28,6 +27,19 @@ export type BookVersionResponse = {
     versions: BookVersion[];
 };
 
+export type BookSearchResult = {
+    book_version_id: number;
+    version: string;        // ex: '2024.01'
+    page_number: number;    // 1-based
+    snippet: string;        // trecho
+};
+
+export type BookSearchResponse = {
+    q: string;
+    count: number;
+    results: BookSearchResult[];
+};
+
 export function listBooks(token: string) {
     return apiFetch<BooksListResponse>('/books/', { token });
 }
@@ -48,4 +60,13 @@ export async function getVersionDownloadUrl(token: string, bookId: number, versi
     const raw = res.url;
     const absolute = raw.startsWith('http') ? raw : `${API_BASE_URL}${raw.startsWith('/') ? '' : '/'}${raw}`;
     return { url: absolute };
+}
+
+export function searchBook(
+    token: string,
+    bookId: number,
+    q: string
+) {
+    const params = new URLSearchParams({ q });
+    return apiFetch<BookSearchResponse>(`/books/${bookId}/search/?${params.toString()}`, { token });
 }
