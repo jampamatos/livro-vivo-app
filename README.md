@@ -1,19 +1,19 @@
 # Livro Vivo — App (MVP)
 
-Aplicativo (Expo + React Native) do **Livro Vivo**.
-> No MVP, o acesso é liberado via **entitlements** (direitos por usuário).
+Aplicativo (Expo + React Native) do **Livro Vivo**.  
+No MVP, o acesso é liberado via **entitlements** (direitos por usuário).
 
 ## Requisitos
 
 - Node.js (LTS recomendado)
 - npm
-- API local rodando (`livro-vivo-api`)
+- Backend local rodando (`livro-vivo-api`)
 
 ## Instalação
 
 ```bash
 npm install
-```
+````
 
 ## Rodar em desenvolvimento
 
@@ -28,36 +28,73 @@ Atalhos úteis no terminal do Expo:
 
 ## Configuração da API (Base URL)
 
-Por padrão, o app tenta usar o endereço `http://127.0.0.1:8000`. Para configurar (o que é recomendado), defina `EXPO_PUBLIC_API_BASE_URL`.
+Por padrão, o app tenta usar:
 
-Exemplo (web):
+- `http://127.0.0.1:8000` (bom para **web no mesmo PC**)
+
+Para configurar (recomendado), defina `EXPO_PUBLIC_API_BASE_URL`.
+
+### Exemplo (web)
 
 ```bash
 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 npx expo start
 ```
 
-Exemplo (celular / Expo Go): use o IP da sua máquina na rede, ex.: `http://10.0.0.153:8000`
+### Exemplo (celular / Expo Go)
+
+No celular, **NÃO use 127.0.0.1**, porque isso aponta para o próprio telefone.
+Use o **IP da sua máquina na rede** (ex.: `http://10.0.0.153:8000`):
 
 ```bash
 EXPO_PUBLIC_API_BASE_URL=http://10.0.0.153:8000 npx expo start
 ```
 
-> Observação: no **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `http://localhost:8081`).
+> Dica: o IP “certo” costuma ser o da sua interface de rede (ex.: `10.x.x.x` / `192.168.x.x`).
+> **Não** use IP de Docker (ex.: `172.17.0.1`) para acessar do celular.
+
+## Backend: rodando para acesso pelo celular (ALLOWED_HOSTS)
+
+Se você acessar `http://10.0.0.153:8000/health/` pelo celular e o Django reclamar:
+
+`Invalid HTTP_HOST header ... add '10.0.0.153' to ALLOWED_HOSTS`
+
+Faça duas coisas no `livro-vivo-api`:
+
+1. Suba o server “exposto” na rede:
+
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+
+2. Garanta que o `ALLOWED_HOSTS` permita o IP/host usado no dev (ex.: `10.0.0.153`, `localhost`, `127.0.0.1`).
+
+## CORS (somente Expo Web)
+
+No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `http://localhost:8081`).
 
 ## Estrutura (atual)
 
 - `src/auth/` — armazenamento do token
 - `src/api/` — client HTTP + chamadas de API
-- `src/screens/` — telas (Login, Minha conta)
+- `src/screens/` — telas:
+  - `LoginScreen` — login via token (modo dev)
+  - `AccountScreen` — mostra entitlements do usuário
+  - `LibraryScreen` — lista livros/versões, baixa PDF e abre no dispositivo
+- `src/storage/` — cache local do PDF (download e verificação)
 
-## Repositórios
+## Testes
 
-- App: [https://github.com/jampamatos/livro-vivo-app](https://github.com/jampamatos/livro-vivo-app)
-- API: [https://github.com/jampamatos/livro-vivo-api](https://github.com/jampamatos/livro-vivo-api)
+Rodar os testes unitários:
 
-### Extra
+```bash
+npx jest
+```
 
-É uma boa prática criar um `.env.example` **só com** a variável pública:
+(Se você tiver um script `test` no `package.json`, pode usar `npm test`.)
+
+## Env
+
+É boa prática manter um `.env.example` **só com** a variável pública:
 
 ```bash
 cat > .env.example <<'EOF'
@@ -66,4 +103,9 @@ EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 EOF
 ```
 
-E garantir que `.env` (de verdade) esteja no `.gitignore` (por segurança mínima desde cedo)
+E garantir que `.env` (de verdade) esteja no `.gitignore`.
+
+## Repositórios
+
+- App: [https://github.com/jampamatos/livro-vivo-app](https://github.com/jampamatos/livro-vivo-app)
+- API: [https://github.com/jampamatos/livro-vivo-api](https://github.com/jampamatos/livro-vivo-api)
