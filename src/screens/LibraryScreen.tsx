@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -21,7 +22,8 @@ import {
   searchBook,
   BookSearchResult,
 } from "../api/books";
-import { downloadPdfToPath, getPdfPath, isPdfCached, openPdfAtPath } from "../storage/pdfCache";
+import { downloadPdfToPath, getPdfPath, isPdfCached } from "../storage/pdfCache";
+import PdfReaderScreen from "./PdfReaderScreen";
 
 type Props = {
   token: string;
@@ -58,6 +60,8 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
 
   // UI (aba)
   const [panel, setPanel] = React.useState<"search" | "versions">("search");
+
+  const [reader, setReader] = React.useState<{ uri: string; title: string } | null>(null);
 
   const resetSearch = React.useCallback(() => {
     setQuery("");
@@ -205,15 +209,17 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   );
 
   const downloadVersion = React.useCallback(
-    async (bookId: number, versionId: number) => {
+    async (book: Book, version: BookVersion) => {
       setDownloadError(null);
 
       // Web: não cacheia de forma confiável. Faz download do blob.
       if (Platform.OS === "web") {
-        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloading" }));
+        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
         try {
-          const { url } = await getVersionDownloadUrl(token, bookId, versionId);
-          const res = await fetch(url, { headers: { Authorization: `Token ${token}` } });
+          const { url } = await getVersionDownloadUrl(token, book.id, version.id);
+          const res = await fetch(url, {
+            headers: { Authorization: `Token ${token}` },
+          });
           if (!res.ok) {
             throw new Error(`Download falhou (${res.status})`);
           }
@@ -221,48 +227,57 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
           const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = blobUrl;
-          a.download = `book-${bookId}-version-${versionId}.pdf`;
+          a.download = `book-${book.id}-version-${version.id}.pdf`;
           a.click();
           setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 
           // no web, mantém como "idle" porque não cacheia
-          setDownloadByVersion((prev) => ({ ...prev, [versionId]: "idle" }));
+          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "idle" }));
         } catch (e) {
-          setDownloadByVersion((prev) => ({ ...prev, [versionId]: "error" }));
+          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
           setDownloadError(String(e));
         }
         return;
       }
 
       // mobile: baixa e cacheia
-      setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloading" }));
+      setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
       try {
-        const { url } = await getVersionDownloadUrl(token, bookId, versionId);
-        const path = getPdfPath(bookId, versionId);
+        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
+        const path = getPdfPath(book.id, version.id);
 
         await downloadPdfToPath({ url, token, path });
 
-        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "downloaded" }));
+        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
+        const versionLabel = version.version_number ?? version.version;
+        setReader({ uri: path, title: `${book.title} — v${versionLabel}` });
       } catch (e) {
-        setDownloadByVersion((prev) => ({ ...prev, [versionId]: "error" }));
+        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
         setDownloadError(String(e));
       }
     },
     [token]
   );
 
-  const openVersion = React.useCallback(async (bookId: number, versionId: number) => {
+  const openVersion = React.useCallback((book: Book, version: BookVersion) => {
     setDownloadError(null);
-    try {
-      const path = getPdfPath(bookId, versionId);
-      await openPdfAtPath(path);
-    } catch (e) {
-      setDownloadError(String(e));
+    const path = getPdfPath(book.id, version.id);
+    if (Platform.OS === "web") {
+      Alert.alert("Não suportado", "O leitor embutido ainda não suporta Web.");
+      return;
     }
+    const versionLabel = version.version_number ?? version.version;
+    setReader({ uri: path, title: `${book.title} — v${versionLabel}` });
   }, []);
 
   const webRootStyle = Platform.OS === "web" ? { height: windowHeight } : null;
   const webScrollStyle = Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
+
+  if (reader) {
+    return (
+      <PdfReaderScreen uri={reader.uri} title={reader.title} onClose={() => setReader(null)} />
+    );
+  }
 
   return (
     <View style={[styles.root, webRootStyle]}>
@@ -416,9 +431,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                               </View>
 
                               <Pressable
-                                onPress={() =>
-                                  isDownloaded ? openVersion(b.id, v.id) : downloadVersion(b.id, v.id)
-                                }
+                                onPress={() => (isDownloaded ? openVersion(b, v) : downloadVersion(b, v))}
                                 disabled={isDownloading}
                                 style={[
                                   styles.downloadBtn,
