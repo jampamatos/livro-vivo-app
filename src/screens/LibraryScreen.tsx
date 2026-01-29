@@ -2,7 +2,6 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -62,7 +61,13 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   // UI (aba)
   const [panel, setPanel] = React.useState<"search" | "versions">("search");
 
-  const [reader, setReader] = React.useState<{ uri: string; title: string } | null>(null);
+  const [reader, setReader] = React.useState<{
+    uri: string;
+    title: string;
+    bookId: number;
+    versionId: number;
+    initialPage?: number;
+  } | null>(null);
 
   const resetSearch = React.useCallback(() => {
     setQuery("");
@@ -209,36 +214,65 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     [query]
   );
 
-  const downloadVersion = React.useCallback(
-    async (book: Book, version: BookVersion) => {
-      setDownloadError(null);
+  const openReader = React.useCallback(
+    (params: { uri: string; title: string; bookId: number; versionId: number; initialPage?: number }) => {
+      setReader(params);
+    },
+    []
+  );
 
-      // Web: não cacheia de forma confiável. Faz download do blob.
+  const openVersionAtPage = React.useCallback(
+    async (book: Book, version: BookVersion, page?: number) => {
+      setDownloadError(null);
+      const versionLabel = version.version_number ?? version.version;
+
       if (Platform.OS === "web") {
-        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
         try {
           const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-          const res = await fetch(url, {
-            headers: { Authorization: `Token ${token}` },
+          openReader({
+            uri: url,
+            title: `${book.title} — v${versionLabel}`,
+            bookId: book.id,
+            versionId: version.id,
+            initialPage: page,
           });
-          if (!res.ok) {
-            throw new Error(`Download falhou (${res.status})`);
-          }
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = blobUrl;
-          a.download = `book-${book.id}-version-${version.id}.pdf`;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-
-          // no web, mantém como "idle" porque não cacheia
-          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "idle" }));
         } catch (e) {
-          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
           setDownloadError(String(e));
         }
         return;
+      }
+
+      const path = getPdfPath(book.id, version.id);
+      const cached = await isPdfCached(path);
+      if (!cached) {
+        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
+        try {
+          const { url } = await getVersionDownloadUrl(token, book.id, version.id);
+          await downloadPdfToPath({ url, token, path });
+          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
+        } catch (e) {
+          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
+          setDownloadError(String(e));
+          return;
+        }
+      }
+
+      openReader({
+        uri: path,
+        title: `${book.title} — v${versionLabel}`,
+        bookId: book.id,
+        versionId: version.id,
+        initialPage: page,
+      });
+    },
+    [openReader, token]
+  );
+
+  const downloadVersion = React.useCallback(
+    async (book: Book, version: BookVersion) => {
+      setDownloadError(null);
+      if (Platform.OS === "web") {
+        return openVersionAtPage(book, version);
       }
 
       // mobile: baixa e cacheia
@@ -251,36 +285,25 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
 
         setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
         const versionLabel = version.version_number ?? version.version;
-        setReader({ uri: path, title: `${book.title} — v${versionLabel}` });
+        openReader({
+          uri: path,
+          title: `${book.title} — v${versionLabel}`,
+          bookId: book.id,
+          versionId: version.id,
+        });
       } catch (e) {
         setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
         setDownloadError(String(e));
       }
     },
-    [token]
+    [openReader, openVersionAtPage, token]
   );
 
   const openVersion = React.useCallback(
     async (book: Book, version: BookVersion) => {
-    setDownloadError(null);
-    const path = getPdfPath(book.id, version.id);
-    if (Platform.OS === "web") {
-      try {
-        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-        if (typeof window !== "undefined" && window.open) {
-          window.open(url, "_blank");
-        } else {
-          await Linking.openURL(url);
-        }
-      } catch (e) {
-        setDownloadError(String(e));
-      }
-      return;
-    }
-    const versionLabel = version.version_number ?? version.version;
-    setReader({ uri: path, title: `${book.title} — v${versionLabel}` });
-  },
-    [token]
+      return openVersionAtPage(book, version);
+    },
+    [openVersionAtPage]
   );
 
   const webRootStyle = Platform.OS === "web" ? { height: windowHeight } : null;
@@ -288,7 +311,15 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
 
   if (reader) {
     return (
-      <PdfReaderScreen uri={reader.uri} title={reader.title} onClose={() => setReader(null)} />
+      <PdfReaderScreen
+        uri={reader.uri}
+        title={reader.title}
+        initialPage={reader.initialPage}
+        token={token}
+        bookId={reader.bookId}
+        versionId={reader.versionId}
+        onClose={() => setReader(null)}
+      />
     );
   }
 
@@ -397,15 +428,26 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                             </Text>
 
                             {searchResults.map((r, idx) => (
-                              <View
+                              <Pressable
                                 key={`${r.book_version_id}-${r.page_number}-${idx}`}
                                 style={styles.searchItem}
+                                onPress={() => {
+                                  const book = b;
+                                  const version = versions.find((v) => v.id === r.book_version_id);
+                                  if (!book || !version) {
+                                    Alert.alert("Não foi possível abrir o resultado", "Versão não encontrada.");
+                                    return;
+                                  }
+                                  openVersionAtPage(book, version, r.page_number);
+                                }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Abrir página ${r.page_number}`}
                               >
                                 <Text style={styles.searchItemTitle}>
                                   {r.version} • pág. {r.page_number}
                                 </Text>
                                 {renderHighlightedSnippet(r.snippet)}
-                              </View>
+                              </Pressable>
                             ))}
                           </View>
                         )
@@ -427,8 +469,9 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                       ) : (
                         versions.map((v) => {
                           const dState = downloadByVersion[v.id] ?? "idle";
+                          const canOpenInline = Platform.OS === "web";
                           const isDownloading = dState === "downloading";
-                          const isDownloaded = dState === "downloaded";
+                          const isDownloaded = canOpenInline ? true : dState === "downloaded";
                           const hasErr = dState === "error";
 
                           return (

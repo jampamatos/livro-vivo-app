@@ -20,6 +20,7 @@
     "fbjs": "^3.0.5",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-pdf": "^9.1.0",
     "react-native": "0.81.5",
     "react-native-blob-util": "^0.21.2",
     "react-native-pdf": "^6.7.7",
