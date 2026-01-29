@@ -2,6 +2,7 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -259,16 +260,28 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     [token]
   );
 
-  const openVersion = React.useCallback((book: Book, version: BookVersion) => {
+  const openVersion = React.useCallback(
+    async (book: Book, version: BookVersion) => {
     setDownloadError(null);
     const path = getPdfPath(book.id, version.id);
     if (Platform.OS === "web") {
-      Alert.alert("Não suportado", "O leitor embutido ainda não suporta Web.");
+      try {
+        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
+        if (typeof window !== "undefined" && window.open) {
+          window.open(url, "_blank");
+        } else {
+          await Linking.openURL(url);
+        }
+      } catch (e) {
+        setDownloadError(String(e));
+      }
       return;
     }
     const versionLabel = version.version_number ?? version.version;
     setReader({ uri: path, title: `${book.title} — v${versionLabel}` });
-  }, []);
+  },
+    [token]
+  );
 
   const webRootStyle = Platform.OS === "web" ? { height: windowHeight } : null;
   const webScrollStyle = Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
