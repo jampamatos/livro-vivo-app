@@ -8,6 +8,7 @@ No MVP, o acesso é liberado via **entitlements** (direitos por usuário).
 - Node.js (LTS recomendado)
 - npm
 - Backend local rodando (`livro-vivo-api`)
+- Android Studio (para rodar no emulador Android)
 
 ## Instalação
 
@@ -26,6 +27,22 @@ Atalhos úteis no terminal do Expo:
 - `w` abre no navegador (web)
 - QR Code abre no Expo Go (celular)
 
+### Rodar no web
+
+```bash
+npx expo start --web
+```
+
+### Rodar no Android Studio (emulador)
+
+```bash
+npx expo run:android
+```
+
+> Dica: para testar **web e Android ao mesmo tempo**, use dois terminais:
+> - Terminal 1: `npx expo start --web`
+> - Terminal 2: `npx expo run:android`
+
 ## Configuração da API (Base URL)
 
 Por padrão, o app tenta usar:
@@ -38,6 +55,14 @@ Para configurar (recomendado), defina `EXPO_PUBLIC_API_BASE_URL`.
 
 ```bash
 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 npx expo start
+```
+
+### Exemplo (Android Studio / emulador)
+
+O emulador usa `10.0.2.2` para acessar o localhost da sua máquina:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8000 npx expo run:android
 ```
 
 ### Exemplo (celular / Expo Go)
@@ -72,6 +97,9 @@ python manage.py runserver 0.0.0.0:8000
 
 No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `http://localhost:8081`).
 
+Além disso, o endpoint de download do PDF precisa aceitar o header `Authorization`
+e permitir a origem do web (CORS + `Access-Control-Allow-Headers: Authorization`).
+
 ## Estrutura (atual)
 
 - `src/auth/` — armazenamento do token
@@ -79,7 +107,8 @@ No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `ht
 - `src/screens/` — telas:
   - `LoginScreen` — login via token (modo dev)
   - `AccountScreen` — mostra entitlements do usuário
-  - `LibraryScreen` — lista livros/versões, baixa PDF e abre no dispositivo
+  - `LibraryScreen` — lista livros/versões, busca, baixa PDF e abre no leitor
+  - `PdfReaderScreen` — leitor embutido (mobile com `react-native-pdf`, web com `react-pdf`)
 - `src/storage/` — cache local do PDF (download e verificação)
 
 ## Testes
@@ -91,6 +120,14 @@ npx jest
 ```
 
 (Se você tiver um script `test` no `package.json`, pode usar `npm test`.)
+
+Cobertura atual (unitária):
+- `apiFetch` (cliente HTTP)
+- APIs de livros
+- cache/local storage de PDF
+- token storage
+
+Ainda não há testes de UI/integração/E2E.
 
 ## Env
 

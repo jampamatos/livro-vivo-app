@@ -14,6 +14,7 @@ export type BookVersion = {
     id: number;
     book: number;
     version: string;
+    version_number?: string;
     published_at: string;
     changelog: string;
     status: string;
