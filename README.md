@@ -1,48 +1,73 @@
 # Livro Vivo — App (MVP)
 
-Aplicativo (Expo + React Native) do **Livro Vivo**.  
-No MVP, o acesso é liberado via **entitlements** (direitos por usuário).
+Aplicativo (Expo + React Native) do **Livro Vivo**.
+
+## Estado atual do app
+
+- Login por token (modo dev) com persistência em `AsyncStorage`.
+- Tela "Minha conta" exibindo os entitlements do usuário.
+- Biblioteca com lista de livros, versões e changelog.
+- Busca dentro do livro (API) com abertura direta na página do resultado.
+- Leitor de PDF embutido com navegação por páginas.
+- Anotações por destaque (arraste, cor, nota opcional) salvas no backend.
+- Web: renderização via `react-pdf` (worker carregado de `unpkg`).
+- Mobile: `react-native-pdf` + cache local de PDFs (`expo-file-system`).
+
+## Stack
+
+- Expo SDK 54, React Native 0.81, React 19
+- `react-native-pdf` (iOS/Android) e `react-pdf` (web)
+- `expo-file-system`, `expo-sharing`, `expo-intent-launcher`
+- `@react-native-async-storage/async-storage`
 
 ## Requisitos
 
 - Node.js (LTS recomendado)
-- npm
+- npm ou pnpm
 - Backend local rodando (`livro-vivo-api`)
-- Android Studio (para rodar no emulador Android)
+- Android Studio e/ou Xcode (para builds nativas)
+- Dev build do Expo (Expo Go **não** funciona por causa dos módulos nativos de PDF)
 
 ## Instalação
 
 ```bash
 npm install
-````
+```
 
 ## Rodar em desenvolvimento
 
 ```bash
-npx expo start
+npm run start
 ```
 
 Atalhos úteis no terminal do Expo:
 
 - `w` abre no navegador (web)
-- QR Code abre no Expo Go (celular)
+- `a` abre o Android (dev build instalado)
+
+> Dica: para mobile, prefira `npm run start -- --dev-client` (ou `npx expo start --dev-client`).
 
 ### Rodar no web
 
 ```bash
-npx expo start --web
+npm run web
 ```
 
-### Rodar no Android Studio (emulador)
+### Rodar no Android (dev build)
 
 ```bash
-npx expo run:android
+npm run android
+npx expo start --dev-client
 ```
 
-> Dica: para testar **web e Android ao mesmo tempo**, use dois terminais:
->
-> - Terminal 1: `npx expo start --web`
-> - Terminal 2: `npx expo run:android`
+### Rodar no iOS (dev build)
+
+```bash
+npm run ios
+npx expo start --dev-client
+```
+
+> Dica: com `npx expo start --dev-client` você pode abrir o web (`w`) e o dev build no mesmo Metro.
 
 ## Configuração da API (Base URL)
 
@@ -66,16 +91,16 @@ O emulador usa `10.0.2.2` para acessar o localhost da sua máquina:
 EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8000 npx expo run:android
 ```
 
-### Exemplo (celular / Expo Go)
+### Exemplo (celular / dev build)
 
-No celular, **NÃO use 127.0.0.1**, porque isso aponta para o próprio telefone.
+No celular, **não** use `127.0.0.1`, porque isso aponta para o próprio telefone.
 Use o **IP da sua máquina na rede** (ex.: `http://10.0.0.153:8000`):
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://10.0.0.153:8000 npx expo start
+EXPO_PUBLIC_API_BASE_URL=http://10.0.0.153:8000 npx expo start --dev-client
 ```
 
-> Dica: o IP “certo” costuma ser o da sua interface de rede (ex.: `10.x.x.x` / `192.168.x.x`).
+> Dica: o IP "certo" costuma ser o da sua interface de rede (ex.: `10.x.x.x` / `192.168.x.x`).
 > **Não** use IP de Docker (ex.: `172.17.0.1`) para acessar do celular.
 
 ## Backend: rodando para acesso pelo celular (ALLOWED_HOSTS)
@@ -86,7 +111,7 @@ Se você acessar `http://10.0.0.153:8000/health/` pelo celular e o Django reclam
 
 Faça duas coisas no `livro-vivo-api`:
 
-1. Suba o server “exposto” na rede:
+1. Suba o server "exposto" na rede:
 
 ```bash
 python manage.py runserver 0.0.0.0:8000
@@ -98,29 +123,40 @@ python manage.py runserver 0.0.0.0:8000
 
 No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `http://localhost:8081`).
 
-Além disso, o endpoint de download do PDF precisa aceitar o header `Authorization`
-e permitir a origem do web (CORS + `Access-Control-Allow-Headers: Authorization`).
+Além disso, os endpoints protegidos precisam aceitar o header `Authorization`.
+Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annotations/`.
+
+## Integração com a API (atual)
+
+- `GET /me/entitlements/`
+- `GET /books/`
+- `GET /books/:id/versions/`
+- `GET /books/:id/versions/:versionId/download-url`
+- `GET /books/:id/search/?q=...`
+- `GET /annotations/?book_version=...`
+- `POST /annotations/`
 
 ## Estrutura (atual)
 
 - `src/auth/` — armazenamento do token
 - `src/api/` — client HTTP + chamadas de API
+- `src/config/` — configuração (API base URL)
 - `src/screens/` — telas:
   - `LoginScreen` — login via token (modo dev)
   - `AccountScreen` — mostra entitlements do usuário
-  - `LibraryScreen` — lista livros/versões, busca, baixa PDF e abre no leitor
-  - `PdfReaderScreen` — leitor embutido (mobile com `react-native-pdf`, web com `react-pdf`)
-- `src/storage/` — cache local do PDF (download e verificação)
+  - `LibraryScreen` — lista livros/versões, busca e abre no leitor
+  - `PdfReaderScreen.native` — leitor mobile (`react-native-pdf`)
+  - `PdfReaderScreen.web` — leitor web (`react-pdf`)
+- `src/storage/` — cache local de PDF + abertura externa
+- `src/utils/` — helpers visuais
 
 ## Testes
 
 Rodar os testes unitários:
 
 ```bash
-npx jest
+npm test
 ```
-
-(Se você tiver um script `test` no `package.json`, pode usar `npm test`.)
 
 Cobertura atual (unitária):
 
@@ -136,10 +172,10 @@ Ainda não há testes de UI/integração/E2E.
 É boa prática manter um `.env.example` **só com** a variável pública:
 
 ```bash
-cat > .env.example <<'EOF'
+cat > .env.example <<'ENV_EOF'
 # URL base da API usada pelo app (Expo)
 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-EOF
+ENV_EOF
 ```
 
 E garantir que `.env` (de verdade) esteja no `.gitignore`.

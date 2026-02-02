@@ -2,10 +2,10 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
-  SafeAreaView,
-  ScrollView,
   Modal,
   PanResponder,
+  SafeAreaView,
+  ScrollView,
   View,
   Text,
   Pressable,
@@ -22,14 +22,14 @@ import type { NormalizedRect } from "../api/annotations";
 import type { Annotation } from "../api/annotations";
 
 type Props = {
-    uri: string;
-    title?: string;
-    initialPage?: number;
-    token?: string;
-    bookId?: number;
-    versionId?: number;
-    onClose: () => void;
-}
+  uri: string;
+  title?: string;
+  initialPage?: number;
+  token?: string;
+  bookId?: number;
+  versionId?: number;
+  onClose: () => void;
+};
 
 const HIGHLIGHT_COLORS = [
   { key: "yellow", label: "Amarelo", hex: "#FFE066" },
@@ -44,12 +44,13 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
+/** Normaliza um retângulo em pixels para coordenadas 0..1. */
 function normalizeRectPx(
   startX: number,
   startY: number,
   endX: number,
   endY: number,
-  layout: {width: number; height: number }
+  layout: { width: number; height: number }
 ): NormalizedRect {
   const left = Math.min(startX, endX);
   const top = Math.min(startY, endY);
@@ -64,6 +65,7 @@ function normalizeRectPx(
   return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
+/** Converte um retângulo normalizado para pixels do layout atual. */
 function denormalizeRect(
   r: NormalizedRect,
   layout: { width: number; height: number }
@@ -85,203 +87,207 @@ export default function PdfReaderScreen({
   versionId,
   onClose,
 }: Props) {
-    const canAnnotate = Boolean(token && versionId);
+  const canAnnotate = Boolean(token && versionId);
 
-    const [currentPage, setCurrentPage] = React.useState<number>(initialPage ?? 1);
-    const [pageCount, setPageCount] = React.useState<number | null>(null);
-    const [pageInput, setPageInput] = React.useState<string>(String(initialPage ?? 1));
+  const [currentPage, setCurrentPage] = React.useState<number>(initialPage ?? 1);
+  const [pageCount, setPageCount] = React.useState<number | null>(null);
+  const [pageInput, setPageInput] = React.useState<string>(String(initialPage ?? 1));
 
-    const [searchOpen, setSearchOpen] = React.useState(false);
-    const [searchQuery, setSearchQuery] = React.useState("");
-    const [searchLoading, setSearchLoading] = React.useState(false);
-    const [searchError, setSearchError] = React.useState<string | null>(null);
-    const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
-    const [searchCount, setSearchCount] = React.useState<number | null>(null);
-    const [hasSearched, setHasSearched] = React.useState(false);
-    const [selectedResultKey, setSelectedResultKey] = React.useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [searchLoading, setSearchLoading] = React.useState(false);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
+  const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
+  const [searchCount, setSearchCount] = React.useState<number | null>(null);
+  const [hasSearched, setHasSearched] = React.useState(false);
+  const [selectedResultKey, setSelectedResultKey] = React.useState<string | null>(null);
 
-    const [highlightMode, setHighlightMode] = React.useState(false);
-    const [pdfViewport, setPdfViewport] = React.useState<{ w: number; h: number } | null>(null);
+  const [highlightMode, setHighlightMode] = React.useState(false);
+  const [pdfViewport, setPdfViewport] = React.useState<{ w: number; h: number } | null>(null);
 
-    const [drag, setDrag] = React.useState<{
-      startX: number; startY: number; endX: number; endY: number; active: boolean;
-    } | null>(null);
+  const [drag, setDrag] = React.useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    active: boolean;
+  } | null>(null);
 
-    const [pendingRect, setPendingRect] = React.useState<NormalizedRect | null>(null);
-    const [noteModalOpen, setNoteModalOpen] = React.useState(false);
-    const [noteText, setNoteText] = React.useState("");
-    const [selectedColorHex, setSelectedColorHex] = React.useState<HighlightColorHex>(
-      HIGHLIGHT_COLORS[0].hex
-    );
-    const [savingAnnotation, setSavingAnnotation] = React.useState(false);
-    const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
-    const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
-    const [annotationsError, setAnnotationsError] = React.useState<string | null>(null);
+  const [pendingRect, setPendingRect] = React.useState<NormalizedRect | null>(null);
+  const [noteModalOpen, setNoteModalOpen] = React.useState(false);
+  const [noteText, setNoteText] = React.useState("");
+  const [selectedColorHex, setSelectedColorHex] = React.useState<HighlightColorHex>(
+    HIGHLIGHT_COLORS[0].hex
+  );
+  const [savingAnnotation, setSavingAnnotation] = React.useState(false);
+  const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
+  const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
+  const [annotationsError, setAnnotationsError] = React.useState<string | null>(null);
 
-    const loadAnnotations = React.useCallback(async () => {
-      if (!token || !versionId) return;
+  const loadAnnotations = React.useCallback(async () => {
+    if (!token || !versionId) return;
 
-      setAnnotationsLoading(true);
-      setAnnotationsError(null);
+    setAnnotationsLoading(true);
+    setAnnotationsError(null);
 
-      try {
-        const res = await listAnnotations(token, versionId);
-        setAnnotations(res ?? []);
-      } catch (e) {
-        const msg =
-          e instanceof ApiError
-            ? `${e.message} - ${JSON.stringify(e.body)}`
-            : `Erro ao carregar anotações: ${String(e)}`;
-        setAnnotationsError(msg);
-        setAnnotations([]);
-      } finally {
-        setAnnotationsLoading(false);
-      }
-    }, [token, versionId]);
+    try {
+      const res = await listAnnotations(token, versionId);
+      setAnnotations(res ?? []);
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? `${e.message} - ${JSON.stringify(e.body)}`
+          : `Erro ao carregar anotações: ${String(e)}`;
+      setAnnotationsError(msg);
+      setAnnotations([]);
+    } finally {
+      setAnnotationsLoading(false);
+    }
+  }, [token, versionId]);
 
-    React.useEffect(() => {
-      loadAnnotations();
-    }, [loadAnnotations]);
+  React.useEffect(() => {
+    loadAnnotations();
+  }, [loadAnnotations]);
 
-    const clampPage = React.useCallback(
-      (page: number) => {
-        if (!pageCount) return Math.max(1, page);
-        return Math.min(Math.max(1, page), pageCount);
-      },
-      [pageCount]
-    );
+  const clampPage = React.useCallback(
+    (page: number) => {
+      if (!pageCount) return Math.max(1, page);
+      return Math.min(Math.max(1, page), pageCount);
+    },
+    [pageCount]
+  );
 
-    const goToPage = React.useCallback(
-      (page: number) => {
-        const next = clampPage(page);
-        setCurrentPage(next);
-        setPageInput(String(next));
-      },
-      [clampPage]
-    );
+  const goToPage = React.useCallback(
+    (page: number) => {
+      const next = clampPage(page);
+      setCurrentPage(next);
+      setPageInput(String(next));
+    },
+    [clampPage]
+  );
 
-    const canSearch = Boolean(token && bookId);
+  const canSearch = Boolean(token && bookId);
 
-    const runSearch = React.useCallback(async () => {
-      if (!token || !bookId) return;
+  const runSearch = React.useCallback(async () => {
+    if (!token || !bookId) return;
 
-      const q = searchQuery.trim();
-      setHasSearched(true);
-      setSearchError(null);
+    const q = searchQuery.trim();
+    setHasSearched(true);
+    setSearchError(null);
 
-      if (!q) {
-        setSearchResults([]);
-        setSearchCount(0);
-        return;
-      }
+    if (!q) {
+      setSearchResults([]);
+      setSearchCount(0);
+      return;
+    }
 
-      setSearchLoading(true);
-      try {
-        const res = await searchBook(token, bookId, q);
-        const filtered = versionId
-          ? (res.results ?? []).filter((r) => r.book_version_id === versionId)
-          : res.results ?? [];
-        setSearchResults(filtered);
-        setSearchCount(typeof res.count === "number" ? res.count : null);
-      } catch (e) {
-        const msg =
-          e instanceof ApiError
-            ? `${e.message} — ${JSON.stringify(e.body)}`
-            : `Erro ao buscar: ${String(e)}`;
-        setSearchError(msg);
-        setSearchResults([]);
-        setSearchCount(null);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, [bookId, searchQuery, token, versionId]);
+    setSearchLoading(true);
+    try {
+      const res = await searchBook(token, bookId, q);
+      const filtered = versionId
+        ? (res.results ?? []).filter((r) => r.book_version_id === versionId)
+        : res.results ?? [];
+      setSearchResults(filtered);
+      setSearchCount(typeof res.count === "number" ? res.count : null);
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? `${e.message} — ${JSON.stringify(e.body)}`
+          : `Erro ao buscar: ${String(e)}`;
+      setSearchError(msg);
+      setSearchResults([]);
+      setSearchCount(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [bookId, searchQuery, token, versionId]);
 
-    const renderHighlightedSnippet = React.useCallback(
-      (snippet: string) => {
-        const term = searchQuery.trim();
-        if (!term) return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
+  const renderHighlightedSnippet = React.useCallback(
+    (snippet: string) => {
+      const term = searchQuery.trim();
+      if (!term) return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
 
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
 
-        return (
-          <Text style={styles.searchItemSnippet}>
-            {parts.map((part, idx) => {
-              if (part.toLowerCase() === term.toLowerCase()) {
-                return (
-                  <Text key={`hit-${idx}`} style={styles.searchHighlight}>
-                    {part}
-                  </Text>
-                );
-              }
-              return <Text key={`txt-${idx}`}>{part}</Text>;
-            })}
-          </Text>
-        );
-      },
-      [searchQuery]
-    );
-
-    const pageRects = React.useMemo(() => {
-      const current = annotations.filter((a) => a.page_number === currentPage);
-      return current.flatMap((a) =>
-        (a.rects_normalizados ?? []).map((r, idx) => ({
-          key: `${a.id}-${idx}`,
-          rect: r,
-          color: a.color || "#FFE066",
-        }))
+      return (
+        <Text style={styles.searchItemSnippet}>
+          {parts.map((part, idx) => {
+            if (part.toLowerCase() === term.toLowerCase()) {
+              return (
+                <Text key={`hit-${idx}`} style={styles.searchHighlight}>
+                  {part}
+                </Text>
+              );
+            }
+            return <Text key={`txt-${idx}`}>{part}</Text>;
+          })}
+        </Text>
       );
-    }, [annotations, currentPage]);
+    },
+    [searchQuery]
+  );
 
-    const panResponder = React.useMemo(
-      () =>
-        PanResponder.create({
-          onStartShouldSetPanResponder: () => highlightMode,
-          onMoveShouldSetPanResponder: () => highlightMode,
-
-          onPanResponderGrant: (evt) => {
-            if (!highlightMode) return;
-            const { locationX, locationY } = evt.nativeEvent;
-            setDrag({ startX: locationX, startY: locationY, endX: locationX, endY: locationY, active: true });
-          },
-
-          onPanResponderMove: (evt) => {
-            if (!highlightMode) return;
-            const { locationX, locationY } = evt.nativeEvent;
-            setDrag((prev) => (prev ? { ...prev, endX: locationX, endY: locationY } : prev));
-          },
-
-          onPanResponderRelease: () => {
-            if (!highlightMode || !drag || !pdfViewport) {
-              setDrag(null);
-              return;
-            }
-
-            const w = Math.abs(drag.endX - drag.startX);
-            const h = Math.abs(drag.endY - drag.startY);
-
-            // evita cliques virarem destaque
-            if (w < 8 || h < 8) {
-              setDrag(null);
-              return;
-            }
-
-            const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
-              width: pdfViewport.w,
-              height: pdfViewport.h,
-            });
-            setPendingRect(rect);
-            setNoteModalOpen(true);
-            setDrag(null)
-          },
-
-          onPanResponderTerminate: () => setDrag(null),
-        }),
-        [drag, highlightMode, pdfViewport]
+  const pageRects = React.useMemo(() => {
+    const current = annotations.filter((a) => a.page_number === currentPage);
+    return current.flatMap((a) =>
+      (a.rects_normalizados ?? []).map((r, idx) => ({
+        key: `${a.id}-${idx}`,
+        rect: r,
+        color: a.color || "#FFE066",
+      }))
     );
+  }, [annotations, currentPage]);
 
-    return (
-      <SafeAreaView style={styles.container}>
+  const panResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => highlightMode,
+        onMoveShouldSetPanResponder: () => highlightMode,
+
+        onPanResponderGrant: (evt) => {
+          if (!highlightMode) return;
+          const { locationX, locationY } = evt.nativeEvent;
+          setDrag({ startX: locationX, startY: locationY, endX: locationX, endY: locationY, active: true });
+        },
+
+        onPanResponderMove: (evt) => {
+          if (!highlightMode) return;
+          const { locationX, locationY } = evt.nativeEvent;
+          setDrag((prev) => (prev ? { ...prev, endX: locationX, endY: locationY } : prev));
+        },
+
+        onPanResponderRelease: () => {
+          if (!highlightMode || !drag || !pdfViewport) {
+            setDrag(null);
+            return;
+          }
+
+          const w = Math.abs(drag.endX - drag.startX);
+          const h = Math.abs(drag.endY - drag.startY);
+
+          // Evita cliques virarem destaque.
+          if (w < 8 || h < 8) {
+            setDrag(null);
+            return;
+          }
+
+          const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
+            width: pdfViewport.w,
+            height: pdfViewport.h,
+          });
+          setPendingRect(rect);
+          setNoteModalOpen(true);
+          setDrag(null);
+        },
+
+        onPanResponderTerminate: () => setDrag(null),
+      }),
+    [drag, highlightMode, pdfViewport]
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <Pressable
             onPress={onClose}
@@ -401,7 +407,7 @@ export default function PdfReaderScreen({
               />
             ) : null}
 
-            {/* preview do retângulo “pendente” (antes de salvar) */}
+            {/* preview do retângulo "pendente" (antes de salvar) */}
             {pendingRect && pdfViewport ? (
               <View
                 pointerEvents="none"
@@ -635,7 +641,7 @@ export default function PdfReaderScreen({
             </View>
           </View>
         </Modal>
-      </SafeAreaView>
+    </SafeAreaView>
   );
 }
 
@@ -739,17 +745,16 @@ const styles = StyleSheet.create({
   goBtnText: { color: "#111", fontSize: 13, fontWeight: "700" },
   error: { color: "#ff8a80", fontSize: 12 },
   empty: { color: "#bbb", fontSize: 12 },
-  
+
   pdfWrap: { flex: 1, width: "100%" },
   pdfStage: { flex: 1, width: "100%" },
   overlay: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0 },
-  
+
   highlightRect: {
     position: "absolute",
     borderWidth: 1,
     borderRadius: 6,
   },
-
   selectionRect: {
     position: "absolute",
     borderWidth: 2,

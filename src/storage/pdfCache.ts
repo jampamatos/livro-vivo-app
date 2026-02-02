@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { Directory, File, Paths } from "expo-file-system";
 
 import * as Sharing from "expo-sharing";
+
 import { openPdfInViewer } from "./pdfViewer";
 
 let cacheDir: Directory | null = null;
@@ -9,6 +10,7 @@ let cacheDir: Directory | null = null;
 function getCacheDir() {
   if (Platform.OS === "web") return null;
   if (!cacheDir) {
+    // Cria a referência da pasta, mas não garante existência.
     cacheDir = new Directory(Paths.document, "pdf-cache");
   }
   return cacheDir;
@@ -22,6 +24,7 @@ export async function ensurePdfCacheDir() {
   }
 }
 
+/** Retorna a URI local para o PDF cacheado (mobile). */
 export function getPdfPath(bookId: number, versionId: number) {
   const dir = getCacheDir();
   if (!dir) return "";
@@ -33,6 +36,7 @@ export async function isPdfCached(path: string) {
   return new File(path).exists;
 }
 
+/** Baixa o PDF e salva no caminho especificado (mobile). */
 export async function downloadPdfToPath(params: { url: string; token: string; path: string }) {
   if (Platform.OS === "web") {
     throw new Error("PDF cache not supported on web.");

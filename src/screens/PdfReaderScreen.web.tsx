@@ -51,6 +51,7 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
+/** Normaliza um retângulo em pixels para coordenadas 0..1. */
 function normalizeRectPx(
   startX: number,
   startY: number,
@@ -71,6 +72,7 @@ function normalizeRectPx(
   return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
+/** Converte um retângulo normalizado para pixels do layout atual. */
 function denormalizeRect(
   r: NormalizedRect,
   layout: { width: number; height: number }
@@ -93,6 +95,8 @@ export default function PdfReaderScreenWeb({
   onClose,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
+
+  // Configura o arquivo do PDF (com token quando necessário).
   const pdfFile = React.useMemo(() => {
     if (!uri) return null;
     return token
@@ -160,6 +164,7 @@ export default function PdfReaderScreenWeb({
 
   const canSearch = Boolean(token && bookId);
 
+  // Garante que a página fique dentro do range possível.
   const goToPage = React.useCallback((page: number) => {
     const maxPage = pageCount ?? Number.MAX_SAFE_INTEGER;
     const next = Math.min(Math.max(1, page), maxPage);
@@ -274,6 +279,7 @@ export default function PdfReaderScreenWeb({
             return;
           }
 
+          // Finaliza a seleção e abre o modal de anotação.
           const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
             width: pdfViewport.w,
             height: pdfViewport.h,

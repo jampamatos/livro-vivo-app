@@ -1,15 +1,14 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import { HomeScreen } from "./src/screens/HomeScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
 
 export default function App() {
   const [loading, setLoading] = React.useState(true);
   const [token, setToken] = React.useState<string | null>(null);
-  const [route, setRoute] = React.useState<'account' | 'library'>('account');
+  const [route, setRoute] = React.useState<"account" | "library">("account");
 
   React.useEffect(() => {
     (async () => {
@@ -22,13 +21,13 @@ export default function App() {
   const handleSubmitToken = async (newToken: string) => {
     await setAuthToken(newToken);
     setToken(newToken);
-    setRoute('account');
+    setRoute("account");
   };
 
   const handleLogout = async () => {
     await clearAuthToken();
     setToken(null);
-    setRoute('account');
+    setRoute("account");
   };
 
   if (loading) {
@@ -57,6 +56,5 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-})
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 16 },
+});
