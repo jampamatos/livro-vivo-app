@@ -4,6 +4,7 @@ import {
   Alert,
   Modal,
   PanResponder,
+  Platform,
   SafeAreaView,
   ScrollView,
   View,
@@ -12,14 +13,17 @@ import {
   StyleSheet,
   TextInput,
   useWindowDimensions,
+  type ViewStyle,
 } from "react-native";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 import { searchBook, BookSearchResult } from "../api/books";
 import { ApiError } from "../api/http";
-import { createAnnotation } from "../api/annotations";
+import { createAnnotation, listAnnotations } from "../api/annotations";
+import type { Annotation } from "../api/annotations";
 import type { NormalizedRect } from "../api/annotations";
+import { withAlpha } from "../utils/colors";
 
 pdfjs.GlobalWorkerOptions.workerSrc =
   "https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs";
@@ -112,7 +116,7 @@ export default function PdfReaderScreenWeb({
   const canAnnotate = Boolean(token && versionId);
 
   const [highlightMode, setHighlightMode] = React.useState(false);
-  const [pdfLayout, setPdfLayout] = React.useState<{ width: number; height: number } | null>(null);
+  const [pdfViewport, setPdfViewport] = React.useState<{ w: number; h: number } | null>(null);
 
   const [drag, setDrag] = React.useState<{
     startX: number; startY: number; endX: number; endY: number; active: boolean;
@@ -125,6 +129,34 @@ export default function PdfReaderScreenWeb({
     HIGHLIGHT_COLORS[0].hex
   );
   const [savingAnnotation, setSavingAnnotation] = React.useState(false);
+  const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
+  const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
+  const [annotationsError, setAnnotationsError] = React.useState<string | null>(null);
+
+  const loadAnnotations = React.useCallback(async () => {
+    if (!token || !versionId) return;
+
+    setAnnotationsLoading(true);
+    setAnnotationsError(null);
+
+    try {
+      const res = await listAnnotations(token, versionId);
+      setAnnotations(res ?? []);
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? `${e.message} - ${JSON.stringify(e.body)}`
+          : `Erro ao carregar anotações: ${String(e)}`;
+      setAnnotationsError(msg);
+      setAnnotations([]);
+    } finally {
+      setAnnotationsLoading(false);
+    }
+  }, [token, versionId]);
+
+  React.useEffect(() => {
+    loadAnnotations();
+  }, [loadAnnotations]);
 
   const canSearch = Boolean(token && bookId);
 
@@ -195,26 +227,41 @@ export default function PdfReaderScreenWeb({
     [searchQuery]
   );
 
+  const pageRects = React.useMemo(() => {
+    const current = annotations.filter((a) => a.page_number === currentPage);
+    return current.flatMap((a) =>
+      (a.rects_normalizados ?? []).map((r, idx) => ({
+        key: `${a.id}-${idx}`,
+        rect: r,
+        color: a.color || "#FFE066",
+      }))
+    );
+  }, [annotations, currentPage]);
+
   const panResponder = React.useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => highlightMode,
         onMoveShouldSetPanResponder: () => highlightMode,
+        onStartShouldSetPanResponderCapture: () => highlightMode,
+        onMoveShouldSetPanResponderCapture: () => highlightMode,
 
         onPanResponderGrant: (evt) => {
           if (!highlightMode) return;
+          evt.preventDefault?.();
           const { locationX, locationY } = evt.nativeEvent;
           setDrag({ startX: locationX, startY: locationY, endX: locationX, endY: locationY, active: true });
         },
 
         onPanResponderMove: (evt) => {
           if (!highlightMode) return;
+          evt.preventDefault?.();
           const { locationX, locationY } = evt.nativeEvent;
           setDrag((prev) => (prev ? { ...prev, endX: locationX, endY: locationY } : prev));
         },
 
         onPanResponderRelease: () => {
-          if (!highlightMode || !drag || !pdfLayout) {
+          if (!highlightMode || !drag || !pdfViewport) {
             setDrag(null);
             return;
           }
@@ -227,7 +274,10 @@ export default function PdfReaderScreenWeb({
             return;
           }
 
-          const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, pdfLayout);
+          const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
+            width: pdfViewport.w,
+            height: pdfViewport.h,
+          });
           setPendingRect(rect);
           setNoteModalOpen(true);
           setDrag(null);
@@ -235,10 +285,14 @@ export default function PdfReaderScreenWeb({
 
         onPanResponderTerminate: () => setDrag(null),
       }),
-    [drag, highlightMode, pdfLayout]
+    [drag, highlightMode, pdfViewport]
   );
 
   const pageWidth = Math.min(windowWidth - 32, 900);
+  const webOverlayStyle =
+    Platform.OS === "web"
+      ? ({ cursor: "crosshair", userSelect: "none" } as unknown as ViewStyle)
+      : undefined;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -370,13 +424,7 @@ export default function PdfReaderScreenWeb({
       ) : null}
 
       <View style={styles.body}>
-        <View
-          style={styles.pdfWrap}
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setPdfLayout({ width, height });
-          }}
-        >
+        <View style={styles.pdfWrap}>
           <Document
             file={pdfFile ?? undefined}
             onLoadSuccess={(info) => {
@@ -391,43 +439,73 @@ export default function PdfReaderScreenWeb({
             loading={<Text style={styles.bodyText}>Carregando PDF...</Text>}
             error={<Text style={styles.bodyText}>Erro ao carregar PDF.</Text>}
           >
-            <Page
-              pageNumber={currentPage}
-              renderAnnotationLayer
-              renderTextLayer
-              width={pageWidth > 0 ? pageWidth : 900}
-            />
+            <View
+              style={styles.pageStage}
+              onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout;
+                if (width > 0 && height > 0) setPdfViewport({ w: width, h: height });
+              }}
+            >
+              <Page
+                pageNumber={currentPage}
+                renderAnnotationLayer
+                renderTextLayer
+                width={pageWidth > 0 ? pageWidth : 900}
+              />
+
+              <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                {pdfViewport
+                  ? pageRects.map(({ key, rect, color }) => (
+                      <View
+                        key={key}
+                        style={[
+                          styles.highlightRect,
+                          {
+                            left: rect.x * pdfViewport.w,
+                            top: rect.y * pdfViewport.h,
+                            width: rect.w * pdfViewport.w,
+                            height: rect.h * pdfViewport.h,
+                            borderColor: color,
+                            backgroundColor: withAlpha(color, "55"),
+                          },
+                        ]}
+                      />
+                    ))
+                  : null}
+              </View>
+
+              {highlightMode ? (
+                <View style={[styles.overlay, webOverlayStyle]} {...panResponder.panHandlers} />
+              ) : null}
+              {highlightMode && drag && pdfViewport ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.selectionRect,
+                    {
+                      left: Math.min(drag.startX, drag.endX),
+                      top: Math.min(drag.startY, drag.endY),
+                      width: Math.abs(drag.endX - drag.startX),
+                      height: Math.abs(drag.endY - drag.startY),
+                    },
+                  ]}
+                />
+              ) : null}
+              {pendingRect && pdfViewport ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.pendingRect,
+                    {
+                      backgroundColor: selectedColorHex,
+                      opacity: 0.25,
+                      ...denormalizeRect(pendingRect, { width: pdfViewport.w, height: pdfViewport.h }),
+                    },
+                  ]}
+                />
+              ) : null}
+            </View>
           </Document>
-          {highlightMode ? (
-            <View style={styles.overlay} {...panResponder.panHandlers} />
-          ) : null}
-          {highlightMode && drag && pdfLayout ? (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.selectionRect,
-                {
-                  left: Math.min(drag.startX, drag.endX),
-                  top: Math.min(drag.startY, drag.endY),
-                  width: Math.abs(drag.endX - drag.startX),
-                  height: Math.abs(drag.endY - drag.startY),
-                },
-              ]}
-            />
-          ) : null}
-          {pendingRect && pdfLayout ? (
-            <View
-              pointerEvents="none"
-              style={[
-                styles.pendingRect,
-                {
-                  backgroundColor: selectedColorHex,
-                  opacity: 0.25,
-                  ...denormalizeRect(pendingRect, pdfLayout),
-                },
-              ]}
-            />
-          ) : null}
         </View>
         <View style={styles.pageControls}>
           <Pressable
@@ -533,14 +611,15 @@ export default function PdfReaderScreenWeb({
 
                   setSavingAnnotation(true);
                   try {
-                    await createAnnotation(token, {
-                      book_version: versionId,
+                    const created = await createAnnotation(token, {
+                      book_version: versionId!,
                       page_number: currentPage,
                       rects_normalizados: [pendingRect],
-                      note: noteText.trim(),
+                      note: noteText,
                       color: selectedColorHex,
                     });
 
+                    setAnnotations((prev) => [created, ...prev]);
                     Alert.alert("Salvo", "Destaque criado com sucesso.");
                     setNoteModalOpen(false);
                     setPendingRect(null);
@@ -647,7 +726,24 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: "relative",
   },
-  overlay: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0 },
+  pageStage: {
+    position: "relative",
+    width: "100%",
+    alignSelf: "center",
+  },
+  overlay: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+  },
+  highlightRect: {
+    position: "absolute",
+    borderWidth: 1,
+    borderRadius: 6,
+  },
   selectionRect: {
     position: "absolute",
     borderWidth: 2,
