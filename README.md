@@ -40,6 +40,7 @@ npx expo run:android
 ```
 
 > Dica: para testar **web e Android ao mesmo tempo**, use dois terminais:
+>
 > - Terminal 1: `npx expo start --web`
 > - Terminal 2: `npx expo run:android`
 
@@ -122,6 +123,7 @@ npx jest
 (Se você tiver um script `test` no `package.json`, pode usar `npm test`.)
 
 Cobertura atual (unitária):
+
 - `apiFetch` (cliente HTTP)
 - APIs de livros
 - cache/local storage de PDF
