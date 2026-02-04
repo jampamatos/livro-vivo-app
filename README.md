@@ -10,6 +10,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - Busca dentro do livro (API) com abertura direta na página do resultado.
 - Leitor de PDF embutido com navegação por páginas.
 - Anotações por destaque (arraste, cor, nota opcional) salvas no backend.
+- Jurisprudência v0: tela de lista + busca por palavra-chave.
 - Web: renderização via `react-pdf` (worker carregado de `unpkg`).
 - Mobile: `react-native-pdf` + cache local de PDFs (`expo-file-system`).
 
@@ -32,7 +33,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 
 ```bash
 npm install
-```
+````
 
 ## Rodar em desenvolvimento
 
@@ -135,6 +136,7 @@ Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annot
 - `GET /books/:id/search/?q=...`
 - `GET /annotations/?book_version=...`
 - `POST /annotations/`
+- `GET /caselaw/?q=...`
 
 ## Estrutura (atual)
 
@@ -142,11 +144,13 @@ Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annot
 - `src/api/` — client HTTP + chamadas de API
 - `src/config/` — configuração (API base URL)
 - `src/screens/` — telas:
+
   - `LoginScreen` — login via token (modo dev)
   - `AccountScreen` — mostra entitlements do usuário
   - `LibraryScreen` — lista livros/versões, busca e abre no leitor
   - `PdfReaderScreen.native` — leitor mobile (`react-native-pdf`)
   - `PdfReaderScreen.web` — leitor web (`react-pdf`)
+  - (Jurisprudência) — tela de lista + busca consumindo `GET /caselaw/`
 - `src/storage/` — cache local de PDF + abertura externa
 - `src/utils/` — helpers visuais
 
