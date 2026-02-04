@@ -1,6 +1,7 @@
 import React from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { AccountScreen } from "./src/screens/AccountScreen";
+import { CaseLawScreen } from "./src/screens/CaseLawScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
@@ -8,7 +9,7 @@ import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStor
 export default function App() {
   const [loading, setLoading] = React.useState(true);
   const [token, setToken] = React.useState<string | null>(null);
-  const [route, setRoute] = React.useState<"account" | "library">("account");
+  const [route, setRoute] = React.useState<"account" | "caselaw" | "library">("account");
 
   React.useEffect(() => {
     (async () => {
@@ -42,6 +43,10 @@ export default function App() {
     return <LoginScreen onSubmitToken={handleSubmitToken} />;
   }
 
+  if (route === "caselaw") {
+    return <CaseLawScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
+  }
+  
   if (route === "library") {
     return <LibraryScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
   }
@@ -51,6 +56,7 @@ export default function App() {
       token={token}
       onLogout={handleLogout}
       onOpenLibrary={() => setRoute("library")}
+      onOpenCaseLaw={() => setRoute("caselaw")}
     />
   );  
 }

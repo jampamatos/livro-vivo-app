@@ -7,9 +7,10 @@ type Props = {
   token: string;
   onLogout: () => Promise<void> | void;
   onOpenLibrary: () => void;
+  onOpenCaseLaw: () => void;
 };
 
-export function AccountScreen({ token, onLogout, onOpenLibrary }: Props) {
+export function AccountScreen({ token, onLogout, onOpenLibrary, onOpenCaseLaw }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState<unknown>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -54,6 +55,10 @@ export function AccountScreen({ token, onLogout, onOpenLibrary }: Props) {
           <Text style={styles.buttonText}>Biblioteca</Text>
         </Pressable>
 
+        <Pressable style={styles.button} onPress={onOpenCaseLaw}>
+          <Text style={styles.buttonText}>Jurisprudência</Text>
+        </Pressable>
+
         <Pressable style={styles.button} onPress={load}>
           <Text style={styles.buttonText}>Recarregar</Text>
         </Pressable>
@@ -80,7 +85,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: "#555" },
   mono: { fontFamily: "monospace", color: "#222" },
   error: { fontFamily: "monospace", color: "#b00020" },
-  row: { flexDirection: "row", gap: 10, marginTop: 8 },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
   button: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, backgroundColor: "#111" },
   buttonSecondary: { backgroundColor: "#444" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
