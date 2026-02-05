@@ -1,4 +1,8 @@
-import { listBooks, listBookVersions, searchBook } from "../src/api/books";
+jest.mock("../src/config/api", () => ({
+  API_BASE_URL: "http://example.test",
+}));
+
+import { getVersionDownloadUrl, listBooks, listBookVersions, searchBook } from "../src/api/books";
 import { apiFetch } from "../src/api/http";
 
 jest.mock("../src/api/http", () => ({
@@ -26,5 +30,17 @@ describe("api/books", () => {
     apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, result: [] });
     await searchBook("t123", 1, "foo");
     expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo", { token: "t123" });
+  });
+
+  it("getVersionDownloadUrl normaliza URL relativa", async () => {
+    apiFetchMock.mockResolvedValueOnce({ url: "/books/1/versions/2/download/" });
+    const res = await getVersionDownloadUrl("t123", 1, 2);
+    expect(res.url).toBe("http://example.test/books/1/versions/2/download/");
+  });
+
+  it("getVersionDownloadUrl mantém URL absoluta", async () => {
+    apiFetchMock.mockResolvedValueOnce({ url: "https://cdn.example.com/x.pdf" });
+    const res = await getVersionDownloadUrl("t123", 1, 2);
+    expect(res.url).toBe("https://cdn.example.com/x.pdf");
   });
 });

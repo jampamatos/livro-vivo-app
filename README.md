@@ -11,6 +11,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - Leitor de PDF embutido com navegação por páginas.
 - Anotações por destaque (arraste, cor, nota opcional) salvas no backend.
 - Jurisprudência v0: tela de lista + busca por palavra-chave.
+- Comunidade: feed, post, comentários e denúncias.
 - Web: renderização via `react-pdf` (worker carregado de `unpkg`).
 - Mobile: `react-native-pdf` + cache local de PDFs (`expo-file-system`).
 
@@ -137,6 +138,12 @@ Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annot
 - `GET /annotations/?book_version=...`
 - `POST /annotations/`
 - `GET /caselaw/?q=...`
+- `GET /community/categories/`
+- `GET /community/posts/`
+- `POST /community/posts/`
+- `GET /community/comments/?post=...`
+- `POST /community/comments/`
+- `POST /community/reports/`
 
 ## Estrutura (atual)
 
@@ -151,6 +158,7 @@ Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annot
   - `PdfReaderScreen.native` — leitor mobile (`react-native-pdf`)
   - `PdfReaderScreen.web` — leitor web (`react-pdf`)
   - (Jurisprudência) — tela de lista + busca consumindo `GET /caselaw/`
+  - (Comunidade) — `CommunityFeedScreen` e `CommunityPostScreen` (posts + comentários + denúncias)
 - `src/storage/` — cache local de PDF + abertura externa
 - `src/utils/` — helpers visuais
 
