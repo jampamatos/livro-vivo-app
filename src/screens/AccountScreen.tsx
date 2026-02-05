@@ -8,9 +8,10 @@ type Props = {
   onLogout: () => Promise<void> | void;
   onOpenLibrary: () => void;
   onOpenCaseLaw: () => void;
+  onOpenCommunity: () => void;
 };
 
-export function AccountScreen({ token, onLogout, onOpenLibrary, onOpenCaseLaw }: Props) {
+export function AccountScreen({ token, onLogout, onOpenLibrary, onOpenCaseLaw, onOpenCommunity }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState<unknown>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -57,6 +58,10 @@ export function AccountScreen({ token, onLogout, onOpenLibrary, onOpenCaseLaw }:
 
         <Pressable style={styles.button} onPress={onOpenCaseLaw}>
           <Text style={styles.buttonText}>Jurisprudência</Text>
+        </Pressable>
+
+        <Pressable style={styles.button} onPress={onOpenCommunity}>
+          <Text style={styles.buttonText}>Comunidade</Text>
         </Pressable>
 
         <Pressable style={styles.button} onPress={load}>

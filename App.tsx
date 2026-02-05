@@ -2,14 +2,24 @@ import React from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { CaseLawScreen } from "./src/screens/CaseLawScreen";
+import { CommunityFeedScreen } from "./src/screens/CommunityFeedScreen";
+import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
 
+import type { CommunityPost } from "./src/api/community";
+
+
 export default function App() {
   const [loading, setLoading] = React.useState(true);
   const [token, setToken] = React.useState<string | null>(null);
-  const [route, setRoute] = React.useState<"account" | "caselaw" | "library">("account");
+
+  const [route, setRoute] = React.useState<
+    "account" | "caselaw" | "community" | "communityPost" | "library"
+  >("account");
+
+  const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
 
   React.useEffect(() => {
     (async () => {
@@ -51,12 +61,43 @@ export default function App() {
     return <LibraryScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
   }
 
+  if (route === "community") {
+    return (
+      <CommunityFeedScreen
+        token={token}
+        onBack={() => setRoute("account")}
+        onLogout={handleLogout}
+        onOpenPost={(post) => {
+          setSelectedPost(post);
+          setRoute("communityPost");
+        }}
+      />
+    );
+  }
+
+  if (route === "communityPost") {
+    if (!selectedPost) {
+      setRoute("community");
+      return null;
+    }
+
+    return (
+      <CommunityPostScreen 
+        token={token}
+        post={selectedPost}
+        onBack={() => setRoute("community")}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <AccountScreen
       token={token}
       onLogout={handleLogout}
       onOpenLibrary={() => setRoute("library")}
       onOpenCaseLaw={() => setRoute("caselaw")}
+      onOpenCommunity={() => setRoute("community")}
     />
   );  
 }
