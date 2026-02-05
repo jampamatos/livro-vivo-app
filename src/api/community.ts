@@ -31,6 +31,16 @@ export type CommunityComment = {
     updated_at: string;
 };
 
+export type CommunityReport = {
+  id: number;
+  status: "open" | "resolved" | "rejected";
+  reason: string;
+  post: number | null;
+  comment: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // GET /community/categories/
 export function listCommunityCategories(token: string) {
     return apiFetch<CommunityCategory[]>("/community/categories/", { token });
@@ -65,4 +75,15 @@ export function createCommunityComment(token: string, payload: { post_id: number
         method: "POST",
         body: payload,
     });
+}
+
+export function createCommunityReport(
+  token: string,
+  payload: { post_id?: number; comment_id?: number; reason?: string }
+) {
+  return apiFetch<CommunityReport>("/community/reports/", {
+    token,
+    method: "POST",
+    body: payload,
+  });
 }

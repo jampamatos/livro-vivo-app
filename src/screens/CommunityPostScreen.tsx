@@ -1,7 +1,11 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -12,6 +16,7 @@ import {
   CommunityComment,
   CommunityPost,
   createCommunityComment,
+  createCommunityReport,
   listCommunityComments,
 } from "../api/community";
 
@@ -33,6 +38,11 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
   const [comments, setComments] = React.useState<CommunityComment[]>([]);
   const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const [reportTarget, setReportTarget] = React.useState<
+    { type: "post" | "comment"; id: number } | null
+  >(null);
+  const [reportReason, setReportReason] = React.useState("");
+  const [reporting, setReporting] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setError(null);
@@ -68,6 +78,53 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
     }
   };
 
+  const reportPost = () => {
+    setReportReason("");
+    setReportTarget({ type: "post", id: post.id });
+  };
+  
+  const reportComment = (commentId: number) => {
+    setReportReason("");
+    setReportTarget({ type: "comment", id: commentId });
+  };
+
+  const closeReport = () => {
+    setReportTarget(null);
+    setReportReason("");
+  };
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === "web" && typeof globalThis.alert === "function") {
+      globalThis.alert(`${title}\n\n${message}`);
+      return;
+    }
+    Alert.alert(title, message);
+  };
+
+  const submitReport = async () => {
+    if (!reportTarget) return;
+    const reason = reportReason.trim();
+    if (!reason) {
+      showAlert("Motivo obrigatório", "Escreva o motivo da denúncia.");
+      return;
+    }
+
+    setReporting(true);
+    try {
+      if (reportTarget.type === "post") {
+        await createCommunityReport(token, { post_id: reportTarget.id, reason });
+      } else {
+        await createCommunityReport(token, { comment_id: reportTarget.id, reason });
+      }
+      closeReport();
+      showAlert("Enviado", "Obrigado! Sua denúncia foi enviada.");
+    } catch (e: any) {
+      showAlert("Erro", e?.message ?? "Falha ao enviar denúncia.");
+    } finally {
+      setReporting(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
@@ -86,6 +143,9 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
           por {post.author_display} • {formatDate(post.created_at)}
         </Text>
         <Text style={styles.postBody}>{post.body}</Text>
+        <Pressable onPress={reportPost} style={styles.reportBtn}>
+          <Text style={styles.reportText}>Denunciar Post</Text>
+        </Pressable>
       </View>
 
       <Text style={styles.sectionTitle}>Comentários</Text>
@@ -108,6 +168,9 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                   {item.author_display} • {formatDate(item.created_at)}
                 </Text>
                 <Text style={styles.commentBody}>{item.body}</Text>
+                <Pressable onPress={() => reportComment(item.id)} style={styles.reportMiniBtn}>
+                  <Text style={styles.reportMiniText}>Denunciar</Text>
+                </Pressable>
               </View>
             )}
             ListEmptyComponent={
@@ -133,6 +196,48 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
           </View>
         </>
       )}
+
+      <Modal
+        visible={!!reportTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={closeReport}
+      >
+        <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.modalKeyboard}
+          >
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                {reportTarget?.type === "post" ? "Denunciar post" : "Denunciar comentário"}
+              </Text>
+              <Text style={styles.modalSubtitle}>Escreva o motivo da denúncia:</Text>
+              <TextInput
+                value={reportReason}
+                onChangeText={setReportReason}
+                placeholder="Ex: spam, ofensa, conteúdo inadequado…"
+                style={styles.modalInput}
+                multiline
+              />
+              <View style={styles.modalActions}>
+                <Pressable onPress={closeReport} style={styles.modalBtn}>
+                  <Text style={styles.modalBtnText}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={submitReport}
+                  disabled={reporting}
+                  style={[styles.modalBtn, styles.modalBtnPrimary, reporting && styles.modalBtnDisabled]}
+                >
+                  <Text style={styles.modalBtnTextPrimary}>
+                    {reporting ? "Enviando…" : "Enviar"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -160,6 +265,52 @@ const styles = StyleSheet.create({
   commentCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 },
   commentMeta: { fontSize: 12, opacity: 0.7 },
   commentBody: { fontSize: 13 },
+  reportBtn: {
+    marginTop: 4,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  reportText: { fontSize: 12, fontWeight: "700" },
+  reportMiniBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  reportMiniText: { fontSize: 11, fontWeight: "600" },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  modalKeyboard: { width: "100%" },
+  modalCard: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 16,
+    gap: 10,
+  },
+  modalTitle: { fontSize: 16, fontWeight: "800" },
+  modalSubtitle: { fontSize: 12, opacity: 0.7 },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    minHeight: 80,
+    maxHeight: 160,
+  },
+  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+  modalBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8 },
+  modalBtnPrimary: { borderWidth: 1 },
+  modalBtnDisabled: { opacity: 0.5 },
+  modalBtnText: { fontSize: 12 },
+  modalBtnTextPrimary: { fontSize: 12, fontWeight: "700" },
 
   composer: { gap: 8 },
   input: { borderWidth: 1, borderRadius: 12, padding: 10, minHeight: 44, maxHeight: 140 },
