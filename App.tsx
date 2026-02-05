@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { CaseLawScreen } from "./src/screens/CaseLawScreen";
 import { CommunityFeedScreen } from "./src/screens/CommunityFeedScreen";
+import { CommunityNewPostScreen } from "./src/screens/CommunityNewPostScreen";
 import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
@@ -16,7 +17,7 @@ export default function App() {
   const [token, setToken] = React.useState<string | null>(null);
 
   const [route, setRoute] = React.useState<
-    "account" | "caselaw" | "community" | "communityPost" | "library"
+    "account" | "caselaw" | "community" | "communityNewPost" | "communityPost" | "library"
   >("account");
 
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
@@ -68,6 +69,21 @@ export default function App() {
         onBack={() => setRoute("account")}
         onLogout={handleLogout}
         onOpenPost={(post) => {
+          setSelectedPost(post);
+          setRoute("communityPost");
+        }}
+        onCreatePost={() => setRoute("communityNewPost")}
+      />
+    );
+  }
+
+  if (route === "communityNewPost") {
+    return (
+      <CommunityNewPostScreen
+        token={token}
+        onBack={() => setRoute("community")}
+        onLogout={handleLogout}
+        onCreated={(post) => {
           setSelectedPost(post);
           setRoute("communityPost");
         }}

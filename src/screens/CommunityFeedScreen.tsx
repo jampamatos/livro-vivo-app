@@ -24,9 +24,16 @@ type Props = {
   onBack: () => void;
   onLogout: () => void;
   onOpenPost: (post: CommunityPost) => void;
+  onCreatePost: () => void;
 };
 
-export function CommunityFeedScreen({ token, onBack, onLogout, onOpenPost }: Props) {
+export function CommunityFeedScreen({
+  token,
+  onBack,
+  onLogout,
+  onOpenPost,
+  onCreatePost,
+}: Props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -79,9 +86,14 @@ export function CommunityFeedScreen({ token, onBack, onLogout, onOpenPost }: Pro
         </Pressable>
       </View>
 
-      <Text style={styles.subtitle}>
-        Feed: {category ? category.name : "…"}
-      </Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.subtitle}>
+          Feed: {category ? category.name : "…"}
+        </Text>
+        <Pressable onPress={onCreatePost} style={styles.newPostBtn}>
+          <Text style={styles.newPostText}>Criar Novo Post</Text>
+        </Pressable>
+      </View>
 
       {loading ? (
         <View style={styles.center}>
@@ -131,9 +143,12 @@ const styles = StyleSheet.create({
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 18, fontWeight: "700" },
   subtitle: { fontSize: 14, opacity: 0.8 },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 
   topBtn: { paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 8 },
   topBtnText: { fontSize: 12 },
+  newPostBtn: { paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 8 },
+  newPostText: { fontSize: 12, fontWeight: "700" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   error: { color: "crimson", textAlign: "center" },
