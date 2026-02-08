@@ -2,24 +2,32 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Modal,
-  PanResponder,
+  Platform,
   SafeAreaView,
   ScrollView,
+  StatusBar,
+  useWindowDimensions,
   View,
   Text,
   Pressable,
   StyleSheet,
   TextInput,
 } from "react-native";
-import Pdf from "react-native-pdf";
+
 import { searchBook, BookSearchResult } from "../api/books";
 import { ApiError } from "../api/http";
-import { createAnnotation, listAnnotations } from "../api/annotations";
-import { withAlpha } from "../utils/colors";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  listAnnotations,
+  updateAnnotation,
+} from "../api/annotations";
 
 import type { NormalizedRect } from "../api/annotations";
 import type { Annotation } from "../api/annotations";
+import { NativePdfReaderAdapter } from "../readers/native";
 
 type Props = {
   uri: string;
@@ -40,42 +48,9 @@ const HIGHLIGHT_COLORS = [
 
 type HighlightColorHex = typeof HIGHLIGHT_COLORS[number]["hex"];
 
-function clamp01(n: number) {
-  return Math.min(1, Math.max(0, n));
-}
-
-/** Normaliza um retângulo em pixels para coordenadas 0..1. */
-function normalizeRectPx(
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-  layout: { width: number; height: number }
-): NormalizedRect {
-  const left = Math.min(startX, endX);
-  const top = Math.min(startY, endY);
-  const width = Math.abs(endX - startX);
-  const height = Math.abs(endY - startY);
-
-  const x1 = clamp01(left / layout.width);
-  const y1 = clamp01(top / layout.height);
-  const x2 = clamp01((left + width) / layout.width);
-  const y2 = clamp01((top + height) / layout.height);
-
-  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
-}
-
-/** Converte um retângulo normalizado para pixels do layout atual. */
-function denormalizeRect(
-  r: NormalizedRect,
-  layout: { width: number; height: number }
-) {
-  return {
-    left: r.x * layout.width,
-    top: r.y * layout.height,
-    width: r.w * layout.width,
-    height: r.h * layout.height,
-  };
+function clampPage(page: number, pageCount: number | null) {
+  if (!pageCount) return Math.max(1, page);
+  return Math.min(Math.max(1, page), pageCount);
 }
 
 export default function PdfReaderScreen({
@@ -87,7 +62,13 @@ export default function PdfReaderScreen({
   versionId,
   onClose,
 }: Props) {
+  const { height: windowHeight } = useWindowDimensions();
   const canAnnotate = Boolean(token && versionId);
+  const androidTopInset = Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0;
+  const androidBottomInset =
+    Platform.OS === "android"
+      ? Math.max(12, Dimensions.get("screen").height - windowHeight - androidTopInset)
+      : 0;
 
   const [currentPage, setCurrentPage] = React.useState<number>(initialPage ?? 1);
   const [pageCount, setPageCount] = React.useState<number | null>(null);
@@ -103,17 +84,8 @@ export default function PdfReaderScreen({
   const [selectedResultKey, setSelectedResultKey] = React.useState<string | null>(null);
 
   const [highlightMode, setHighlightMode] = React.useState(false);
-  const [pdfViewport, setPdfViewport] = React.useState<{ w: number; h: number } | null>(null);
-
-  const [drag, setDrag] = React.useState<{
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    active: boolean;
-  } | null>(null);
-
-  const [pendingRect, setPendingRect] = React.useState<NormalizedRect | null>(null);
+  const [pendingRects, setPendingRects] = React.useState<NormalizedRect[]>([]);
+  const [editingAnnotation, setEditingAnnotation] = React.useState<Annotation | null>(null);
   const [noteModalOpen, setNoteModalOpen] = React.useState(false);
   const [noteText, setNoteText] = React.useState("");
   const [selectedColorHex, setSelectedColorHex] = React.useState<HighlightColorHex>(
@@ -123,6 +95,16 @@ export default function PdfReaderScreen({
   const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
   const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
   const [annotationsError, setAnnotationsError] = React.useState<string | null>(null);
+
+  const [viewerError, setViewerError] = React.useState<string | null>(null);
+
+  const closeModalAndReset = React.useCallback(() => {
+    setNoteModalOpen(false);
+    setPendingRects([]);
+    setEditingAnnotation(null);
+    setNoteText("");
+    setSelectedColorHex(HIGHLIGHT_COLORS[0].hex);
+  }, []);
 
   const loadAnnotations = React.useCallback(async () => {
     if (!token || !versionId) return;
@@ -149,21 +131,16 @@ export default function PdfReaderScreen({
     loadAnnotations();
   }, [loadAnnotations]);
 
-  const clampPage = React.useCallback(
-    (page: number) => {
-      if (!pageCount) return Math.max(1, page);
-      return Math.min(Math.max(1, page), pageCount);
-    },
-    [pageCount]
-  );
-
   const goToPage = React.useCallback(
     (page: number) => {
-      const next = clampPage(page);
+      const next = clampPage(page, pageCount);
       setCurrentPage(next);
       setPageInput(String(next));
+      setPendingRects([]);
+      setEditingAnnotation(null);
+      setViewerError(null);
     },
-    [clampPage]
+    [pageCount]
   );
 
   const canSearch = Boolean(token && bookId);
@@ -228,419 +205,503 @@ export default function PdfReaderScreen({
     [searchQuery]
   );
 
-  const pageRects = React.useMemo(() => {
-    const current = annotations.filter((a) => a.page_number === currentPage);
-    return current.flatMap((a) =>
-      (a.rects_normalizados ?? []).map((r, idx) => ({
-        key: `${a.id}-${idx}`,
-        rect: r,
-        color: a.color || "#FFE066",
-      }))
-    );
-  }, [annotations, currentPage]);
+  const pageAnnotations = React.useMemo(
+    () => annotations.filter((a) => a.page_number === currentPage),
+    [annotations, currentPage]
+  );
 
-  const panResponder = React.useMemo(
+  const pageRects = React.useMemo(
     () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => highlightMode,
-        onMoveShouldSetPanResponder: () => highlightMode,
+      pageAnnotations.flatMap((a) =>
+        (a.rects_normalizados ?? []).map((r) => ({
+          ...r,
+          color: a.color || HIGHLIGHT_COLORS[0].hex,
+        }))
+      ),
+    [pageAnnotations]
+  );
 
-        onPanResponderGrant: (evt) => {
-          if (!highlightMode) return;
-          const { locationX, locationY } = evt.nativeEvent;
-          setDrag({ startX: locationX, startY: locationY, endX: locationX, endY: locationY, active: true });
+  const openEditModal = React.useCallback((annotation: Annotation) => {
+    setEditingAnnotation(annotation);
+    setPendingRects(annotation.rects_normalizados ?? []);
+    setNoteText(annotation.note ?? "");
+    setSelectedColorHex((annotation.color || HIGHLIGHT_COLORS[0].hex) as HighlightColorHex);
+    setNoteModalOpen(true);
+  }, []);
+
+  const saveAnnotation = React.useCallback(async () => {
+    if (!token || !versionId) return;
+
+    if (!editingAnnotation && pendingRects.length === 0) {
+      Alert.alert("Sem seleção", "Selecione um trecho de texto para destacar.");
+      return;
+    }
+
+    setSavingAnnotation(true);
+    try {
+      if (editingAnnotation) {
+        const updated = await updateAnnotation(token, editingAnnotation.id, {
+          note: noteText,
+          color: selectedColorHex,
+        });
+        setAnnotations((prev) =>
+          prev.map((annotation) =>
+            annotation.id === updated.id ? updated : annotation
+          )
+        );
+        Alert.alert("Salvo", "Destaque atualizado com sucesso.");
+      } else {
+        const created = await createAnnotation(token, {
+          book_version: versionId,
+          page_number: currentPage,
+          rects_normalizados: pendingRects,
+          note: noteText,
+          color: selectedColorHex,
+        });
+
+        setAnnotations((prev) => [created, ...prev]);
+        Alert.alert("Salvo", "Destaque criado com sucesso.");
+        setHighlightMode(false);
+      }
+
+      closeModalAndReset();
+    } catch (e) {
+      Alert.alert("Erro", `Falha ao salvar anotação: ${String(e)}`);
+    } finally {
+      setSavingAnnotation(false);
+    }
+  }, [
+    closeModalAndReset,
+    currentPage,
+    editingAnnotation,
+    noteText,
+    pendingRects,
+    selectedColorHex,
+    token,
+    versionId,
+  ]);
+
+  const openCreateModalFromSelection = React.useCallback(() => {
+    if (pendingRects.length === 0) {
+      Alert.alert(
+        "Selecione um trecho",
+        "Ative o modo destacar e ajuste a seleção antes de criar o destaque."
+      );
+      return;
+    }
+
+    setEditingAnnotation(null);
+    setNoteText("");
+    setSelectedColorHex(HIGHLIGHT_COLORS[0].hex);
+    setNoteModalOpen(true);
+  }, [pendingRects.length]);
+
+  const handleDeleteAnnotation = React.useCallback(
+    (annotation: Annotation) => {
+      if (!token) return;
+
+      Alert.alert("Excluir destaque", "Esta ação não pode ser desfeita.", [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAnnotation(token, annotation.id);
+              setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
+              if (editingAnnotation?.id === annotation.id) {
+                closeModalAndReset();
+              }
+              Alert.alert("Excluído", "Destaque removido.");
+            } catch (e) {
+              Alert.alert("Erro", `Falha ao excluir anotação: ${String(e)}`);
+            }
+          },
         },
+      ]);
+    },
+    [closeModalAndReset, editingAnnotation?.id, token]
+  );
 
-        onPanResponderMove: (evt) => {
-          if (!highlightMode) return;
-          const { locationX, locationY } = evt.nativeEvent;
-          setDrag((prev) => (prev ? { ...prev, endX: locationX, endY: locationY } : prev));
-        },
+  const handleReaderLoaded = React.useCallback(
+    (nextPageCount: number) => {
+      setPageCount(nextPageCount);
+      const normalizedPage = clampPage(currentPage, nextPageCount);
+      if (normalizedPage !== currentPage) {
+        setCurrentPage(normalizedPage);
+        setPageInput(String(normalizedPage));
+      }
+      setViewerError(null);
+    },
+    [currentPage]
+  );
 
-        onPanResponderRelease: () => {
-          if (!highlightMode || !drag || !pdfViewport) {
-            setDrag(null);
-            return;
-          }
-
-          const w = Math.abs(drag.endX - drag.startX);
-          const h = Math.abs(drag.endY - drag.startY);
-
-          // Evita cliques virarem destaque.
-          if (w < 8 || h < 8) {
-            setDrag(null);
-            return;
-          }
-
-          const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
-            width: pdfViewport.w,
-            height: pdfViewport.h,
-          });
-          setPendingRect(rect);
-          setNoteModalOpen(true);
-          setDrag(null);
-        },
-
-        onPanResponderTerminate: () => setDrag(null),
-      }),
-    [drag, highlightMode, pdfViewport]
+  const handleReaderSelection = React.useCallback(
+    (rects: NormalizedRect[]) => {
+      if (!highlightMode || !canAnnotate || noteModalOpen || editingAnnotation) return;
+      if (rects.length === 0) return;
+      setPendingRects(rects);
+    },
+    [canAnnotate, editingAnnotation, highlightMode, noteModalOpen]
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={onClose}
-            style={styles.backBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-            hitSlop={8}
-          >
-            <Text style={styles.backText}>← Voltar</Text>
-          </Pressable>
-          <View style={styles.headerTitle}>
-            <Text style={styles.title} numberOfLines={1}>
-              {title ?? "Leitor"}
-            </Text>
-            <Text style={styles.pageMeta}>
-              Página {currentPage}{pageCount ? ` / ${pageCount}` : ""}
-            </Text>
-          </View>
-          <Pressable
-            onPress={() => setSearchOpen((prev) => !prev)}
-            style={styles.searchToggle}
-            accessibilityRole="button"
-            accessibilityLabel={searchOpen ? "Fechar busca" : "Abrir busca"}
-            hitSlop={8}
-          >
-            <Text style={styles.searchToggleText}>{searchOpen ? "Fechar" : "Buscar"}</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              if (!canAnnotate) {
-                Alert.alert("Indisponível", "Não dá para anotar sem token e versão do livro.");
-                return;
+    <SafeAreaView
+      style={[
+        styles.container,
+        {
+          paddingTop: androidTopInset,
+          paddingBottom: androidBottomInset,
+        },
+      ]}
+    >
+      <View style={styles.header}>
+        <Pressable
+          onPress={onClose}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
+          hitSlop={8}
+        >
+          <Text style={styles.backText}>← Voltar</Text>
+        </Pressable>
+        <View style={styles.headerTitle}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title ?? "Leitor"}
+          </Text>
+          <Text style={styles.pageMeta}>
+            Página {currentPage}
+            {pageCount ? ` / ${pageCount}` : ""}
+          </Text>
+        </View>
+        <Pressable
+          onPress={() => setSearchOpen((prev) => !prev)}
+          style={styles.searchToggle}
+          accessibilityRole="button"
+          accessibilityLabel={searchOpen ? "Fechar busca" : "Abrir busca"}
+          hitSlop={8}
+        >
+          <Text style={styles.searchToggleText}>{searchOpen ? "Fechar" : "Buscar"}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            if (!canAnnotate) {
+              Alert.alert("Indisponível", "Não dá para anotar sem token e versão do livro.");
+              return;
+            }
+            setSearchOpen(false);
+            setHighlightMode((prev) => {
+              const next = !prev;
+              if (!next) {
+                setPendingRects([]);
+                setEditingAnnotation(null);
               }
-              setSearchOpen(false);
-              setHighlightMode((prev) => !prev);
-            }}
-            style={styles.searchToggle}
-            accessibilityRole="button"
-            accessibilityLabel={highlightMode ? "Cancelar destaque" : "Criar destaque"}
-            hitSlop={8}
-          >
-            <Text style={styles.searchToggleText}>{highlightMode ? "Cancelar" : "Destacar"}</Text>
-          </Pressable>
-        </View>
-  
-        <View style={styles.pdfWrap}>
-          <View
-            style={styles.pdfStage}
-            onLayout={(e) => {
-              const { width, height } = e.nativeEvent.layout;
-              if (width > 0 && height > 0) setPdfViewport({ w: width, h: height });
-            }}
-          >
-            <Pdf
-              source={{ uri }}
-              style={StyleSheet.absoluteFill}
-              page={currentPage}
-              onLoadComplete={(numberOfPages) => {
-                setPageCount(numberOfPages);
-                if (initialPage && initialPage >= 1) {
-                  goToPage(initialPage);
-                } else {
-                  setCurrentPage(1);
-                  setPageInput("1");
-                }
-              }}
-              onPageChanged={(page, numberOfPages) => {
-                setCurrentPage(page);
-                setPageCount(numberOfPages ?? null);
-                setPageInput(String(page));
-              }}
-              onError={(error) => {
-                console.warn("PDF error:", error);
-              }}
-            />
-
-            {/* Overlay de highlights (não captura toque) */}
-            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-              {pdfViewport
-                ? pageRects.map(({ key, rect, color }) => (
-                    <View
-                      key={key}
-                      style={[
-                        styles.highlightRect,
-                        {
-                          left: rect.x * pdfViewport.w,
-                          top: rect.y * pdfViewport.h,
-                          width: rect.w * pdfViewport.w,
-                          height: rect.h * pdfViewport.h,
-                          borderColor: color,
-                          backgroundColor: withAlpha(color, "55"),
-                        },
-                      ]}
-                    />
-                  ))
-                : null}
-            </View>
-
-            {/* camada que captura drag */}
-            {highlightMode ? (
-              <View style={styles.overlay} {...panResponder.panHandlers} />
-            ) : null}
-
-            {/* retângulo enquanto arrasta */}
-            {highlightMode && drag && pdfViewport ? (
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.selectionRect,
-                  {
-                    left: Math.min(drag.startX, drag.endX),
-                    top: Math.min(drag.startY, drag.endY),
-                    width: Math.abs(drag.endX - drag.startX),
-                    height: Math.abs(drag.endY - drag.startY),
-                  },
-                ]}
-              />
-            ) : null}
-
-            {/* preview do retângulo "pendente" (antes de salvar) */}
-            {pendingRect && pdfViewport ? (
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.pendingRect,
-                  {
-                    backgroundColor: selectedColorHex,
-                    opacity: 0.25,
-                    ...denormalizeRect(pendingRect, { width: pdfViewport.w, height: pdfViewport.h }),
-                  },
-                ]}
-              />
-            ) : null}
-          </View>
-        </View>
-
-        {searchOpen ? (
-          <View style={styles.searchPanel} accessibilityLiveRegion="polite">
-            {!canSearch ? (
-              <Text style={styles.searchInfo}>
-                Busca indisponível: token ou livro não informado.
-              </Text>
-            ) : (
-              <>
-                <View style={styles.searchRow}>
-                  <TextInput
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Buscar neste livro…"
-                    autoCapitalize="none"
-                    returnKeyType="search"
-                    editable={!searchLoading}
-                    onSubmitEditing={runSearch}
-                    style={styles.searchInput}
-                    accessibilityLabel="Buscar no livro"
-                  />
-                  <Pressable
-                    onPress={runSearch}
-                    disabled={searchLoading || !searchQuery.trim()}
-                    style={[
-                      styles.searchBtn,
-                      searchLoading || !searchQuery.trim() ? styles.searchBtnDisabled : null,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Executar busca"
-                  >
-                    <Text style={styles.searchBtnText}>
-                      {searchLoading ? "Buscando..." : "Buscar"}
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {searchError ? <Text style={styles.error}>{searchError}</Text> : null}
-
-                {hasSearched && !searchLoading ? (
-                  searchResults.length === 0 ? (
-                    <Text style={styles.empty}>Sem resultados.</Text>
-                  ) : (
-                    <View style={styles.searchResults}>
-                      <Text style={styles.searchMeta}>
-                        {searchCount != null
-                          ? `${searchResults.length} de ${searchCount} resultados`
-                          : `${searchResults.length} resultados`}
-                      </Text>
-                      <ScrollView style={styles.searchList} contentContainerStyle={styles.searchListContent}>
-                        {searchResults.map((r, idx) => {
-                          const key = `${r.book_version_id}-${r.page_number}-${idx}`;
-                          const isSelected = key === selectedResultKey;
-                          return (
-                            <Pressable
-                              key={key}
-                              onPress={() => {
-                                setSelectedResultKey(key);
-                                goToPage(r.page_number);
-                              }}
-                              style={[styles.searchItem, isSelected ? styles.searchItemActive : null]}
-                              accessibilityRole="button"
-                              accessibilityLabel={`Abrir página ${r.page_number}`}
-                              accessibilityState={{ selected: isSelected }}
-                            >
-                              <Text style={styles.searchItemTitle}>Página {r.page_number}</Text>
-                              {renderHighlightedSnippet(r.snippet)}
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
-                    </View>
-                  )
-                ) : searchLoading ? (
-                  <View style={styles.searchLoading}>
-                    <ActivityIndicator />
-                  </View>
-                ) : null}
-              </>
-            )}
-          </View>
-        ) : null}
-
-        <View style={styles.footer}>
+              return next;
+            });
+          }}
+          style={styles.searchToggle}
+          accessibilityRole="button"
+          accessibilityLabel={highlightMode ? "Desativar seleção" : "Ativar seleção"}
+          hitSlop={8}
+        >
+          <Text style={styles.searchToggleText}>{highlightMode ? "Parar" : "Destacar"}</Text>
+        </Pressable>
+        {highlightMode ? (
           <Pressable
-            onPress={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            style={[styles.navBtn, currentPage <= 1 ? styles.navBtnDisabled : null]}
-            accessibilityRole="button"
-            accessibilityLabel="Página anterior"
-          >
-            <Text style={styles.navBtnText}>Anterior</Text>
-          </Pressable>
-
-          <View style={styles.pageInputWrap}>
-            <TextInput
-              value={pageInput}
-              onChangeText={setPageInput}
-              keyboardType="number-pad"
-              returnKeyType="go"
-              onSubmitEditing={() => {
-                const parsed = parseInt(pageInput, 10);
-                if (!Number.isNaN(parsed)) goToPage(parsed);
-              }}
-              style={styles.pageInput}
-              accessibilityLabel="Número da página"
-            />
-            <Pressable
-              onPress={() => {
-                const parsed = parseInt(pageInput, 10);
-                if (!Number.isNaN(parsed)) goToPage(parsed);
-              }}
-              style={styles.goBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Ir para página"
-            >
-              <Text style={styles.goBtnText}>Ir</Text>
-            </Pressable>
-          </View>
-
-          <Pressable
-            onPress={() => goToPage(currentPage + 1)}
-            disabled={pageCount ? currentPage >= pageCount : false}
+            onPress={openCreateModalFromSelection}
+            disabled={pendingRects.length === 0}
             style={[
-              styles.navBtn,
-              pageCount && currentPage >= pageCount ? styles.navBtnDisabled : null,
+              styles.searchToggle,
+              pendingRects.length === 0 ? styles.searchBtnDisabled : null,
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Próxima página"
+            accessibilityLabel="Criar destaque da seleção atual"
+            hitSlop={8}
           >
-            <Text style={styles.navBtnText}>Próxima</Text>
+            <Text style={styles.searchToggleText}>Criar</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {highlightMode ? (
+        <View style={styles.selectionHintBar}>
+          <Text style={styles.selectionHintText}>
+            {pendingRects.length > 0
+              ? "Seleção capturada. Toque em Criar para adicionar comentário/cor."
+              : "Selecione um trecho de texto e depois toque em Criar."}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.pdfWrap}>
+        <NativePdfReaderAdapter
+          uri={uri}
+          token={token}
+          bookId={bookId}
+          versionId={versionId}
+          page={currentPage}
+          selectionEnabled={highlightMode && !noteModalOpen && !editingAnnotation}
+          rects={pageRects}
+          onLoaded={handleReaderLoaded}
+          onSelection={handleReaderSelection}
+          onError={setViewerError}
+        />
+      </View>
+
+      {viewerError ? <Text style={styles.errorBanner}>{viewerError}</Text> : null}
+
+      {searchOpen ? (
+        <View style={styles.searchPanel} accessibilityLiveRegion="polite">
+          {!canSearch ? (
+            <Text style={styles.searchInfo}>Busca indisponível: token ou livro não informado.</Text>
+          ) : (
+            <>
+              <View style={styles.searchRow}>
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Buscar neste livro…"
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  editable={!searchLoading}
+                  onSubmitEditing={runSearch}
+                  style={styles.searchInput}
+                  accessibilityLabel="Buscar no livro"
+                />
+                <Pressable
+                  onPress={runSearch}
+                  disabled={searchLoading || !searchQuery.trim()}
+                  style={[
+                    styles.searchBtn,
+                    searchLoading || !searchQuery.trim() ? styles.searchBtnDisabled : null,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Executar busca"
+                >
+                  <Text style={styles.searchBtnText}>{searchLoading ? "Buscando..." : "Buscar"}</Text>
+                </Pressable>
+              </View>
+
+              {searchError ? <Text style={styles.error}>{searchError}</Text> : null}
+
+              {hasSearched && !searchLoading ? (
+                searchResults.length === 0 ? (
+                  <Text style={styles.empty}>Sem resultados.</Text>
+                ) : (
+                  <View style={styles.searchResults}>
+                    <Text style={styles.searchMeta}>
+                      {searchCount != null
+                        ? `${searchResults.length} de ${searchCount} resultados`
+                        : `${searchResults.length} resultados`}
+                    </Text>
+                    <ScrollView style={styles.searchList} contentContainerStyle={styles.searchListContent}>
+                      {searchResults.map((r, idx) => {
+                        const key = `${r.book_version_id}-${r.page_number}-${idx}`;
+                        const isSelected = key === selectedResultKey;
+                        return (
+                          <Pressable
+                            key={key}
+                            onPress={() => {
+                              setSelectedResultKey(key);
+                              goToPage(r.page_number);
+                            }}
+                            style={[styles.searchItem, isSelected ? styles.searchItemActive : null]}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Abrir página ${r.page_number}`}
+                            accessibilityState={{ selected: isSelected }}
+                          >
+                            <Text style={styles.searchItemTitle}>Página {r.page_number}</Text>
+                            {renderHighlightedSnippet(r.snippet)}
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )
+              ) : searchLoading ? (
+                <View style={styles.searchLoading}>
+                  <ActivityIndicator />
+                </View>
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
+
+      <View style={styles.footer}>
+        <Pressable
+          onPress={() => goToPage(currentPage - 1)}
+          disabled={currentPage <= 1}
+          style={[styles.navBtn, currentPage <= 1 ? styles.navBtnDisabled : null]}
+          accessibilityRole="button"
+          accessibilityLabel="Página anterior"
+        >
+          <Text style={styles.navBtnText}>Anterior</Text>
+        </Pressable>
+
+        <View style={styles.pageInputWrap}>
+          <TextInput
+            value={pageInput}
+            onChangeText={setPageInput}
+            keyboardType="number-pad"
+            returnKeyType="go"
+            onSubmitEditing={() => {
+              const parsed = parseInt(pageInput, 10);
+              if (!Number.isNaN(parsed)) goToPage(parsed);
+            }}
+            style={styles.pageInput}
+            accessibilityLabel="Número da página"
+          />
+          <Pressable
+            onPress={() => {
+              const parsed = parseInt(pageInput, 10);
+              if (!Number.isNaN(parsed)) goToPage(parsed);
+            }}
+            style={styles.goBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Ir para página"
+          >
+            <Text style={styles.goBtnText}>Ir</Text>
           </Pressable>
         </View>
-        <Modal
-          transparent
-          animationType="fade"
-          visible={noteModalOpen}
-          onRequestClose={() => setNoteModalOpen(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Novo destaque (página {currentPage})</Text>
-        
-              <Text style={styles.modalLabel}>Cor</Text>
-              <View style={styles.colorRow}>
-                {HIGHLIGHT_COLORS.map((c) => (
-                  <Pressable
-                    key={c.key}
-                    onPress={() => setSelectedColorHex(c.hex)}
-                    style={[
-                      styles.colorSwatch,
-                      { backgroundColor: c.hex },
-                      selectedColorHex === c.hex ? styles.colorSwatchActive : null,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Selecionar cor ${c.label}`}
-                  />
-                ))}
-              </View>
-        
-              <Text style={styles.modalLabel}>Nota (opcional)</Text>
-              <TextInput
-                value={noteText}
-                onChangeText={setNoteText}
-                placeholder="Escreva sua nota…"
-                multiline
-                style={styles.noteInput}
-              />
-        
-              <View style={styles.modalActions}>
-                <Pressable
-                  onPress={() => {
-                    setNoteModalOpen(false);
-                    setPendingRect(null);
-                    setNoteText("");
-                  }}
-                  style={[styles.modalBtn, styles.modalBtnGhost]}
-                >
-                  <Text style={styles.modalBtnGhostText}>Cancelar</Text>
-                </Pressable>
-        
-                <Pressable
-                  disabled={savingAnnotation || !pendingRect || !token || !versionId}
-                  onPress={async () => {
-                    if (!token || !versionId || !pendingRect) return;
-        
-                    setSavingAnnotation(true);
-                    try {
-                      const created = await createAnnotation(token, {
-                        book_version: versionId!,
-                        page_number: currentPage,
-                        rects_normalizados: [pendingRect],
-                        note: noteText,
-                        color: selectedColorHex,
-                      });
 
-                      setAnnotations((prev) => [created, ...prev]);
-                      Alert.alert("Salvo", "Destaque criado com sucesso.");
-                      setNoteModalOpen(false);
-                      setPendingRect(null);
-                      setNoteText("");
-                      setHighlightMode(false);
-                    } catch (e) {
-                      Alert.alert("Erro", `Falha ao salvar anotação: ${String(e)}`);
-                    } finally {
-                      setSavingAnnotation(false);
-                    }
-                  }}
-                  style={[styles.modalBtn, styles.modalBtnPrimary, savingAnnotation ? { opacity: 0.6 } : null]}
-                >
-                  <Text style={styles.modalBtnPrimaryText}>
-                    {savingAnnotation ? "Salvando..." : "Salvar"}
+        <Pressable
+          onPress={() => goToPage(currentPage + 1)}
+          disabled={pageCount ? currentPage >= pageCount : false}
+          style={[
+            styles.navBtn,
+            pageCount && currentPage >= pageCount ? styles.navBtnDisabled : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Próxima página"
+        >
+          <Text style={styles.navBtnText}>Próxima</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.annotationsPanel}>
+        <Text style={styles.annotationsTitle}>Destaques desta página</Text>
+
+        {annotationsLoading ? (
+          <View style={styles.annotationsLoading}>
+            <ActivityIndicator />
+          </View>
+        ) : annotationsError ? (
+          <Text style={styles.error}>{annotationsError}</Text>
+        ) : pageAnnotations.length === 0 ? (
+          <Text style={styles.empty}>Nenhum destaque nesta página.</Text>
+        ) : (
+          <ScrollView style={styles.annotationList} contentContainerStyle={styles.annotationListContent}>
+            {pageAnnotations.map((annotation) => (
+              <View key={annotation.id} style={styles.annotationItem}>
+                <View
+                  style={[
+                    styles.annotationColor,
+                    { backgroundColor: annotation.color || HIGHLIGHT_COLORS[0].hex },
+                  ]}
+                />
+                <View style={styles.annotationInfo}>
+                  <Text style={styles.annotationNote} numberOfLines={2}>
+                    {annotation.note?.trim() ? annotation.note : "Sem comentário"}
                   </Text>
-                </Pressable>
+                  <Text style={styles.annotationMetaText}>
+                    {annotation.rects_normalizados?.length ?? 0} trecho(s)
+                  </Text>
+                </View>
+                <View style={styles.annotationActions}>
+                  <Pressable
+                    onPress={() => openEditModal(annotation)}
+                    style={[styles.annotationActionBtn, styles.annotationActionEditBtn]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Editar destaque ${annotation.id}`}
+                  >
+                    <Text style={styles.annotationActionText}>Editar</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleDeleteAnnotation(annotation)}
+                    style={[styles.annotationActionBtn, styles.annotationActionDeleteBtn]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Excluir destaque ${annotation.id}`}
+                  >
+                    <Text style={styles.annotationActionText}>Excluir</Text>
+                  </Pressable>
+                </View>
               </View>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={noteModalOpen}
+        onRequestClose={closeModalAndReset}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {editingAnnotation
+                ? `Editar destaque (página ${currentPage})`
+                : `Novo destaque (página ${currentPage})`}
+            </Text>
+
+            <Text style={styles.modalLabel}>Cor</Text>
+            <View style={styles.colorRow}>
+              {HIGHLIGHT_COLORS.map((c) => (
+                <Pressable
+                  key={c.key}
+                  onPress={() => setSelectedColorHex(c.hex)}
+                  style={[
+                    styles.colorSwatch,
+                    { backgroundColor: c.hex },
+                    selectedColorHex === c.hex ? styles.colorSwatchActive : null,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Selecionar cor ${c.label}`}
+                />
+              ))}
+            </View>
+
+            <Text style={styles.modalLabel}>Comentário</Text>
+            <TextInput
+              value={noteText}
+              onChangeText={setNoteText}
+              placeholder="Escreva seu comentário (opcional)…"
+              multiline
+              style={styles.noteInput}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={closeModalAndReset}
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+              >
+                <Text style={styles.modalBtnGhostText}>Cancelar</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={
+                  savingAnnotation ||
+                  !token ||
+                  !versionId ||
+                  (!editingAnnotation && pendingRects.length === 0)
+                }
+                onPress={saveAnnotation}
+                style={[styles.modalBtn, styles.modalBtnPrimary, savingAnnotation ? { opacity: 0.6 } : null]}
+              >
+                <Text style={styles.modalBtnPrimaryText}>
+                  {savingAnnotation
+                    ? "Salvando..."
+                    : editingAnnotation
+                      ? "Salvar alterações"
+                      : "Salvar destaque"}
+                </Text>
+              </Pressable>
             </View>
           </View>
-        </Modal>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -667,11 +728,46 @@ const styles = StyleSheet.create({
     backgroundColor: "#2a2a2a",
   },
   searchToggleText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  selectionHintBar: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#202020",
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  selectionHintText: { color: "#ddd", fontSize: 12 },
+
+  pdfWrap: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "#111",
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: "#111",
+  },
+  centerState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  helperText: { color: "#bbb", fontSize: 12 },
+  errorText: { color: "#ff8a80", fontSize: 13, textAlign: "center" },
+  errorBanner: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    color: "#ff8a80",
+    fontSize: 12,
+    backgroundColor: "#1b1b1b",
+  },
+
   searchPanel: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 56,
+    bottom: 226,
     maxHeight: 260,
     padding: 12,
     gap: 8,
@@ -710,6 +806,7 @@ const styles = StyleSheet.create({
   searchItemSnippet: { color: "#ddd", fontSize: 12 },
   searchHighlight: { fontWeight: "700", color: "#fff" },
   searchLoading: { paddingVertical: 8, alignItems: "center" },
+
   footer: {
     height: 56,
     paddingHorizontal: 12,
@@ -743,31 +840,53 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   goBtnText: { color: "#111", fontSize: 13, fontWeight: "700" },
-  error: { color: "#ff8a80", fontSize: 12 },
-  empty: { color: "#bbb", fontSize: 12 },
 
-  pdfWrap: { flex: 1, width: "100%" },
-  pdfStage: { flex: 1, width: "100%" },
-  overlay: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0 },
-
-  highlightRect: {
-    position: "absolute",
+  annotationsPanel: {
+    maxHeight: 170,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 10,
+    gap: 8,
+    backgroundColor: "#1b1b1b",
+    borderTopWidth: 1,
+    borderTopColor: "#333",
+  },
+  annotationsTitle: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  annotationsLoading: { paddingVertical: 8, alignItems: "center" },
+  annotationList: { maxHeight: 120 },
+  annotationListContent: { gap: 8 },
+  annotationItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     borderWidth: 1,
+    borderColor: "#333",
+    borderRadius: 8,
+    backgroundColor: "#111",
+    padding: 8,
+  },
+  annotationColor: {
+    width: 10,
+    height: 40,
     borderRadius: 6,
   },
-  selectionRect: {
-    position: "absolute",
-    borderWidth: 2,
-    borderColor: "#fff",
-    backgroundColor: "rgba(255,255,255,0.12)",
+  annotationInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  annotationNote: { color: "#fff", fontSize: 12 },
+  annotationMetaText: { color: "#9a9a9a", fontSize: 11 },
+  annotationActions: { flexDirection: "row", gap: 6 },
+  annotationActionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderRadius: 6,
   },
-  
-  pendingRect: {
-    position: "absolute",
-    borderRadius: 6,
-  },
-  
+  annotationActionEditBtn: { backgroundColor: "#2a2a2a" },
+  annotationActionDeleteBtn: { backgroundColor: "#4d1c1c" },
+  annotationActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.65)",
@@ -806,5 +925,7 @@ const styles = StyleSheet.create({
   modalBtnGhostText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   modalBtnPrimary: { backgroundColor: "#fff" },
   modalBtnPrimaryText: { color: "#111", fontSize: 13, fontWeight: "800" },
-  
+
+  error: { color: "#ff8a80", fontSize: 12 },
+  empty: { color: "#bbb", fontSize: 12 },
 });

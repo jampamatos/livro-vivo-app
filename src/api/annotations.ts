@@ -22,6 +22,14 @@ export type CreatedAnnotationPayload = {
   color?: string;
 };
 
+export type UpdateAnnotationPayload = Partial<{
+  book_version: number;
+  page_number: number;
+  rects_normalizados: NormalizedRect[];
+  note: string;
+  color: string;
+}>;
+
 export function createAnnotation(token: string, payload: CreatedAnnotationPayload) {
   return apiFetch<Annotation>("/annotations/", {
     method: "POST",
@@ -33,4 +41,23 @@ export function createAnnotation(token: string, payload: CreatedAnnotationPayloa
 export function listAnnotations(token: string, bookVersionId?: number) {
   const qs = bookVersionId ? `?book_version=${bookVersionId}` : "";
   return apiFetch<Annotation[]>(`/annotations/${qs}`, { token });
+}
+
+export function updateAnnotation(
+  token: string,
+  annotationId: number,
+  payload: UpdateAnnotationPayload
+) {
+  return apiFetch<Annotation>(`/annotations/${annotationId}/`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+}
+
+export function deleteAnnotation(token: string, annotationId: number) {
+  return apiFetch<void>(`/annotations/${annotationId}/`, {
+    method: "DELETE",
+    token,
+  });
 }

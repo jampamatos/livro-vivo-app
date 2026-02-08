@@ -1,4 +1,9 @@
-import { createAnnotation, listAnnotations } from "../src/api/annotations";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  listAnnotations,
+  updateAnnotation,
+} from "../src/api/annotations";
 import { apiFetch } from "../src/api/http";
 
 jest.mock("../src/api/http", () => ({
@@ -42,5 +47,24 @@ describe("api/annotations", () => {
     apiFetchMock.mockResolvedValueOnce([]);
     await listAnnotations("t123");
     expect(apiFetchMock).toHaveBeenCalledWith("/annotations/", { token: "t123" });
+  });
+
+  it("updateAnnotation faz PATCH em /annotations/:id/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9, note: "novo" });
+    await updateAnnotation("t123", 9, { note: "novo", color: "#FFE066" });
+    expect(apiFetchMock).toHaveBeenCalledWith("/annotations/9/", {
+      method: "PATCH",
+      token: "t123",
+      body: { note: "novo", color: "#FFE066" },
+    });
+  });
+
+  it("deleteAnnotation faz DELETE em /annotations/:id/", async () => {
+    apiFetchMock.mockResolvedValueOnce(undefined);
+    await deleteAnnotation("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/annotations/9/", {
+      method: "DELETE",
+      token: "t123",
+    });
   });
 });

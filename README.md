@@ -105,6 +105,24 @@ EXPO_PUBLIC_API_BASE_URL=http://10.0.0.153:8000 npx expo start --dev-client
 > Dica: o IP "certo" costuma ser o da sua interface de rede (ex.: `10.x.x.x` / `192.168.x.x`).
 > **Não** use IP de Docker (ex.: `172.17.0.1`) para acessar do celular.
 
+## Engine do leitor nativo
+
+O app suporta seleção da engine nativa de leitura por variável de ambiente:
+
+```bash
+EXPO_PUBLIC_NATIVE_READER_ENGINE=webview_pdfjs
+```
+
+Valores suportados:
+
+- `webview_pdfjs`: modo compatível atual.
+
+Para usar mudanças nativas no leitor, gere novamente o dev build Android:
+
+```bash
+npm run android
+```
+
 ## Backend: rodando para acesso pelo celular (ALLOWED_HOSTS)
 
 Se você acessar `http://10.0.0.153:8000/health/` pelo celular e o Django reclamar:

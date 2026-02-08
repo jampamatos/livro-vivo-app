@@ -3,8 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  PanResponder,
-  Platform,
   SafeAreaView,
   ScrollView,
   View,
@@ -13,14 +11,18 @@ import {
   StyleSheet,
   TextInput,
   useWindowDimensions,
-  type ViewStyle,
 } from "react-native";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 import { searchBook, BookSearchResult } from "../api/books";
 import { ApiError } from "../api/http";
-import { createAnnotation, listAnnotations } from "../api/annotations";
+import {
+  createAnnotation,
+  deleteAnnotation,
+  listAnnotations,
+  updateAnnotation,
+} from "../api/annotations";
 import type { Annotation } from "../api/annotations";
 import type { NormalizedRect } from "../api/annotations";
 import { withAlpha } from "../utils/colors";
@@ -45,31 +47,8 @@ const HIGHLIGHT_COLORS = [
   { key: "blue", label: "Azul", hex: "#A2D2FF" },
 ] as const;
 
-type HighlightColorHex = typeof HIGHLIGHT_COLORS[number]["hex"];
-
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
-}
-
-/** Normaliza um retângulo em pixels para coordenadas 0..1. */
-function normalizeRectPx(
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-  layout: { width: number; height: number }
-): NormalizedRect {
-  const left = Math.min(startX, endX);
-  const top = Math.min(startY, endY);
-  const width = Math.abs(endX - startX);
-  const height = Math.abs(endY - startY);
-
-  const x1 = clamp01(left / layout.width);
-  const y1 = clamp01(top / layout.height);
-  const x2 = clamp01((left + width) / layout.width);
-  const y2 = clamp01((top + height) / layout.height);
-
-  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
 /** Converte um retângulo normalizado para pixels do layout atual. */
@@ -83,6 +62,124 @@ function denormalizeRect(
     width: r.w * layout.width,
     height: r.h * layout.height,
   };
+}
+
+function normalizeClientRect(
+  rect: DOMRect,
+  containerRect: DOMRect
+): NormalizedRect | null {
+  const left = Math.max(rect.left, containerRect.left);
+  const right = Math.min(rect.right, containerRect.right);
+  const top = Math.max(rect.top, containerRect.top);
+  const bottom = Math.min(rect.bottom, containerRect.bottom);
+
+  const width = right - left;
+  const height = bottom - top;
+
+  if (width < 2 || height < 2 || containerRect.width <= 0 || containerRect.height <= 0) {
+    return null;
+  }
+
+  const x1 = clamp01((left - containerRect.left) / containerRect.width);
+  const y1 = clamp01((top - containerRect.top) / containerRect.height);
+  const x2 = clamp01((right - containerRect.left) / containerRect.width);
+  const y2 = clamp01((bottom - containerRect.top) / containerRect.height);
+
+  return {
+    x: x1,
+    y: y1,
+    w: Math.max(0, x2 - x1),
+    h: Math.max(0, y2 - y1),
+  };
+}
+
+function mergeRectsByLine(rects: NormalizedRect[]) {
+  if (!rects.length) return [];
+
+  const sorted = rects.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  const merged: NormalizedRect[] = [];
+
+  for (const rect of sorted) {
+    const prev = merged[merged.length - 1];
+    if (!prev) {
+      merged.push({ ...rect });
+      continue;
+    }
+
+    const sameLine = Math.abs(prev.y - rect.y) < 0.01 && Math.abs(prev.h - rect.h) < 0.025;
+    const touching = rect.x <= prev.x + prev.w + 0.012;
+
+    if (sameLine && touching) {
+      const x1 = Math.min(prev.x, rect.x);
+      const y1 = Math.min(prev.y, rect.y);
+      const x2 = Math.max(prev.x + prev.w, rect.x + rect.w);
+      const y2 = Math.max(prev.y + prev.h, rect.y + rect.h);
+      prev.x = x1;
+      prev.y = y1;
+      prev.w = x2 - x1;
+      prev.h = y2 - y1;
+    } else {
+      merged.push({ ...rect });
+    }
+  }
+
+  return merged;
+}
+
+function collectSelectionRectsFromTextLayer(
+  range: Range,
+  stageElement: HTMLElement
+) {
+  const stageRect = stageElement.getBoundingClientRect();
+  const selectionClientRects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width >= 1 && rect.height >= 1
+  );
+  const textLayer =
+    stageElement.querySelector(".react-pdf__Page__textContent") ??
+    stageElement.querySelector('[class*="textContent"]');
+
+  const overlapArea = (a: DOMRect, b: DOMRect) => {
+    const left = Math.max(a.left, b.left);
+    const right = Math.min(a.right, b.right);
+    const top = Math.max(a.top, b.top);
+    const bottom = Math.min(a.bottom, b.bottom);
+    const width = right - left;
+    const height = bottom - top;
+    if (width <= 0 || height <= 0) return 0;
+    return width * height;
+  };
+  const rectArea = (rect: DOMRect) => Math.max(0, rect.width) * Math.max(0, rect.height);
+
+  if (!textLayer) {
+    return mergeRectsByLine(
+      selectionClientRects
+        .map((rect) => normalizeClientRect(rect, stageRect))
+        .filter((rect): rect is NormalizedRect => Boolean(rect))
+    );
+  }
+
+  const glyphRects = Array.from(textLayer.querySelectorAll("span"))
+    .filter((span) => /\S/.test(span.textContent ?? ""))
+    .map((span) => span.getBoundingClientRect())
+    .filter((rect) => rect.width >= 1 && rect.height >= 1);
+
+  const coveredSelectionRects = selectionClientRects.filter((selectionRect) => {
+    const selectionArea = Math.max(1, rectArea(selectionRect));
+    let covered = 0;
+    for (const glyphRect of glyphRects) {
+      covered += overlapArea(selectionRect, glyphRect);
+      if (covered / selectionArea >= 0.08) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  return mergeRectsByLine(
+    (coveredSelectionRects.length > 0 ? coveredSelectionRects : selectionClientRects)
+      .map((rect) => normalizeClientRect(rect, stageRect))
+      .filter((rect): rect is NormalizedRect => Boolean(rect))
+  );
 }
 
 export default function PdfReaderScreenWeb({
@@ -104,6 +201,8 @@ export default function PdfReaderScreenWeb({
       : { url: uri };
   }, [token, uri]);
 
+  const pageStageRef = React.useRef<HTMLElement | null>(null);
+
   const [currentPage, setCurrentPage] = React.useState<number>(initialPage ?? 1);
   const [pageCount, setPageCount] = React.useState<number | null>(null);
   const [pageInput, setPageInput] = React.useState<string>(String(initialPage ?? 1));
@@ -122,20 +221,25 @@ export default function PdfReaderScreenWeb({
   const [highlightMode, setHighlightMode] = React.useState(false);
   const [pdfViewport, setPdfViewport] = React.useState<{ w: number; h: number } | null>(null);
 
-  const [drag, setDrag] = React.useState<{
-    startX: number; startY: number; endX: number; endY: number; active: boolean;
-  } | null>(null);
-
-  const [pendingRect, setPendingRect] = React.useState<NormalizedRect | null>(null);
+  const [pendingRects, setPendingRects] = React.useState<NormalizedRect[]>([]);
+  const [editingAnnotation, setEditingAnnotation] = React.useState<Annotation | null>(null);
   const [noteModalOpen, setNoteModalOpen] = React.useState(false);
   const [noteText, setNoteText] = React.useState("");
-  const [selectedColorHex, setSelectedColorHex] = React.useState<HighlightColorHex>(
+  const [selectedColorHex, setSelectedColorHex] = React.useState<string>(
     HIGHLIGHT_COLORS[0].hex
   );
   const [savingAnnotation, setSavingAnnotation] = React.useState(false);
   const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
   const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
   const [annotationsError, setAnnotationsError] = React.useState<string | null>(null);
+
+  const closeModalAndReset = React.useCallback(() => {
+    setNoteModalOpen(false);
+    setPendingRects([]);
+    setEditingAnnotation(null);
+    setNoteText("");
+    setSelectedColorHex(HIGHLIGHT_COLORS[0].hex);
+  }, []);
 
   const loadAnnotations = React.useCallback(async () => {
     if (!token || !versionId) return;
@@ -161,6 +265,28 @@ export default function PdfReaderScreenWeb({
   React.useEffect(() => {
     loadAnnotations();
   }, [loadAnnotations]);
+
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const styleId = "pdf-text-layer-selection-fix";
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      .react-pdf__Page__textContent,
+      .react-pdf__Page__textContent * {
+        -webkit-text-size-adjust: none !important;
+        text-size-adjust: none !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
 
   const canSearch = Boolean(token && bookId);
 
@@ -232,73 +358,158 @@ export default function PdfReaderScreenWeb({
     [searchQuery]
   );
 
-  const pageRects = React.useMemo(() => {
-    const current = annotations.filter((a) => a.page_number === currentPage);
-    return current.flatMap((a) =>
-      (a.rects_normalizados ?? []).map((r, idx) => ({
-        key: `${a.id}-${idx}`,
-        rect: r,
-        color: a.color || "#FFE066",
-      }))
-    );
-  }, [annotations, currentPage]);
+  const pageAnnotations = React.useMemo(
+    () => annotations.filter((a) => a.page_number === currentPage),
+    [annotations, currentPage]
+  );
 
-  const panResponder = React.useMemo(
+  const pageRects = React.useMemo(
     () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => highlightMode,
-        onMoveShouldSetPanResponder: () => highlightMode,
-        onStartShouldSetPanResponderCapture: () => highlightMode,
-        onMoveShouldSetPanResponderCapture: () => highlightMode,
+      pageAnnotations.flatMap((a) =>
+        (a.rects_normalizados ?? []).map((r, idx) => ({
+          key: `${a.id}-${idx}`,
+          rect: r,
+          color: a.color || HIGHLIGHT_COLORS[0].hex,
+        }))
+      ),
+    [pageAnnotations]
+  );
 
-        onPanResponderGrant: (evt) => {
-          if (!highlightMode) return;
-          evt.preventDefault?.();
-          const { locationX, locationY } = evt.nativeEvent;
-          setDrag({ startX: locationX, startY: locationY, endX: locationX, endY: locationY, active: true });
-        },
+  const openEditModal = React.useCallback((annotation: Annotation) => {
+    setEditingAnnotation(annotation);
+    setPendingRects(annotation.rects_normalizados ?? []);
+    setNoteText(annotation.note ?? "");
+    setSelectedColorHex(annotation.color || HIGHLIGHT_COLORS[0].hex);
+    setNoteModalOpen(true);
+  }, []);
 
-        onPanResponderMove: (evt) => {
-          if (!highlightMode) return;
-          evt.preventDefault?.();
-          const { locationX, locationY } = evt.nativeEvent;
-          setDrag((prev) => (prev ? { ...prev, endX: locationX, endY: locationY } : prev));
-        },
+  const captureTextSelection = React.useCallback(() => {
+    if (!highlightMode || !canAnnotate || noteModalOpen) return;
+    if (typeof window === "undefined") return;
 
-        onPanResponderRelease: () => {
-          if (!highlightMode || !drag || !pdfViewport) {
-            setDrag(null);
-            return;
-          }
+    const stageElement = pageStageRef.current;
+    if (!stageElement) return;
 
-          const w = Math.abs(drag.endX - drag.startX);
-          const h = Math.abs(drag.endY - drag.startY);
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
 
-          if (w < 8 || h < 8) {
-            setDrag(null);
-            return;
-          }
+    const range = selection.getRangeAt(0);
+    if (!stageElement.contains(range.commonAncestorContainer)) return;
 
-          // Finaliza a seleção e abre o modal de anotação.
-          const rect = normalizeRectPx(drag.startX, drag.startY, drag.endX, drag.endY, {
-            width: pdfViewport.w,
-            height: pdfViewport.h,
-          });
-          setPendingRect(rect);
-          setNoteModalOpen(true);
-          setDrag(null);
-        },
+    const rects = collectSelectionRectsFromTextLayer(range, stageElement).slice(0, 64);
 
-        onPanResponderTerminate: () => setDrag(null),
-      }),
-    [drag, highlightMode, pdfViewport]
+    if (!rects.length) return;
+
+    setPendingRects(rects);
+    setEditingAnnotation(null);
+    setNoteText("");
+    setSelectedColorHex(HIGHLIGHT_COLORS[0].hex);
+    setNoteModalOpen(true);
+    selection.removeAllRanges();
+  }, [canAnnotate, highlightMode, noteModalOpen]);
+
+  React.useEffect(() => {
+    if (!highlightMode || !canAnnotate) return;
+    if (typeof document === "undefined") return;
+
+    const onSelectionEnd = () => {
+      setTimeout(() => {
+        captureTextSelection();
+      }, 0);
+    };
+
+    document.addEventListener("mouseup", onSelectionEnd);
+    document.addEventListener("keyup", onSelectionEnd);
+
+    return () => {
+      document.removeEventListener("mouseup", onSelectionEnd);
+      document.removeEventListener("keyup", onSelectionEnd);
+    };
+  }, [canAnnotate, captureTextSelection, highlightMode]);
+
+  const saveAnnotation = React.useCallback(async () => {
+    if (!token || !versionId) return;
+
+    if (!editingAnnotation && pendingRects.length === 0) {
+      Alert.alert("Sem seleção", "Selecione um trecho de texto para destacar.");
+      return;
+    }
+
+    setSavingAnnotation(true);
+
+    try {
+      if (editingAnnotation) {
+        const updated = await updateAnnotation(token, editingAnnotation.id, {
+          note: noteText,
+          color: selectedColorHex,
+        });
+
+        setAnnotations((prev) =>
+          prev.map((annotation) =>
+            annotation.id === updated.id ? updated : annotation
+          )
+        );
+
+        Alert.alert("Salvo", "Destaque atualizado com sucesso.");
+      } else {
+        const created = await createAnnotation(token, {
+          book_version: versionId,
+          page_number: currentPage,
+          rects_normalizados: pendingRects,
+          note: noteText,
+          color: selectedColorHex,
+        });
+
+        setAnnotations((prev) => [created, ...prev]);
+        Alert.alert("Salvo", "Destaque criado com sucesso.");
+        setHighlightMode(false);
+      }
+
+      closeModalAndReset();
+    } catch (e) {
+      Alert.alert("Erro", `Falha ao salvar anotação: ${String(e)}`);
+    } finally {
+      setSavingAnnotation(false);
+    }
+  }, [
+    closeModalAndReset,
+    currentPage,
+    editingAnnotation,
+    noteText,
+    pendingRects,
+    selectedColorHex,
+    token,
+    versionId,
+  ]);
+
+  const handleDeleteAnnotation = React.useCallback(
+    async (annotation: Annotation) => {
+      if (!token) return;
+
+      const confirmed =
+        typeof window !== "undefined" && typeof window.confirm === "function"
+          ? window.confirm("Excluir este destaque? Esta ação não pode ser desfeita.")
+          : true;
+
+      if (!confirmed) return;
+
+      try {
+        await deleteAnnotation(token, annotation.id);
+        setAnnotations((prev) => prev.filter((item) => item.id !== annotation.id));
+
+        if (editingAnnotation?.id === annotation.id) {
+          closeModalAndReset();
+        }
+
+        Alert.alert("Excluído", "Destaque removido.");
+      } catch (e) {
+        Alert.alert("Erro", `Falha ao excluir anotação: ${String(e)}`);
+      }
+    },
+    [closeModalAndReset, editingAnnotation?.id, token]
   );
 
   const pageWidth = Math.min(windowWidth - 32, 900);
-  const webOverlayStyle =
-    Platform.OS === "web"
-      ? ({ cursor: "crosshair", userSelect: "none" } as unknown as ViewStyle)
-      : undefined;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -336,16 +547,35 @@ export default function PdfReaderScreenWeb({
               return;
             }
             setSearchOpen(false);
-            setHighlightMode((prev) => !prev);
+            setHighlightMode((prev) => {
+              const next = !prev;
+              if (!next) {
+                if (typeof window !== "undefined") {
+                  window.getSelection()?.removeAllRanges();
+                }
+                setPendingRects([]);
+              }
+              return next;
+            });
           }}
           style={styles.searchToggle}
           accessibilityRole="button"
-          accessibilityLabel={highlightMode ? "Cancelar destaque" : "Criar destaque"}
+          accessibilityLabel={highlightMode ? "Desativar seleção" : "Ativar seleção"}
           hitSlop={8}
         >
-          <Text style={styles.searchToggleText}>{highlightMode ? "Cancelar" : "Destacar"}</Text>
+          <Text style={styles.searchToggleText}>
+            {highlightMode ? "Parar" : "Destacar"}
+          </Text>
         </Pressable>
       </View>
+
+      {highlightMode ? (
+        <View style={styles.selectionHintBar}>
+          <Text style={styles.selectionHintText}>
+            Selecione um trecho de texto no PDF para criar um destaque.
+          </Text>
+        </View>
+      ) : null}
 
       {searchOpen ? (
         <View style={styles.searchPanel} accessibilityLiveRegion="polite">
@@ -446,6 +676,9 @@ export default function PdfReaderScreenWeb({
             error={<Text style={styles.bodyText}>Erro ao carregar PDF.</Text>}
           >
             <View
+              ref={(node) => {
+                pageStageRef.current = node as unknown as HTMLElement | null;
+              }}
               style={styles.pageStage}
               onLayout={(e) => {
                 const { width, height } = e.nativeEvent.layout;
@@ -478,41 +711,30 @@ export default function PdfReaderScreenWeb({
                       />
                     ))
                   : null}
-              </View>
 
-              {highlightMode ? (
-                <View style={[styles.overlay, webOverlayStyle]} {...panResponder.panHandlers} />
-              ) : null}
-              {highlightMode && drag && pdfViewport ? (
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.selectionRect,
-                    {
-                      left: Math.min(drag.startX, drag.endX),
-                      top: Math.min(drag.startY, drag.endY),
-                      width: Math.abs(drag.endX - drag.startX),
-                      height: Math.abs(drag.endY - drag.startY),
-                    },
-                  ]}
-                />
-              ) : null}
-              {pendingRect && pdfViewport ? (
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.pendingRect,
-                    {
-                      backgroundColor: selectedColorHex,
-                      opacity: 0.25,
-                      ...denormalizeRect(pendingRect, { width: pdfViewport.w, height: pdfViewport.h }),
-                    },
-                  ]}
-                />
-              ) : null}
+                {pdfViewport
+                  ? pendingRects.map((rect, idx) => (
+                      <View
+                        key={`pending-${idx}`}
+                        style={[
+                          styles.pendingRect,
+                          {
+                            backgroundColor: selectedColorHex,
+                            opacity: 0.25,
+                            ...denormalizeRect(rect, {
+                              width: pdfViewport.w,
+                              height: pdfViewport.h,
+                            }),
+                          },
+                        ]}
+                      />
+                    ))
+                  : null}
+              </View>
             </View>
           </Document>
         </View>
+
         <View style={styles.pageControls}>
           <Pressable
             onPress={() => goToPage(currentPage - 1)}
@@ -551,26 +773,85 @@ export default function PdfReaderScreenWeb({
           <Pressable
             onPress={() => goToPage(currentPage + 1)}
             disabled={pageCount ? currentPage >= pageCount : false}
-            style={styles.navBtn}
+            style={[styles.navBtn, pageCount && currentPage >= pageCount ? styles.navBtnDisabled : null]}
             accessibilityRole="button"
             accessibilityLabel="Próxima página"
           >
             <Text style={styles.navBtnText}>Próxima</Text>
           </Pressable>
         </View>
+
         <Text style={styles.pageMetaFooter}>
           Página {currentPage}{pageCount ? ` / ${pageCount}` : ""}
         </Text>
+
+        <View style={styles.annotationsPanel}>
+          <Text style={styles.annotationsTitle}>Destaques desta página</Text>
+
+          {annotationsLoading ? (
+            <View style={styles.annotationsLoading}>
+              <ActivityIndicator />
+            </View>
+          ) : annotationsError ? (
+            <Text style={styles.error}>{annotationsError}</Text>
+          ) : pageAnnotations.length === 0 ? (
+            <Text style={styles.empty}>Nenhum destaque nesta página.</Text>
+          ) : (
+            <ScrollView style={styles.annotationList} contentContainerStyle={styles.annotationListContent}>
+              {pageAnnotations.map((annotation) => (
+                <View key={annotation.id} style={styles.annotationItem}>
+                  <View
+                    style={[
+                      styles.annotationColor,
+                      { backgroundColor: annotation.color || HIGHLIGHT_COLORS[0].hex },
+                    ]}
+                  />
+                  <View style={styles.annotationInfo}>
+                    <Text style={styles.annotationNote} numberOfLines={2}>
+                      {annotation.note?.trim() ? annotation.note : "Sem comentário"}
+                    </Text>
+                    <Text style={styles.annotationMetaText}>
+                      {annotation.rects_normalizados?.length ?? 0} trecho(s)
+                    </Text>
+                  </View>
+                  <View style={styles.annotationActions}>
+                    <Pressable
+                      onPress={() => openEditModal(annotation)}
+                      style={[styles.annotationActionBtn, styles.annotationActionEditBtn]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Editar destaque ${annotation.id}`}
+                    >
+                      <Text style={styles.annotationActionText}>Editar</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleDeleteAnnotation(annotation)}
+                      style={[styles.annotationActionBtn, styles.annotationActionDeleteBtn]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Excluir destaque ${annotation.id}`}
+                    >
+                      <Text style={styles.annotationActionText}>Excluir</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
       </View>
+
       <Modal
         transparent
         animationType="fade"
         visible={noteModalOpen}
-        onRequestClose={() => setNoteModalOpen(false)}
+        onRequestClose={closeModalAndReset}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Novo destaque (página {currentPage})</Text>
+            <Text style={styles.modalTitle}>
+              {editingAnnotation
+                ? `Editar destaque (página ${currentPage})`
+                : `Novo destaque (página ${currentPage})`}
+            </Text>
 
             <Text style={styles.modalLabel}>Cor</Text>
             <View style={styles.colorRow}>
@@ -589,58 +870,39 @@ export default function PdfReaderScreenWeb({
               ))}
             </View>
 
-            <Text style={styles.modalLabel}>Nota (opcional)</Text>
+            <Text style={styles.modalLabel}>Comentário</Text>
             <TextInput
               value={noteText}
               onChangeText={setNoteText}
-              placeholder="Escreva sua nota…"
+              placeholder="Escreva seu comentário (opcional)…"
               multiline
               style={styles.noteInput}
             />
 
             <View style={styles.modalActions}>
               <Pressable
-                onPress={() => {
-                  setNoteModalOpen(false);
-                  setPendingRect(null);
-                  setNoteText("");
-                }}
+                onPress={closeModalAndReset}
                 style={[styles.modalBtn, styles.modalBtnGhost]}
               >
                 <Text style={styles.modalBtnGhostText}>Cancelar</Text>
               </Pressable>
 
               <Pressable
-                disabled={savingAnnotation || !pendingRect || !token || !versionId}
-                onPress={async () => {
-                  if (!token || !versionId || !pendingRect) return;
-
-                  setSavingAnnotation(true);
-                  try {
-                    const created = await createAnnotation(token, {
-                      book_version: versionId!,
-                      page_number: currentPage,
-                      rects_normalizados: [pendingRect],
-                      note: noteText,
-                      color: selectedColorHex,
-                    });
-
-                    setAnnotations((prev) => [created, ...prev]);
-                    Alert.alert("Salvo", "Destaque criado com sucesso.");
-                    setNoteModalOpen(false);
-                    setPendingRect(null);
-                    setNoteText("");
-                    setHighlightMode(false);
-                  } catch (e) {
-                    Alert.alert("Erro", `Falha ao salvar anotação: ${String(e)}`);
-                  } finally {
-                    setSavingAnnotation(false);
-                  }
-                }}
+                disabled={
+                  savingAnnotation ||
+                  !token ||
+                  !versionId ||
+                  (!editingAnnotation && pendingRects.length === 0)
+                }
+                onPress={saveAnnotation}
                 style={[styles.modalBtn, styles.modalBtnPrimary, savingAnnotation ? { opacity: 0.6 } : null]}
               >
                 <Text style={styles.modalBtnPrimaryText}>
-                  {savingAnnotation ? "Salvando..." : "Salvar"}
+                  {savingAnnotation
+                    ? "Salvando..."
+                    : editingAnnotation
+                      ? "Salvar alterações"
+                      : "Salvar destaque"}
                 </Text>
               </Pressable>
             </View>
@@ -673,6 +935,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#2a2a2a",
   },
   searchToggleText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  selectionHintBar: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#202020",
+    borderBottomWidth: 1,
+    borderBottomColor: "#333",
+  },
+  selectionHintText: { color: "#ddd", fontSize: 12 },
   searchPanel: {
     padding: 12,
     gap: 8,
@@ -737,30 +1007,86 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
-  overlay: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-  },
   highlightRect: {
     position: "absolute",
     borderWidth: 1,
-    borderRadius: 6,
-  },
-  selectionRect: {
-    position: "absolute",
-    borderWidth: 2,
-    borderColor: "#fff",
-    backgroundColor: "rgba(255,255,255,0.12)",
     borderRadius: 6,
   },
   pendingRect: {
     position: "absolute",
     borderRadius: 6,
   },
+  pageControls: { flexDirection: "row", gap: 8, marginTop: 16, alignItems: "center" },
+  navBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#2a2a2a",
+  },
+  navBtnDisabled: { opacity: 0.5 },
+  navBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  pageInputWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pageInput: {
+    minWidth: 64,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 14,
+  },
+  goBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+  },
+  goBtnText: { color: "#111", fontSize: 13, fontWeight: "700" },
+  pageMetaFooter: { color: "#bbb", fontSize: 12 },
+  annotationsPanel: {
+    width: "100%",
+    maxWidth: 900,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#333",
+    backgroundColor: "#1b1b1b",
+    padding: 10,
+    gap: 8,
+  },
+  annotationsTitle: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  annotationsLoading: { paddingVertical: 8, alignItems: "center" },
+  annotationList: { maxHeight: 170 },
+  annotationListContent: { gap: 8 },
+  annotationItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#333",
+    borderRadius: 8,
+    backgroundColor: "#111",
+    padding: 8,
+  },
+  annotationColor: {
+    width: 10,
+    height: 40,
+    borderRadius: 6,
+  },
+  annotationInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  annotationNote: { color: "#fff", fontSize: 12 },
+  annotationMetaText: { color: "#9a9a9a", fontSize: 11 },
+  annotationActions: { flexDirection: "row", gap: 6 },
+  annotationActionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  annotationActionEditBtn: { backgroundColor: "#2a2a2a" },
+  annotationActionDeleteBtn: { backgroundColor: "#4d1c1c" },
+  annotationActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.65)",
@@ -799,32 +1125,6 @@ const styles = StyleSheet.create({
   modalBtnGhostText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   modalBtnPrimary: { backgroundColor: "#fff" },
   modalBtnPrimaryText: { color: "#111", fontSize: 13, fontWeight: "800" },
-  pageControls: { flexDirection: "row", gap: 8, marginTop: 16, alignItems: "center" },
-  navBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#2a2a2a",
-  },
-  navBtnDisabled: { opacity: 0.5 },
-  navBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  pageInputWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
-  pageInput: {
-    minWidth: 64,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontSize: 14,
-  },
-  goBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-  },
-  goBtnText: { color: "#111", fontSize: 13, fontWeight: "700" },
-  pageMetaFooter: { color: "#bbb", fontSize: 12 },
   error: { color: "#ff8a80", fontSize: 12 },
   empty: { color: "#bbb", fontSize: 12 },
 });
