@@ -67,7 +67,6 @@ jest.mock("../src/storage/pdfViewer", () => ({
 
 import * as FileSystem from "expo-file-system";
 import { ensurePdfCacheDir, getPdfPath, isPdfCached, downloadPdfToPath, openPdfAtPath } from "../src/storage/pdfCache";
-import { isAvailableAsync, shareAsync } from "expo-sharing";
 import { openPdfInViewer } from "../src/storage/pdfViewer";
 
 describe("pdfCache", () => {

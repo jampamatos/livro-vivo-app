@@ -126,17 +126,97 @@ function mergeRectsByLine(rects: NormalizedRect[]) {
   return merged;
 }
 
+function dedupeRects(rects: NormalizedRect[]) {
+  if (!rects.length) return [];
+
+  const deduped: NormalizedRect[] = [];
+  for (const rect of rects) {
+    const idx = deduped.findIndex((existing) => {
+      const xOverlap =
+        Math.min(rect.x + rect.w, existing.x + existing.w) - Math.max(rect.x, existing.x);
+      const yOverlap =
+        Math.min(rect.y + rect.h, existing.y + existing.h) - Math.max(rect.y, existing.y);
+      if (xOverlap <= 0 || yOverlap <= 0) return false;
+
+      const minWidth = Math.max(0.0001, Math.min(rect.w, existing.w));
+      const minHeight = Math.max(0.0001, Math.min(rect.h, existing.h));
+      const xRatio = xOverlap / minWidth;
+      const yRatio = yOverlap / minHeight;
+      const centerDeltaY = Math.abs(
+        rect.y + rect.h / 2 - (existing.y + existing.h / 2)
+      );
+
+      return xRatio > 0.85 && yRatio > 0.35 && centerDeltaY < 0.02;
+    });
+
+    if (idx < 0) {
+      deduped.push({ ...rect });
+      continue;
+    }
+
+    const area = rect.w * rect.h;
+    const existingArea = deduped[idx].w * deduped[idx].h;
+    if (area > existingArea) {
+      deduped[idx] = { ...rect };
+    }
+  }
+
+  return deduped;
+}
+
 function collectSelectionRectsFromTextLayer(
   range: Range,
   stageElement: HTMLElement
 ) {
   const stageRect = stageElement.getBoundingClientRect();
-  const selectionClientRects = Array.from(range.getClientRects()).filter(
-    (rect) => rect.width >= 1 && rect.height >= 1
-  );
   const textLayer =
     stageElement.querySelector(".react-pdf__Page__textContent") ??
     stageElement.querySelector('[class*="textContent"]');
+
+  const fallbackSelectionClientRects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width >= 1 && rect.height >= 1
+  );
+
+  if (!textLayer) {
+    return mergeRectsByLine(
+      fallbackSelectionClientRects
+        .map((rect) => normalizeClientRect(rect, stageRect))
+        .filter((rect): rect is NormalizedRect => Boolean(rect))
+    );
+  }
+
+  const textSelectionClientRects: DOMRect[] = [];
+  const spans = Array.from(textLayer.querySelectorAll("span")).filter((span) => {
+    if (!/\S/.test(span.textContent ?? "")) return false;
+    if (span.classList.contains("markedContent")) return false;
+    if (span.getAttribute("role") === "img") return false;
+    if (span.querySelector("span")) return false;
+    return true;
+  });
+
+  for (const span of spans) {
+    try {
+      if (!range.intersectsNode(span)) continue;
+
+      const spanRange = document.createRange();
+      spanRange.selectNodeContents(span);
+
+      const intersection = range.cloneRange();
+      if (intersection.compareBoundaryPoints(Range.START_TO_START, spanRange) < 0) {
+        intersection.setStart(spanRange.startContainer, spanRange.startOffset);
+      }
+      if (intersection.compareBoundaryPoints(Range.END_TO_END, spanRange) > 0) {
+        intersection.setEnd(spanRange.endContainer, spanRange.endOffset);
+      }
+
+      if (intersection.collapsed) continue;
+      textSelectionClientRects.push(
+        ...Array.from(intersection.getClientRects()).filter((rect) => rect.width >= 1 && rect.height >= 1)
+      );
+    } catch {
+      // Ignora spans que falham em ranges inválidos no DOM dinâmico do pdf.js.
+    }
+  }
 
   const overlapArea = (a: DOMRect, b: DOMRect) => {
     const left = Math.max(a.left, b.left);
@@ -148,37 +228,32 @@ function collectSelectionRectsFromTextLayer(
     if (width <= 0 || height <= 0) return 0;
     return width * height;
   };
-  const rectArea = (rect: DOMRect) => Math.max(0, rect.width) * Math.max(0, rect.height);
 
-  if (!textLayer) {
-    return mergeRectsByLine(
-      selectionClientRects
-        .map((rect) => normalizeClientRect(rect, stageRect))
-        .filter((rect): rect is NormalizedRect => Boolean(rect))
-    );
-  }
-
-  const glyphRects = Array.from(textLayer.querySelectorAll("span"))
-    .filter((span) => /\S/.test(span.textContent ?? ""))
-    .map((span) => span.getBoundingClientRect())
-    .filter((rect) => rect.width >= 1 && rect.height >= 1);
-
-  const coveredSelectionRects = selectionClientRects.filter((selectionRect) => {
-    const selectionArea = Math.max(1, rectArea(selectionRect));
+  const coveredSelectionRects = fallbackSelectionClientRects.filter((selectionRect) => {
+    const selectionArea = Math.max(1, selectionRect.width * selectionRect.height);
     let covered = 0;
-    for (const glyphRect of glyphRects) {
-      covered += overlapArea(selectionRect, glyphRect);
-      if (covered / selectionArea >= 0.08) {
+    for (const textRect of textSelectionClientRects) {
+      covered += overlapArea(selectionRect, textRect);
+      if (covered / selectionArea >= 0.22) {
         return true;
       }
     }
     return false;
   });
 
-  return mergeRectsByLine(
-    (coveredSelectionRects.length > 0 ? coveredSelectionRects : selectionClientRects)
-      .map((rect) => normalizeClientRect(rect, stageRect))
-      .filter((rect): rect is NormalizedRect => Boolean(rect))
+  const selectedClientRects =
+    coveredSelectionRects.length > 0
+      ? coveredSelectionRects
+      : (fallbackSelectionClientRects.length > 0
+        ? fallbackSelectionClientRects
+        : textSelectionClientRects);
+
+  return dedupeRects(
+    mergeRectsByLine(
+      selectedClientRects
+        .map((rect) => normalizeClientRect(rect, stageRect))
+        .filter((rect): rect is NormalizedRect => Boolean(rect))
+    )
   );
 }
 

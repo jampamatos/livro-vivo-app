@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  ActivityIndicator,
   Text,
   View,
   StyleSheet,
@@ -122,15 +121,19 @@ function buildViewerHtml(payload: {
 
       #text-layer {
         position: absolute;
-        left: 0;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        overflow: hidden;
+        text-align: initial;
+        inset: 0;
+        overflow: clip;
         line-height: 1;
         opacity: 1;
         -webkit-text-size-adjust: none;
         text-size-adjust: none;
+        forced-color-adjust: none;
+        transform-origin: 0 0;
+        caret-color: CanvasText;
+        z-index: 0;
+        -webkit-user-select: text;
+        user-select: text;
       }
 
       #text-layer > span,
@@ -142,10 +145,46 @@ function buildViewerHtml(payload: {
         transform-origin: 0% 0%;
         -webkit-text-size-adjust: none;
         text-size-adjust: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      #text-layer > :not(.markedContent),
+      #text-layer .markedContent span:not(.markedContent) {
+        z-index: 1;
+      }
+
+      #text-layer span.markedContent {
+        top: 0;
+        height: 0;
+      }
+
+      #text-layer span[role="img"] {
+        -webkit-user-select: none;
+        user-select: none;
+        cursor: default;
       }
 
       #text-layer ::selection {
-        background: rgba(127, 187, 255, 0.35);
+        background: rgba(0, 0, 255, 0.25);
+      }
+
+      #text-layer br::selection {
+        background: transparent;
+      }
+
+      #text-layer .endOfContent {
+        display: block;
+        position: absolute;
+        inset: 100% 0 0;
+        z-index: 0;
+        cursor: default;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      #text-layer.selecting .endOfContent {
+        top: 0;
       }
 
       body.selection-enabled,
@@ -174,7 +213,7 @@ function buildViewerHtml(payload: {
       <div id="status">Carregando PDF...</div>
       <div id="page-wrap" style="display:none;">
         <canvas id="pdf-canvas"></canvas>
-        <div id="text-layer"></div>
+        <div id="text-layer"><div class="endOfContent"></div></div>
         <div id="overlay-layer"></div>
       </div>
     </div>
@@ -190,6 +229,7 @@ function buildViewerHtml(payload: {
         const overlayLayerEl = document.getElementById('overlay-layer');
         let selectionCaptureTimeout = null;
         let lastSelectionFingerprint = '';
+        let listenersAttached = false;
         const pdfJsScriptCandidates = [
           'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
           'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
@@ -248,7 +288,41 @@ function buildViewerHtml(payload: {
           return width * height;
         };
 
-        const rectArea = (rect) => Math.max(0, rect.width) * Math.max(0, rect.height);
+        const dedupeRects = (rects) => {
+          const deduped = [];
+          for (const rect of rects) {
+            const duplicateIndex = deduped.findIndex((existing) => {
+              const xOverlap =
+                Math.min(rect.x + rect.w, existing.x + existing.w) - Math.max(rect.x, existing.x);
+              const yOverlap =
+                Math.min(rect.y + rect.h, existing.y + existing.h) - Math.max(rect.y, existing.y);
+              if (xOverlap <= 0 || yOverlap <= 0) return false;
+
+              const minWidth = Math.max(0.0001, Math.min(rect.w, existing.w));
+              const minHeight = Math.max(0.0001, Math.min(rect.h, existing.h));
+              const xRatio = xOverlap / minWidth;
+              const yRatio = yOverlap / minHeight;
+              const centerDeltaY = Math.abs(
+                rect.y + rect.h / 2 - (existing.y + existing.h / 2)
+              );
+
+              return xRatio > 0.85 && yRatio > 0.35 && centerDeltaY < 0.02;
+            });
+
+            if (duplicateIndex < 0) {
+              deduped.push(rect);
+              continue;
+            }
+
+            const area = rect.w * rect.h;
+            const existingArea = deduped[duplicateIndex].w * deduped[duplicateIndex].h;
+            if (area > existingArea) {
+              deduped[duplicateIndex] = rect;
+            }
+          }
+
+          return deduped;
+        };
 
         const mergeRectsByLine = (rects) => {
           if (!rects || rects.length === 0) return [];
@@ -285,6 +359,41 @@ function buildViewerHtml(payload: {
           return merged;
         };
 
+        const collectTextSelectionClientRects = (range) => {
+          const spans = Array.from(textLayerEl.querySelectorAll('span'))
+            .filter((span) => {
+              if (!/\\S/.test(span.textContent || '')) return false;
+              if (span.classList.contains('markedContent')) return false;
+              if (span.getAttribute('role') === 'img') return false;
+              if (span.querySelector('span')) return false;
+              return true;
+            });
+          const clientRects = [];
+
+          for (const span of spans) {
+            try {
+              if (!range.intersectsNode(span)) continue;
+
+              const spanRange = document.createRange();
+              spanRange.selectNodeContents(span);
+
+              const intersection = range.cloneRange();
+
+              if (intersection.compareBoundaryPoints(Range.START_TO_START, spanRange) < 0) {
+                intersection.setStart(spanRange.startContainer, spanRange.startOffset);
+              }
+              if (intersection.compareBoundaryPoints(Range.END_TO_END, spanRange) > 0) {
+                intersection.setEnd(spanRange.endContainer, spanRange.endOffset);
+              }
+
+              if (intersection.collapsed) continue;
+              clientRects.push(...Array.from(intersection.getClientRects()));
+            } catch {}
+          }
+
+          return clientRects.filter((rect) => rect.width >= 1 && rect.height >= 1);
+        };
+
         const drawRect = (rect, color, alpha) => {
           const el = document.createElement('div');
           el.className = 'hl-rect';
@@ -314,31 +423,33 @@ function buildViewerHtml(payload: {
           if (!textLayerEl.contains(range.commonAncestorContainer)) return;
 
           const containerRect = textLayerEl.getBoundingClientRect();
-          const selectionClientRects = Array.from(range.getClientRects())
-            .filter((rect) => rect.width >= 1 && rect.height >= 1);
-          if (selectionClientRects.length === 0) return;
-
-          const glyphRects = Array.from(textLayerEl.querySelectorAll('span'))
-            .filter((span) => /\S/.test(span.textContent || ''))
-            .map((span) => span.getBoundingClientRect())
-            .filter((rect) => rect.width >= 1 && rect.height >= 1);
-
-          const filteredClientRects = selectionClientRects.filter((selectionRect) => {
-            const selectionArea = Math.max(1, rectArea(selectionRect));
+          const selectionClientRects = Array.from(range.getClientRects()).filter(
+            (rect) => rect.width >= 1 && rect.height >= 1
+          );
+          const textClientRects = collectTextSelectionClientRects(range);
+          const coveredSelectionRects = selectionClientRects.filter((selectionRect) => {
+            const selectionArea = Math.max(1, selectionRect.width * selectionRect.height);
             let covered = 0;
-            for (const glyphRect of glyphRects) {
-              covered += overlapArea(selectionRect, glyphRect);
-              if (covered / selectionArea >= 0.08) {
+            for (const textRect of textClientRects) {
+              covered += overlapArea(selectionRect, textRect);
+              if (covered / selectionArea >= 0.22) {
                 return true;
               }
             }
             return false;
           });
+          const finalClientRects =
+            coveredSelectionRects.length > 0
+              ? coveredSelectionRects
+              : (selectionClientRects.length > 0 ? selectionClientRects : textClientRects);
+          if (finalClientRects.length === 0) return;
 
-          const rects = mergeRectsByLine(
-            (filteredClientRects.length > 0 ? filteredClientRects : selectionClientRects)
-              .map((rect) => normalizeRect(rect, containerRect))
-              .filter(Boolean)
+          const rects = dedupeRects(
+            mergeRectsByLine(
+              finalClientRects
+                .map((rect) => normalizeRect(rect, containerRect))
+                .filter(Boolean)
+            )
           );
 
           if (!rects.length) return;
@@ -357,15 +468,21 @@ function buildViewerHtml(payload: {
           lastSelectionFingerprint = fingerprint;
 
           post({ type: 'selection', rects: compactRects });
+          try {
+            selection.removeAllRanges();
+          } catch {}
         };
 
         const attachSelectionListeners = () => {
+          if (listenersAttached) return;
+          listenersAttached = true;
+
           const scheduleCapture = () => {
             if (!payload.selectionEnabled) return;
             if (selectionCaptureTimeout) {
               clearTimeout(selectionCaptureTimeout);
             }
-            selectionCaptureTimeout = setTimeout(captureSelection, 280);
+            selectionCaptureTimeout = setTimeout(captureSelection, 420);
           };
 
           const suppressContextMenu = (event) => {
@@ -377,7 +494,6 @@ function buildViewerHtml(payload: {
           document.addEventListener('mouseup', onSelectionEnd);
           document.addEventListener('touchend', onSelectionEnd);
           document.addEventListener('keyup', onSelectionEnd);
-          document.addEventListener('selectionchange', scheduleCapture);
           document.addEventListener('contextmenu', suppressContextMenu);
           document.addEventListener('copy', suppressContextMenu);
           document.addEventListener('cut', suppressContextMenu);
@@ -449,10 +565,12 @@ function buildViewerHtml(payload: {
             const viewportAt1 = page.getViewport({ scale: 1 });
             const scale = targetWidth / viewportAt1.width;
             const viewport = page.getViewport({ scale });
-            const dpr = window.devicePixelRatio || 1;
+            const outputScale = window.devicePixelRatio || 1;
+            const canvasPixelWidth = Math.ceil(viewport.width * outputScale);
+            const canvasPixelHeight = Math.ceil(viewport.height * outputScale);
 
-            canvasEl.width = Math.floor(viewport.width * dpr);
-            canvasEl.height = Math.floor(viewport.height * dpr);
+            canvasEl.width = canvasPixelWidth;
+            canvasEl.height = canvasPixelHeight;
             canvasEl.style.width = viewport.width + 'px';
             canvasEl.style.height = viewport.height + 'px';
 
@@ -468,16 +586,16 @@ function buildViewerHtml(payload: {
               throw new Error('Falha ao obter contexto do canvas.');
             }
 
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             await page.render({
               canvasContext: ctx,
               viewport,
+              transform:
+                outputScale !== 1
+                  ? [outputScale, 0, 0, outputScale, 0, 0]
+                  : undefined,
             }).promise;
 
-            const textContent = await page.getTextContent({
-              disableCombineTextItems: true,
-              normalizeWhitespace: true,
-            });
+            const textContent = await page.getTextContent({ normalizeWhitespace: true });
 
             if (typeof pdfjsLib.renderTextLayer === 'function') {
               const textTask = pdfjsLib.renderTextLayer({
@@ -485,11 +603,14 @@ function buildViewerHtml(payload: {
                 container: textLayerEl,
                 viewport,
                 textDivs: [],
-                enhanceTextSelection: true,
+                enhanceTextSelection: false,
               });
               if (textTask && textTask.promise) {
                 await textTask.promise;
               }
+              const endOfContentEl = document.createElement('div');
+              endOfContentEl.className = 'endOfContent';
+              textLayerEl.appendChild(endOfContentEl);
             } else {
               throw new Error('renderTextLayer não está disponível na build do pdf.js.');
             }
@@ -539,14 +660,10 @@ export default function WebViewPdfJsReaderEngine({
   onSelection,
   onError,
 }: NativePdfReaderProps) {
-  const [effectivePdfUrl, setEffectivePdfUrl] = React.useState(uri);
-  const [resolvingPdfUrl, setResolvingPdfUrl] = React.useState(false);
-
-  React.useEffect(() => {
-    setResolvingPdfUrl(true);
-    setEffectivePdfUrl(buildPdfUrl({ uri, token, bookId, versionId }));
-    setResolvingPdfUrl(false);
-  }, [uri, token, bookId, versionId]);
+  const effectivePdfUrl = React.useMemo(
+    () => buildPdfUrl({ uri, token, bookId, versionId }),
+    [uri, token, bookId, versionId]
+  );
 
   React.useEffect(() => {
     if (!NativeWebView) {
@@ -616,15 +733,6 @@ export default function WebViewPdfJsReaderEngine({
     );
   }
 
-  if (resolvingPdfUrl) {
-    return (
-      <View style={styles.centerState}>
-        <ActivityIndicator />
-        <Text style={styles.helperText}>Preparando PDF...</Text>
-      </View>
-    );
-  }
-
   return (
     <NativeWebView
       key={viewerKey}
@@ -661,6 +769,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 12,
   },
-  helperText: { color: "#bbb", fontSize: 12 },
   errorText: { color: "#ff8a80", fontSize: 13, textAlign: "center" },
 });
