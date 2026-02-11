@@ -1,5 +1,6 @@
 import React from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { CaseLawScreen } from "./src/screens/CaseLawScreen";
 import { CommunityFeedScreen } from "./src/screens/CommunityFeedScreen";
@@ -7,25 +8,33 @@ import { CommunityNewPostScreen } from "./src/screens/CommunityNewPostScreen";
 import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
-import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
+import { MainScreen } from "./src/screens/MainScreen";
 
+import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
 import type { CommunityPost } from "./src/api/community";
+
+type Route = 
+  | "main"
+  | "account"
+  | "caselaw"
+  | "community"
+  | "communityNewPost"
+  | "communityPost"
+  | "library";
 
 
 export default function App() {
   const [loading, setLoading] = React.useState(true);
   const [token, setToken] = React.useState<string | null>(null);
 
-  const [route, setRoute] = React.useState<
-    "account" | "caselaw" | "community" | "communityNewPost" | "communityPost" | "library"
-  >("account");
-
+  const [route, setRoute] = React.useState<Route>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
 
   React.useEffect(() => {
     (async () => {
       const stored = await getAuthToken();
       setToken(stored);
+      if (stored) setRoute("main");
       setLoading(false);
     })();
   }, []);
@@ -33,13 +42,14 @@ export default function App() {
   const handleSubmitToken = async (newToken: string) => {
     await setAuthToken(newToken);
     setToken(newToken);
-    setRoute("account");
+    setRoute("main");
   };
 
   const handleLogout = async () => {
     await clearAuthToken();
+    setSelectedPost(null);
     setToken(null);
-    setRoute("account");
+    setRoute("main");
   };
 
   if (loading) {
@@ -54,19 +64,34 @@ export default function App() {
     return <LoginScreen onSubmitToken={handleSubmitToken} />;
   }
 
-  if (route === "caselaw") {
-    return <CaseLawScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
+  if (route === "main") {
+    return (
+      <MainScreen
+        onOpenLibrary={() => setRoute("library")}
+        onOpenCaseLaw={() => setRoute("caselaw")}
+        onOpenCommunity={() => setRoute("community")}
+        onOpenAccount={() => setRoute("account")}
+      />
+    );
   }
-  
+
+  if (route === "account") {
+    return <AccountScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+  }
+
+  if (route === "caselaw") {
+    return <CaseLawScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+  }
+
   if (route === "library") {
-    return <LibraryScreen token={token} onBack={() => setRoute("account")} onLogout={handleLogout} />;
+    return <LibraryScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
   }
 
   if (route === "community") {
     return (
       <CommunityFeedScreen
         token={token}
-        onBack={() => setRoute("account")}
+        onBack={() => setRoute("main")}
         onLogout={handleLogout}
         onOpenPost={(post) => {
           setSelectedPost(post);
@@ -98,7 +123,7 @@ export default function App() {
     }
 
     return (
-      <CommunityPostScreen 
+      <CommunityPostScreen
         token={token}
         post={selectedPost}
         onBack={() => setRoute("community")}
@@ -107,15 +132,15 @@ export default function App() {
     );
   }
 
+  // fallback seguro
   return (
-    <AccountScreen
-      token={token}
-      onLogout={handleLogout}
+    <MainScreen
       onOpenLibrary={() => setRoute("library")}
       onOpenCaseLaw={() => setRoute("caselaw")}
       onOpenCommunity={() => setRoute("community")}
+      onOpenAccount={() => setRoute("account")}
     />
-  );  
+  );
 }
 
 const styles = StyleSheet.create({
