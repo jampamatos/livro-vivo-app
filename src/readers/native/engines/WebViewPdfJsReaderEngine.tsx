@@ -7,6 +7,7 @@ import {
 } from "react-native";
 
 import { API_BASE_URL } from "../../../config/api";
+import { buildAuthHeader } from "../../../api/http";
 import type { NormalizedRect } from "../../../api/annotations";
 import type { NativePdfReaderProps } from "../types";
 
@@ -68,7 +69,7 @@ function escapeJsonForInlineScript(value: string) {
 
 function buildViewerHtml(payload: {
   page: number;
-  token?: string;
+  authHeader?: string;
   pdfUrl?: string;
   selectionEnabled: boolean;
   rects: Array<NormalizedRect & { color: string }>;
@@ -552,7 +553,9 @@ function buildViewerHtml(payload: {
 
             const loadingTask = pdfjsLib.getDocument({
               url: payload.pdfUrl,
-              httpHeaders: payload.token ? { Authorization: 'Token ' + payload.token } : undefined,
+              httpHeaders: payload.authHeader
+                ? { Authorization: payload.authHeader }
+                : undefined,
               withCredentials: false,
               disableWorker: true,
             });
@@ -704,7 +707,7 @@ export default function WebViewPdfJsReaderEngine({
   const viewerHtml = React.useMemo(() => {
     return buildViewerHtml({
       page,
-      token,
+      authHeader: token ? buildAuthHeader(token) : undefined,
       pdfUrl: effectivePdfUrl,
       selectionEnabled,
       rects,

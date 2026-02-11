@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -8,23 +8,69 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { ApiError } from "../api/http";
+import { login, register } from "../api/auth";
+import type { AuthSession } from "../auth/authSession";
 
 type Props = {
-  onSubmitToken: (token: string) => Promise<void> | void;
+  onAuthSuccess: (session: AuthSession) => Promise<void> | void;
 };
 
-export function LoginScreen({ onSubmitToken }: Props) {
-  const [token, setToken] = useState("");
+export function LoginScreen({ onAuthSuccess }: Props) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  // Só para registro (se seu backend exigir)
+  const [name, setName] = useState("");
+  const [profession, setProfession] = useState("");
+
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const title = useMemo(() => (mode === "login" ? "Entrar" : "Criar conta"), [mode]);
+
   const handleSubmit = async () => {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      setError("Informe um token para continuar.");
+    const e = email.trim();
+    const p = password.trim();
+
+    if (!e || !p) {
+      setError("Informe e-mail e senha.");
       return;
     }
+
+    setBusy(true);
     setError(null);
-    await onSubmitToken(trimmed);
+
+    try {
+      const session =
+        mode === "login"
+          ? await login(e, p)
+          : await register({
+              email: e,
+              password: p,
+              name: name.trim() || undefined,
+              profession: profession.trim() || undefined,
+            });
+
+      await onAuthSuccess(session);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // tenta extrair mensagens comuns do DRF/JWT
+        const body = err.body as any;
+        const msg =
+          body?.detail ||
+          body?.message ||
+          (typeof body === "string" ? body : null) ||
+          JSON.stringify(body ?? {});
+        setError(`Falha no ${mode === "login" ? "login" : "registro"}: ${msg}`);
+      } else {
+        setError("Falha inesperada. Tente novamente.");
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -33,25 +79,73 @@ export function LoginScreen({ onSubmitToken }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>Entrar</Text>
+        <Text style={styles.title}>{title}</Text>
+
         <Text style={styles.subtitle}>
-          MVP em construção: por enquanto, use um token de acesso (modo dev) para destravar o app.
+          {mode === "login"
+            ? "Entre com e-mail e senha para acessar sua biblioteca e a comunidade."
+            : "Crie sua conta para acessar o Livro Vivo e a comunidade."}
         </Text>
 
-        <Text style={styles.label}>Token</Text>
+        <Text style={styles.label}>E-mail</Text>
         <TextInput
-          value={token}
-          onChangeText={setToken}
-          placeholder="Cole o token aqui"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="seuemail@exemplo.com"
+          keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.input}
         />
 
+        <Text style={styles.label}>Senha</Text>
+        <TextInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="••••••••"
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.input}
+        />
+
+        {mode === "register" ? (
+          <>
+            <Text style={styles.label}>Nome (opcional)</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder="Seu nome"
+              autoCapitalize="words"
+              style={styles.input}
+            />
+
+            <Text style={styles.label}>Profissão (opcional)</Text>
+            <TextInput
+              value={profession}
+              onChangeText={setProfession}
+              placeholder="Ex: Advogado(a)"
+              autoCapitalize="words"
+              style={styles.input}
+            />
+          </>
+        ) : null}
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>Salvar token</Text>
+        <Pressable style={[styles.button, busy && styles.buttonDisabled]} onPress={handleSubmit} disabled={busy}>
+          <Text style={styles.buttonText}>{busy ? "Aguarde..." : title}</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            setError(null);
+            setMode((m) => (m === "login" ? "register" : "login"));
+          }}
+        >
+          <Text style={styles.link}>
+            {mode === "login" ? "Não tem conta? Criar agora" : "Já tem conta? Entrar"}
+          </Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -59,12 +153,7 @@ export function LoginScreen({ onSubmitToken }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    padding: 16,
-    justifyContent: "center",
-  },
-
+  root: { flex: 1, padding: 16, justifyContent: "center" },
   card: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -95,5 +184,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#111",
   },
+  buttonDisabled: { opacity: 0.6 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  link: { marginTop: 8, color: "#111", textAlign: "center", textDecorationLine: "underline" },
 });

@@ -1,22 +1,43 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { AuthSession } from "./authSession";
 
-const TOKEN_KEY = "livro_vivo_auth_token_v1";
+const SESSION_KEY = "livro_vivo_auth_session_v1";
+const LEGACY_TOKEN_KEY = "livro_vivo_auth_token_v1";
 
-/** Lê o token salvo localmente. */
-export async function getAuthToken(): Promise<string | null> {
+/** Lê a sessão salva localmente (compatível com token legado) */
+export async function getAuthToken(): Promise<AuthSession | null> {
   try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
+    const raw = await AsyncStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AuthSession> | null;
+      if (parsed?.accessToken && typeof parsed.accessToken === "string") {
+        return {
+          accessToken: parsed.accessToken,
+          refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
+        };
+      }
+    }
+
+    // Compat: se existir token antigo (dev), deixar logar (sem refresh)
+    const legacy = await AsyncStorage.getItem(LEGACY_TOKEN_KEY);
+    if (legacy && legacy.trim()) {
+      return { accessToken: legacy.trim(), refreshToken: null };
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
-/** Salva o token localmente. */
-export async function setAuthToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+/** Salva a sessão localmente. */
+export async function setAuthToken(session: AuthSession): Promise<void> {
+  await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  await AsyncStorage.removeItem(LEGACY_TOKEN_KEY);
 }
 
-/** Remove o token salvo localmente. */
+/** Remove sessão (e token legado) */
 export async function clearAuthToken(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  await AsyncStorage.removeItem(SESSION_KEY);
+  await AsyncStorage.removeItem(LEGACY_TOKEN_KEY);
 }

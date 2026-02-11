@@ -3,7 +3,7 @@ jest.mock("../src/config/api", () => ({
   API_BASE_URL: "http://example.test",
 }));
 
-import { ApiError, apiFetch } from "../src/api/http";
+import { ApiError, apiFetch, buildAuthHeader } from "../src/api/http";
 
 type MockResponse = {
   ok: boolean;
@@ -29,6 +29,11 @@ function mockFetchOnce(resp: MockResponse) {
 }
 
 describe("apiFetch", () => {
+  it("buildAuthHeader usa Bearer para JWT e Token para chave legada", () => {
+    expect(buildAuthHeader("aaa.bbb.ccc")).toBe("Bearer aaa.bbb.ccc");
+    expect(buildAuthHeader("TOK123")).toBe("Token TOK123");
+  });
+
   it("monta URL corretamente (com e sem /) e retorna JSON", async () => {
     mockFetchOnce({
       ok: true,
@@ -66,6 +71,26 @@ describe("apiFetch", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Token TOK123",
+        }),
+      })
+    );
+  });
+
+  it("inclui Authorization Bearer quando token parece JWT", async () => {
+    mockFetchOnce({
+      ok: true,
+      status: 200,
+      contentType: "application/json",
+      jsonData: { ok: true },
+    });
+
+    await apiFetch("/me/entitlements/", { token: "aaa.bbb.ccc" });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://example.test/me/entitlements/",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer aaa.bbb.ccc",
         }),
       })
     );

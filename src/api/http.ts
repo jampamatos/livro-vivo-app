@@ -19,6 +19,13 @@ type ApiFetchOptions = {
   headers?: Record<string, string>;
 };
 
+export function buildAuthHeader(token: string) : string {
+  // JWT típico: "xxxxx.yyyyy.zzzzz"
+  const parts = token.split(".");
+  const isJwt = parts.length === 3 && parts.every((p) => p.length > 0);
+  return isJwt ? `Bearer ${token}` : `Token ${token}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
@@ -30,9 +37,8 @@ export async function apiFetch<T>(
     ...(options.headers ?? {}),
   };
 
-  // Já deixa pronto o Token auth.
   if (options.token) {
-    headers.Authorization = `Token ${options.token}`;
+    headers.Authorization = buildAuthHeader(options.token);
   }
 
   let body: BodyInit | undefined;

@@ -16,7 +16,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
 import { searchBook, BookSearchResult } from "../api/books";
-import { ApiError } from "../api/http";
+import { ApiError, buildAuthHeader } from "../api/http";
 import {
   createAnnotation,
   deleteAnnotation,
@@ -365,7 +365,7 @@ export default function PdfReaderScreenWeb({
   const pdfFile = React.useMemo(() => {
     if (!uri) return null;
     return token
-      ? { url: uri, httpHeaders: { Authorization: `Token ${token}` } }
+      ? { url: uri, httpHeaders: { Authorization: buildAuthHeader(token) } }
       : { url: uri };
   }, [token, uri]);
 

@@ -11,6 +11,7 @@ import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { MainScreen } from "./src/screens/MainScreen";
 
 import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
+import type { AuthSession } from "./src/auth/authSession";
 import type { CommunityPost } from "./src/api/community";
 
 type Route = 
@@ -25,7 +26,7 @@ type Route =
 
 export default function App() {
   const [loading, setLoading] = React.useState(true);
-  const [token, setToken] = React.useState<string | null>(null);
+  const [session, setSession] = React.useState<AuthSession | null>(null);
 
   const [route, setRoute] = React.useState<Route>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
@@ -33,22 +34,22 @@ export default function App() {
   React.useEffect(() => {
     (async () => {
       const stored = await getAuthToken();
-      setToken(stored);
+      setSession(stored);
       if (stored) setRoute("main");
       setLoading(false);
     })();
   }, []);
 
-  const handleSubmitToken = async (newToken: string) => {
-    await setAuthToken(newToken);
-    setToken(newToken);
+  const handleAuthSuccess = async (newSession: AuthSession) => {
+    await setAuthToken(newSession);
+    setSession(newSession);
     setRoute("main");
   };
 
   const handleLogout = async () => {
     await clearAuthToken();
     setSelectedPost(null);
-    setToken(null);
+    setSession(null);
     setRoute("main");
   };
 
@@ -60,9 +61,11 @@ export default function App() {
     );
   }
 
-  if (!token) {
-    return <LoginScreen onSubmitToken={handleSubmitToken} />;
+  if (!session) {
+    return <LoginScreen onAuthSuccess={handleAuthSuccess} />;
   }
+
+  const token = session.accessToken;
 
   if (route === "main") {
     return (

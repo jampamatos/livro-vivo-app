@@ -3,6 +3,7 @@ import { Directory, File, Paths } from "expo-file-system";
 
 import * as Sharing from "expo-sharing";
 
+import { buildAuthHeader } from "../api/http";
 import { openPdfInViewer } from "./pdfViewer";
 
 let cacheDir: Directory | null = null;
@@ -46,7 +47,7 @@ export async function downloadPdfToPath(params: { url: string; token: string; pa
   const destination = new File(params.path);
   const res = await File.downloadFileAsync(params.url, destination, {
     headers: {
-      Authorization: `Token ${params.token}`,
+      Authorization: buildAuthHeader(params.token),
     },
     idempotent: true,
   });

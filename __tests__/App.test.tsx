@@ -4,6 +4,7 @@ import { ActivityIndicator } from "react-native";
 
 import App from "../App";
 import { clearAuthToken, getAuthToken, setAuthToken } from "../src/auth/tokenStorage";
+import type { AuthSession } from "../src/auth/authSession";
 
 jest.mock("../src/auth/tokenStorage", () => ({
   getAuthToken: jest.fn(),
@@ -15,10 +16,22 @@ jest.mock("../src/screens/LoginScreen", () => {
   const ReactLocal = require("react");
   const { View, Text, Pressable } = require("react-native");
   return {
-    LoginScreen: ({ onSubmitToken }: { onSubmitToken: (token: string) => void }) => (
+    LoginScreen: ({
+      onAuthSuccess,
+    }: {
+      onAuthSuccess: (session: AuthSession) => void;
+    }) => (
       <View>
         <Text>LoginScreen</Text>
-        <Pressable testID="login-submit" onPress={() => onSubmitToken("new-token")}>
+        <Pressable
+          testID="login-submit"
+          onPress={() =>
+            onAuthSuccess({
+              accessToken: "new-token",
+              refreshToken: "new-refresh-token",
+            })
+          }
+        >
           <Text>Entrar</Text>
         </Pressable>
       </View>
@@ -215,8 +228,8 @@ describe("App", () => {
   });
 
   it("mostra loading durante bootstrap e depois Login quando não há token", async () => {
-    let resolveAuth: (value: string | null) => void = () => {};
-    const authPromise = new Promise<string | null>((resolve) => {
+    let resolveAuth: (value: AuthSession | null) => void = () => {};
+    const authPromise = new Promise<AuthSession | null>((resolve) => {
       resolveAuth = resolve;
     });
     getAuthTokenMock.mockReturnValueOnce(authPromise);
@@ -240,12 +253,18 @@ describe("App", () => {
 
     await pressByTestId(tree, "login-submit");
 
-    expect(setAuthTokenMock).toHaveBeenCalledWith("new-token");
+    expect(setAuthTokenMock).toHaveBeenCalledWith({
+      accessToken: "new-token",
+      refreshToken: "new-refresh-token",
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
   it("usa token salvo e permite ir para conta e voltar", async () => {
-    getAuthTokenMock.mockResolvedValueOnce("stored-token");
+    getAuthTokenMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
 
     const tree = await renderApp();
     await flushEffects();
@@ -261,7 +280,10 @@ describe("App", () => {
   });
 
   it("executa logout a partir de conta e retorna para login", async () => {
-    getAuthTokenMock.mockResolvedValueOnce("stored-token");
+    getAuthTokenMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
 
     const tree = await renderApp();
     await flushEffects();
@@ -274,7 +296,10 @@ describe("App", () => {
   });
 
   it("navega pelo fluxo de comunidade abrindo e criando post", async () => {
-    getAuthTokenMock.mockResolvedValueOnce("stored-token");
+    getAuthTokenMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
 
     const tree = await renderApp();
     await flushEffects();
