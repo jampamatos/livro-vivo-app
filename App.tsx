@@ -10,7 +10,10 @@ import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { MainScreen } from "./src/screens/MainScreen";
 
-import { clearAuthToken, getAuthToken, setAuthToken } from "./src/auth/tokenStorage";
+import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tokenStorage";
+import { setSessionListener } from "./src/auth/sessionBus";
+import { logout } from "./src/api/auth";
+
 import type { AuthSession } from "./src/auth/authSession";
 import type { CommunityPost } from "./src/api/community";
 
@@ -33,24 +36,43 @@ export default function App() {
 
   React.useEffect(() => {
     (async () => {
-      const stored = await getAuthToken();
+      const stored = await getAuthSession();
       setSession(stored);
       if (stored) setRoute("main");
       setLoading(false);
     })();
   }, []);
 
+  React.useEffect(() => {
+    setSessionListener((next) => {
+      setSession(next);
+      if (!next) {
+        setSelectedPost(null);
+        setRoute("account");
+      }
+    });
+    return () => setSessionListener(null);
+  }, []);
+
   const handleAuthSuccess = async (newSession: AuthSession) => {
-    await setAuthToken(newSession);
+    await setAuthSession(newSession);
     setSession(newSession);
     setRoute("main");
   };
 
   const handleLogout = async () => {
-    await clearAuthToken();
-    setSelectedPost(null);
-    setSession(null);
-    setRoute("main");
+    try {
+      if (session?.refreshToken) {
+        await logout(session.refreshToken, session.accessToken);
+      }
+    } catch {
+      // logou remoto é best-effort
+    } finally {
+      await clearAuthSession();
+      setSelectedPost(null);
+      setSession(null);
+      setRoute("account");
+    }
   };
 
   if (loading) {

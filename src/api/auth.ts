@@ -52,3 +52,11 @@ export async function refresh(refreshToken: string): Promise<{ accessToken: stri
     });
     return { accessToken: res.access };
 }
+
+export async function logout(refreshToken: string, accessToken?: string): Promise<void> {
+    await apiFetch("/auth/logout/", {
+        method: "POST",
+        token: accessToken ?? null,
+        body: { refresh: refreshToken },
+    });
+}

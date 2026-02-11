@@ -3,13 +3,23 @@ import renderer, { act } from "react-test-renderer";
 import { ActivityIndicator } from "react-native";
 
 import App from "../App";
-import { clearAuthToken, getAuthToken, setAuthToken } from "../src/auth/tokenStorage";
+import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
+import { setSessionListener } from "../src/auth/sessionBus";
+import { logout } from "../src/api/auth";
 import type { AuthSession } from "../src/auth/authSession";
 
 jest.mock("../src/auth/tokenStorage", () => ({
-  getAuthToken: jest.fn(),
-  setAuthToken: jest.fn(),
-  clearAuthToken: jest.fn(),
+  getAuthSession: jest.fn(),
+  setAuthSession: jest.fn(),
+  clearAuthSession: jest.fn(),
+}));
+
+jest.mock("../src/auth/sessionBus", () => ({
+  setSessionListener: jest.fn(),
+}));
+
+jest.mock("../src/api/auth", () => ({
+  logout: jest.fn(),
 }));
 
 jest.mock("../src/screens/LoginScreen", () => {
@@ -192,9 +202,11 @@ jest.mock("../src/screens/CommunityPostScreen", () => {
   };
 });
 
-const getAuthTokenMock = getAuthToken as unknown as jest.Mock;
-const setAuthTokenMock = setAuthToken as unknown as jest.Mock;
-const clearAuthTokenMock = clearAuthToken as unknown as jest.Mock;
+const getAuthSessionMock = getAuthSession as unknown as jest.Mock;
+const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
+const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
+const setSessionListenerMock = setSessionListener as unknown as jest.Mock;
+const logoutMock = logout as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -220,19 +232,23 @@ async function pressByTestId(tree: renderer.ReactTestRenderer, testID: string) {
 
 describe("App", () => {
   beforeEach(() => {
-    getAuthTokenMock.mockReset();
-    setAuthTokenMock.mockReset();
-    clearAuthTokenMock.mockReset();
-    setAuthTokenMock.mockResolvedValue(undefined);
-    clearAuthTokenMock.mockResolvedValue(undefined);
+    getAuthSessionMock.mockReset();
+    setAuthSessionMock.mockReset();
+    clearAuthSessionMock.mockReset();
+    setSessionListenerMock.mockReset();
+    logoutMock.mockReset();
+
+    setAuthSessionMock.mockResolvedValue(undefined);
+    clearAuthSessionMock.mockResolvedValue(undefined);
+    logoutMock.mockResolvedValue(undefined);
   });
 
-  it("mostra loading durante bootstrap e depois Login quando não há token", async () => {
+  it("mostra loading durante bootstrap e depois Login quando não há sessão", async () => {
     let resolveAuth: (value: AuthSession | null) => void = () => {};
     const authPromise = new Promise<AuthSession | null>((resolve) => {
       resolveAuth = resolve;
     });
-    getAuthTokenMock.mockReturnValueOnce(authPromise);
+    getAuthSessionMock.mockReturnValueOnce(authPromise);
 
     const tree = await renderApp();
     expect(tree.root.findByType(ActivityIndicator)).toBeTruthy();
@@ -244,7 +260,7 @@ describe("App", () => {
   });
 
   it("faz login via LoginScreen e navega para MainScreen", async () => {
-    getAuthTokenMock.mockResolvedValueOnce(null);
+    getAuthSessionMock.mockResolvedValueOnce(null);
 
     const tree = await renderApp();
     await flushEffects();
@@ -253,15 +269,15 @@ describe("App", () => {
 
     await pressByTestId(tree, "login-submit");
 
-    expect(setAuthTokenMock).toHaveBeenCalledWith({
+    expect(setAuthSessionMock).toHaveBeenCalledWith({
       accessToken: "new-token",
       refreshToken: "new-refresh-token",
     });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
-  it("usa token salvo e permite ir para conta e voltar", async () => {
-    getAuthTokenMock.mockResolvedValueOnce({
+  it("usa sessão salva e permite ir para conta e voltar", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
       accessToken: "stored-token",
       refreshToken: null,
     });
@@ -280,7 +296,7 @@ describe("App", () => {
   });
 
   it("executa logout a partir de conta e retorna para login", async () => {
-    getAuthTokenMock.mockResolvedValueOnce({
+    getAuthSessionMock.mockResolvedValueOnce({
       accessToken: "stored-token",
       refreshToken: null,
     });
@@ -291,12 +307,52 @@ describe("App", () => {
     await pressByTestId(tree, "main-open-account");
     await pressByTestId(tree, "account-logout");
 
-    expect(clearAuthTokenMock).toHaveBeenCalledTimes(1);
+    expect(clearAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
+  });
+
+  it("executa logout remoto quando há refresh token", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-account");
+    await pressByTestId(tree, "account-logout");
+
+    expect(logoutMock).toHaveBeenCalledWith("stored-refresh", "stored-token");
+    expect(clearAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
+  });
+
+  it("reage ao sessionBus quando a sessão é invalidada", async () => {
+    let listener: ((session: AuthSession | null) => void) | null = null;
+    setSessionListenerMock.mockImplementation((fn: ((session: AuthSession | null) => void) | null) => {
+      listener = fn;
+    });
+
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await act(async () => {
+      listener?.(null);
+    });
+
     expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
   });
 
   it("navega pelo fluxo de comunidade abrindo e criando post", async () => {
-    getAuthTokenMock.mockResolvedValueOnce({
+    getAuthSessionMock.mockResolvedValueOnce({
       accessToken: "stored-token",
       refreshToken: null,
     });
