@@ -8,7 +8,8 @@
     "android:device": "ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a expo run:android --all-arch -d",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "jest"
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

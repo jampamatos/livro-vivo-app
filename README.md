@@ -4,7 +4,8 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 
 ## Estado atual do app
 
-- Login por token (modo dev) com persistência em `AsyncStorage`.
+- Login/registro reais (email + senha) com sessão JWT (`access`/`refresh`).
+- Persistência segura de sessão nativa em `expo-secure-store` (Keychain/Keystore).
 - Tela "Minha conta" exibindo os entitlements do usuário.
 - Biblioteca com lista de livros, versões e changelog.
 - Busca dentro do livro (API) com abertura direta na página do resultado.
@@ -12,7 +13,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - Anotações por destaque (arraste, cor, nota opcional) salvas no backend.
 - Jurisprudência v0: tela de lista + busca por palavra-chave.
 - Comunidade: feed, post, comentários e denúncias.
-- Web: renderização via `react-pdf` (worker carregado de `unpkg`).
+- Web: renderização via `react-pdf` com worker PDF.js local (sem CDN).
 - Mobile: `react-native-pdf` + cache local de PDFs (`expo-file-system`).
 
 ## Stack
@@ -20,7 +21,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - Expo SDK 54, React Native 0.81, React 19
 - `react-native-pdf` (iOS/Android) e `react-pdf` (web)
 - `expo-file-system`, `expo-sharing`, `expo-intent-launcher`
-- `@react-native-async-storage/async-storage`
+- `expo-secure-store`
 
 ## Requisitos
 
@@ -170,7 +171,7 @@ Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annot
 - `src/config/` — configuração (API base URL)
 - `src/screens/` — telas:
 
-  - `LoginScreen` — login via token (modo dev)
+  - `LoginScreen` — login/registro reais (JWT)
   - `AccountScreen` — mostra entitlements do usuário
   - `LibraryScreen` — lista livros/versões, busca e abre no leitor
   - `PdfReaderScreen.native` — leitor mobile (`react-native-pdf`)
@@ -188,6 +189,12 @@ Rodar os testes unitários:
 npm test
 ```
 
+Rodar checagem de tipos (sanity de build):
+
+```bash
+npm run typecheck
+```
+
 Cobertura atual (unitária):
 
 - `apiFetch` (cliente HTTP)
@@ -196,6 +203,8 @@ Cobertura atual (unitária):
 - token storage
 
 Ainda não há testes de UI/integração/E2E.
+
+CI mínimo de qualidade: `.github/workflows/ci.yml` (typecheck + testes).
 
 ## Env
 

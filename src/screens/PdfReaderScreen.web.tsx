@@ -29,14 +29,44 @@ import {
   DEFAULT_HIGHLIGHT_COLOR,
   HIGHLIGHT_COLORS,
 } from "../readers/common/highlights";
+import { PDFJS_WORKER_MIN_MJS_BASE64 } from "../readers/common/pdfjsWorkerBase64";
 import { splitSnippetByTerm } from "../readers/common/searchSnippets";
 import {
   collectSelectionRectsFromTextLayer,
   denormalizeRect,
 } from "../readers/web/selectionRects";
 import { withAlpha } from "../utils/colors";
-pdfjs.GlobalWorkerOptions.workerSrc =
-  "https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs";
+
+let pdfJsWorkerObjectUrl: string | null = null;
+
+function ensurePdfJsWorkerSrc() {
+  if (pdfjs.GlobalWorkerOptions.workerSrc) {
+    return;
+  }
+
+  const canCreateBlobWorker =
+    typeof globalThis.atob === "function" &&
+    typeof Blob !== "undefined" &&
+    typeof URL !== "undefined" &&
+    typeof URL.createObjectURL === "function";
+
+  if (canCreateBlobWorker) {
+    try {
+      const workerCode = globalThis.atob(PDFJS_WORKER_MIN_MJS_BASE64);
+      const workerBlob = new Blob([workerCode], { type: "text/javascript" });
+      pdfJsWorkerObjectUrl = URL.createObjectURL(workerBlob);
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfJsWorkerObjectUrl;
+      return;
+    } catch {
+      // fallback abaixo (data URI)
+    }
+  }
+
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    `data:application/javascript;base64,${PDFJS_WORKER_MIN_MJS_BASE64}`;
+}
+
+ensurePdfJsWorkerSrc();
 
 type Props = {
   uri: string;
