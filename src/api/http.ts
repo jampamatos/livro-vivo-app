@@ -122,22 +122,31 @@ export async function apiFetch<T>(
         retryBody = JSON.stringify(options.body);
       }
 
-      const retryRes = await fetch(url, {
-        method: options.method ?? "GET",
-        headers: retryHeaders,
-        body: retryBody,
-      });
+      let retryRes: Response;
+      try {
+        retryRes = await fetch(url, {
+          method: options.method ?? "GET",
+          headers: retryHeaders,
+          body: retryBody,
+        });
+      } catch (error) {
+        await clearAuthSession();
+        emitSessionChanged(null);
+        throw error;
+      }
 
       const retryContentType = retryRes.headers.get("content-type") ?? "";
       const retryParsed = retryContentType.includes("application/json")
         ? await retryRes.json().catch(() => null)
         : await retryRes.text().catch(() => null);
 
-        if (!retryRes.ok) {
-          throw new ApiError(`HTTP ${retryRes.status} em ${path}`, retryRes.status, retryParsed);
-        }
+      if (!retryRes.ok) {
+        await clearAuthSession();
+        emitSessionChanged(null);
+        throw new ApiError(`HTTP ${retryRes.status} em ${path}`, retryRes.status, retryParsed);
+      }
 
-        return retryParsed as T;
+      return retryParsed as T;
     }
   }
 
