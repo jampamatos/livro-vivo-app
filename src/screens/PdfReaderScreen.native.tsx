@@ -731,7 +731,9 @@ export default function PdfReaderScreen({
           <Text style={styles.selectionHintText}>
             {pendingRects.length > 0
               ? "Seleção capturada. Toque em Criar para adicionar comentário/cor."
-              : "Selecione um trecho de texto e depois toque em Criar."}
+              : Platform.OS === "android"
+                ? "Arraste sobre a área desejada e depois toque em Criar."
+                : "Selecione um trecho de texto e depois toque em Criar."}
           </Text>
         </View>
       ) : null}

@@ -7,9 +7,10 @@ import {
 } from "react-native";
 
 import { API_BASE_URL } from "../../../config/api";
-import { buildAuthHeader } from "../../../api/http";
 import type { NormalizedRect } from "../../../api/annotations";
 import type { NativePdfReaderProps } from "../types";
+import { PDFJS_MIN_MJS_BASE64 } from "./pdfjsModuleBase64";
+import { PDFJS_WORKER_MIN_MJS_BASE64 } from "../../common/pdfjsWorkerBase64";
 
 type WebViewMessage =
   | { type: "loaded"; pageCount: number }
@@ -24,8 +25,11 @@ type NativeWebViewProps = {
   domStorageEnabled?: boolean;
   startInLoadingState?: boolean;
   allowFileAccess?: boolean;
-  allowUniversalAccessFromFileURLs?: boolean;
+  allowFileAccessFromFileURLs?: boolean;
+  javaScriptCanOpenWindowsAutomatically?: boolean;
+  setSupportMultipleWindows?: boolean;
   mixedContentMode?: "never" | "always" | "compatibility";
+  onShouldStartLoadWithRequest?: (request: { url?: string }) => boolean;
   onMessage?: (event: NativeSyntheticEvent<{ data: string }>) => void;
   onError?: (event: NativeSyntheticEvent<{ description?: string }>) => void;
 };
@@ -69,12 +73,15 @@ function escapeJsonForInlineScript(value: string) {
 
 function buildViewerHtml(payload: {
   page: number;
-  authHeader?: string;
   pdfUrl?: string;
   selectionEnabled: boolean;
   rects: Array<NormalizedRect & { color: string }>;
 }) {
   const json = escapeJsonForInlineScript(JSON.stringify(payload));
+  const pdfJsModuleBase64 = escapeJsonForInlineScript(JSON.stringify(PDFJS_MIN_MJS_BASE64));
+  const pdfJsWorkerModuleBase64 = escapeJsonForInlineScript(
+    JSON.stringify(PDFJS_WORKER_MIN_MJS_BASE64)
+  );
 
   return `<!doctype html>
 <html>
@@ -135,6 +142,19 @@ function buildViewerHtml(payload: {
         z-index: 0;
         -webkit-user-select: text;
         user-select: text;
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+        opacity: 0;
+        display: none;
+      }
+
+      #text-layer * {
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+
+      body.selection-enabled #text-layer {
+        display: block;
       }
 
       #text-layer > span,
@@ -228,13 +248,11 @@ function buildViewerHtml(payload: {
         const canvasEl = document.getElementById('pdf-canvas');
         const textLayerEl = document.getElementById('text-layer');
         const overlayLayerEl = document.getElementById('overlay-layer');
+        const pdfJsModuleBase64 = ${pdfJsModuleBase64};
+        const pdfJsWorkerModuleBase64 = ${pdfJsWorkerModuleBase64};
         let selectionCaptureTimeout = null;
         let lastSelectionFingerprint = '';
         let listenersAttached = false;
-        const pdfJsScriptCandidates = [
-          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
-          'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
-        ];
 
         const post = (message) => {
           try {
@@ -513,32 +531,40 @@ function buildViewerHtml(payload: {
         };
 
         const loadPdfJsLib = async () => {
-          if (window.pdfjsLib) {
-            return window.pdfjsLib;
+          if (window.__livroVivoPdfJsPromise) {
+            return window.__livroVivoPdfJsPromise;
           }
 
-          let lastError = null;
-
-          for (const url of pdfJsScriptCandidates) {
+          window.__livroVivoPdfJsPromise = (async () => {
+            let moduleCode = '';
             try {
-              await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = url;
-                script.async = true;
-                script.onload = () => resolve();
-                script.onerror = () => reject(new Error('Falha ao carregar: ' + url));
-                document.head.appendChild(script);
-              });
-
-              if (window.pdfjsLib) {
-                return window.pdfjsLib;
-              }
-            } catch (error) {
-              lastError = error;
+              moduleCode = window.atob(pdfJsModuleBase64);
+            } catch {
+              throw new Error('Falha ao decodificar bundle local do PDF.js.');
             }
-          }
 
-          throw lastError || new Error('pdfjsLib não carregado.');
+            const moduleBlob = new Blob([moduleCode], { type: 'text/javascript' });
+            const moduleUrl = URL.createObjectURL(moduleBlob);
+            try {
+              const pdfjsLib = await import(moduleUrl);
+              try {
+                if (!window.__livroVivoPdfJsWorkerUrl) {
+                  const workerCode = window.atob(pdfJsWorkerModuleBase64);
+                  const workerBlob = new Blob([workerCode], { type: 'text/javascript' });
+                  window.__livroVivoPdfJsWorkerUrl = URL.createObjectURL(workerBlob);
+                }
+
+                if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+                  pdfjsLib.GlobalWorkerOptions.workerSrc = window.__livroVivoPdfJsWorkerUrl;
+                }
+              } catch {}
+              return pdfjsLib;
+            } finally {
+              URL.revokeObjectURL(moduleUrl);
+            }
+          })();
+
+          return window.__livroVivoPdfJsPromise;
         };
 
         const render = async () => {
@@ -553,11 +579,9 @@ function buildViewerHtml(payload: {
 
             const loadingTask = pdfjsLib.getDocument({
               url: payload.pdfUrl,
-              httpHeaders: payload.authHeader
-                ? { Authorization: payload.authHeader }
-                : undefined,
               withCredentials: false,
-              disableWorker: true,
+              disableFontFace: false,
+              useSystemFonts: true,
             });
 
             const pdf = await loadingTask.promise;
@@ -598,24 +622,39 @@ function buildViewerHtml(payload: {
                   : undefined,
             }).promise;
 
-            const textContent = await page.getTextContent({ normalizeWhitespace: true });
+            if (payload.selectionEnabled) {
+              const textContent = await page.getTextContent({ normalizeWhitespace: true });
 
-            if (typeof pdfjsLib.renderTextLayer === 'function') {
-              const textTask = pdfjsLib.renderTextLayer({
-                textContentSource: textContent,
-                container: textLayerEl,
-                viewport,
-                textDivs: [],
-                enhanceTextSelection: false,
-              });
-              if (textTask && textTask.promise) {
-                await textTask.promise;
+              let textLayerRendered = false;
+              if (typeof pdfjsLib.renderTextLayer === 'function') {
+                const textTask = pdfjsLib.renderTextLayer({
+                  textContentSource: textContent,
+                  container: textLayerEl,
+                  viewport,
+                  textDivs: [],
+                  enhanceTextSelection: false,
+                });
+                if (textTask && textTask.promise) {
+                  await textTask.promise;
+                }
+                textLayerRendered = true;
+              } else if (typeof pdfjsLib.TextLayer === 'function') {
+                const textLayer = new pdfjsLib.TextLayer({
+                  textContentSource: textContent,
+                  container: textLayerEl,
+                  viewport,
+                });
+                await Promise.resolve(textLayer.render());
+                textLayerRendered = true;
               }
-              const endOfContentEl = document.createElement('div');
-              endOfContentEl.className = 'endOfContent';
-              textLayerEl.appendChild(endOfContentEl);
-            } else {
-              throw new Error('renderTextLayer não está disponível na build do pdf.js.');
+
+              if (textLayerRendered) {
+                const endOfContentEl = document.createElement('div');
+                endOfContentEl.className = 'endOfContent';
+                textLayerEl.appendChild(endOfContentEl);
+              } else {
+                textLayerEl.style.display = 'none';
+              }
             }
 
             drawOverlays();
@@ -637,25 +676,23 @@ function buildViewerHtml(payload: {
 </html>`;
 }
 
-function buildPdfUrl(params: {
-  uri: string;
-  token?: string;
-  bookId?: number;
-  versionId?: number;
-}) {
-  const { uri, token, bookId, versionId } = params;
-  if (!uri.startsWith("file://")) return uri;
-  if (!token || !bookId || !versionId) return uri;
+const ALLOWED_READER_URL_PREFIXES = ["about:blank", "file://", "blob:", "data:"];
+const API_ORIGIN = (() => {
+  try {
+    return new URL(API_BASE_URL).origin;
+  } catch {
+    return "";
+  }
+})();
 
-  const normalized = API_BASE_URL.replace(/\/+$/, "");
-  return `${normalized}/books/${bookId}/versions/${versionId}/download`;
+export function isAllowedReaderNavigation(url?: string) {
+  if (!url) return false;
+  if (API_ORIGIN && url.startsWith(API_ORIGIN)) return true;
+  return ALLOWED_READER_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
 }
 
 export default function WebViewPdfJsReaderEngine({
   uri,
-  token,
-  bookId,
-  versionId,
   page,
   selectionEnabled,
   rects,
@@ -663,10 +700,7 @@ export default function WebViewPdfJsReaderEngine({
   onSelection,
   onError,
 }: NativePdfReaderProps) {
-  const effectivePdfUrl = React.useMemo(
-    () => buildPdfUrl({ uri, token, bookId, versionId }),
-    [uri, token, bookId, versionId]
-  );
+  const effectivePdfUrl = React.useMemo(() => uri, [uri]);
 
   React.useEffect(() => {
     if (!NativeWebView) {
@@ -707,12 +741,16 @@ export default function WebViewPdfJsReaderEngine({
   const viewerHtml = React.useMemo(() => {
     return buildViewerHtml({
       page,
-      authHeader: token ? buildAuthHeader(token) : undefined,
       pdfUrl: effectivePdfUrl,
       selectionEnabled,
       rects,
     });
-  }, [effectivePdfUrl, page, rects, selectionEnabled, token]);
+  }, [effectivePdfUrl, page, rects, selectionEnabled]);
+
+  const onShouldStartLoadWithRequest = React.useCallback(
+    (request: { url?: string }) => isAllowedReaderNavigation(request.url),
+    []
+  );
 
   const viewerKey = React.useMemo(
     () =>
@@ -741,13 +779,22 @@ export default function WebViewPdfJsReaderEngine({
       key={viewerKey}
       style={styles.webview}
       source={{ html: viewerHtml, baseUrl: API_BASE_URL }}
-      originWhitelist={["*"]}
+      originWhitelist={[
+        API_ORIGIN,
+        "about:blank",
+        "file://*",
+        "blob:*",
+        "data:*",
+      ].filter(Boolean)}
       javaScriptEnabled
       domStorageEnabled
       allowFileAccess
-      allowUniversalAccessFromFileURLs
-      mixedContentMode="always"
+      allowFileAccessFromFileURLs
+      javaScriptCanOpenWindowsAutomatically={false}
+      setSupportMultipleWindows={false}
+      mixedContentMode="never"
       startInLoadingState
+      onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
       onMessage={onWebViewMessage}
       onError={(event: NativeSyntheticEvent<{ description?: string }>) => {
         onError(

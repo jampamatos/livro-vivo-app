@@ -35,7 +35,6 @@ import {
   denormalizeRect,
 } from "../readers/web/selectionRects";
 import { withAlpha } from "../utils/colors";
-
 pdfjs.GlobalWorkerOptions.workerSrc =
   "https://unpkg.com/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs";
 

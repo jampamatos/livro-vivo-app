@@ -225,20 +225,24 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     async (book: Book, version: BookVersion, page?: number) => {
       setDownloadError(null);
       const versionLabel = version.version_number ?? version.version;
+      let signedDownloadUrl = "";
+
+      try {
+        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
+        signedDownloadUrl = url;
+      } catch (e) {
+        setDownloadError(String(e));
+        return;
+      }
 
       if (Platform.OS === "web") {
-        try {
-          const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-          openReader({
-            uri: url,
-            title: `${book.title} — v${versionLabel}`,
-            bookId: book.id,
-            versionId: version.id,
-            initialPage: page,
-          });
-        } catch (e) {
-          setDownloadError(String(e));
-        }
+        openReader({
+          uri: signedDownloadUrl,
+          title: `${book.title} — v${versionLabel}`,
+          bookId: book.id,
+          versionId: version.id,
+          initialPage: page,
+        });
         return;
       }
 
@@ -247,8 +251,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       if (!cached) {
         setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
         try {
-          const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-          await downloadPdfToPath({ url, token, path });
+          await downloadPdfToPath({ url: signedDownloadUrl, token, path });
           setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
         } catch (e) {
           setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
@@ -257,8 +260,9 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         }
       }
 
+      const nativeReaderUri = Platform.OS === "android" ? path : signedDownloadUrl;
       openReader({
-        uri: path,
+        uri: nativeReaderUri,
         title: `${book.title} — v${versionLabel}`,
         bookId: book.id,
         versionId: version.id,
@@ -285,8 +289,9 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
 
         setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
         const versionLabel = version.version_number ?? version.version;
+        const nativeReaderUri = Platform.OS === "android" ? path : url;
         openReader({
-          uri: path,
+          uri: nativeReaderUri,
           title: `${book.title} — v${versionLabel}`,
           bookId: book.id,
           versionId: version.id,
