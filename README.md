@@ -74,11 +74,12 @@ npx expo start --dev-client
 
 ## Configuração da API (Base URL)
 
-Por padrão, o app tenta usar:
+Em dev/test, se a variável não existir, o app usa:
 
 - `http://127.0.0.1:8000` (bom para **web no mesmo PC**)
 
 Para configurar (recomendado), defina `EXPO_PUBLIC_API_BASE_URL`.
+Em build de produção, essa variável é obrigatória.
 
 ### Exemplo (web)
 
@@ -105,6 +106,14 @@ EXPO_PUBLIC_API_BASE_URL=http://10.0.0.153:8000 npx expo start --dev-client
 
 > Dica: o IP "certo" costuma ser o da sua interface de rede (ex.: `10.x.x.x` / `192.168.x.x`).
 > **Não** use IP de Docker (ex.: `172.17.0.1`) para acessar do celular.
+
+### Build de produção (pré-release)
+
+Use URL pública da API com HTTPS:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=https://api.seudominio.com npx expo export --platform web
+```
 
 ## Engine do leitor nativo
 
@@ -204,7 +213,15 @@ Cobertura atual (unitária):
 
 Ainda não há testes de UI/integração/E2E.
 
-CI mínimo de qualidade: `.github/workflows/ci.yml` (typecheck + testes).
+CI mínimo de qualidade: `.github/workflows/ci.yml` (typecheck + testes + export web).
+
+Validação de configuração de release (bundle/package ids):
+
+```bash
+RELEASE_BUILD=true npm run validate:release-config
+```
+
+> Esse comando falha se `app.json` ainda estiver com `com.anonymous.*`.
 
 ## Env
 

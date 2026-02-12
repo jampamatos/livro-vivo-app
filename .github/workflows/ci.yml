@@ -9,7 +9,7 @@ on:
 
 jobs:
   sanity:
-    name: Typecheck + Tests
+    name: Typecheck + Tests + Web Export
     runs-on: ubuntu-latest
 
     steps:
@@ -30,3 +30,8 @@ jobs:
 
       - name: Run tests
         run: npm test -- --runInBand --ci
+
+      - name: Build web export sanity
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://api.example.com
+        run: npx expo export --platform web --output-dir dist-web-ci
