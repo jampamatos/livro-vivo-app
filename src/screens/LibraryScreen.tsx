@@ -1,29 +1,26 @@
 import React from "react";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
 
 import { ApiError } from "../api/http";
 import {
-  listBooks,
-  listBookVersions,
   Book,
+  BookChapter,
+  BookChapterSummary,
   BookVersion,
-  getVersionDownloadUrl,
-  searchBook,
-  BookSearchResult,
+  getCurrentBookVersion,
+  getCurrentVersionChapterBySlug,
+  listBooks,
+  listCurrentVersionChapters,
 } from "../api/books";
-import { downloadPdfToPath, getPdfPath, isPdfCached } from "../storage/pdfCache";
-import PdfReaderScreen from "./PdfReaderScreen";
 
 type Props = {
   token: string;
@@ -31,307 +28,136 @@ type Props = {
   onLogout: () => Promise<void> | void;
 };
 
-type DownloadState = "idle" | "downloading" | "downloaded" | "error";
+type OpenBookState = {
+  bookId: number;
+  version: BookVersion;
+  chapters: BookChapterSummary[];
+};
+
+type LoadedChapterState = {
+  chapter: BookChapter;
+  previousSlug: string | null;
+  nextSlug: string | null;
+};
 
 export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const { height: windowHeight } = useWindowDimensions();
-  // livros
-  const [loading, setLoading] = React.useState(true);
+
+  const [loadingBooks, setLoadingBooks] = React.useState(true);
   const [books, setBooks] = React.useState<Book[]>([]);
-  const [error, setError] = React.useState<string | null>(null);
+  const [booksError, setBooksError] = React.useState<string | null>(null);
 
-  // livro aberto + versões
-  const [openBookId, setOpenBookId] = React.useState<number | null>(null);
-  const [versionsLoading, setVersionsLoading] = React.useState(false);
-  const [versions, setVersions] = React.useState<BookVersion[]>([]);
-  const [versionsError, setVersionsError] = React.useState<string | null>(null);
+  const [openBook, setOpenBook] = React.useState<OpenBookState | null>(null);
+  const [openBookLoading, setOpenBookLoading] = React.useState(false);
+  const [openBookError, setOpenBookError] = React.useState<string | null>(null);
 
-  // download
-  const [downloadByVersion, setDownloadByVersion] = React.useState<Record<number, DownloadState>>({});
-  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+  const [chapterLoading, setChapterLoading] = React.useState(false);
+  const [chapterError, setChapterError] = React.useState<string | null>(null);
+  const [activeChapter, setActiveChapter] = React.useState<LoadedChapterState | null>(null);
 
-  // busca
-  const [query, setQuery] = React.useState("");
-  const [searchLoading, setSearchLoading] = React.useState(false);
-  const [searchError, setSearchError] = React.useState<string | null>(null);
-  const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
-  const [searchCount, setSearchCount] = React.useState<number | null>(null);
-  const [hasSearched, setHasSearched] = React.useState(false);
-
-  // UI (aba)
-  const [panel, setPanel] = React.useState<"search" | "versions">("search");
-
-  const [reader, setReader] = React.useState<{
-    uri: string;
-    title: string;
-    bookId: number;
-    versionId: number;
-    initialPage?: number;
-  } | null>(null);
-
-  const resetSearch = React.useCallback(() => {
-    setQuery("");
-    setHasSearched(false);
-    setSearchError(null);
-    setSearchResults([]);
-    setSearchCount(null);
-    setSearchLoading(false);
-    setPanel("search");
+  const webRootStyle = React.useMemo(() => {
+    return Platform.OS === "web" ? { height: windowHeight } : null;
+  }, [windowHeight]);
+  const webScrollStyle = React.useMemo(() => {
+    return Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
   }, []);
 
-  const resetVersions = React.useCallback(() => {
-    setVersions([]);
-    setVersionsError(null);
-    setVersionsLoading(false);
-    setDownloadError(null);
+  const formatApiError = React.useCallback((error: unknown, prefix: string) => {
+    if (error instanceof ApiError) {
+      return `${prefix}: ${error.message} — ${JSON.stringify(error.body)}`;
+    }
+    return `${prefix}: ${String(error)}`;
   }, []);
 
   const loadBooks = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoadingBooks(true);
+    setBooksError(null);
     try {
-      const res = await listBooks(token);
-      setBooks(res.books);
-    } catch (e) {
-      const msg =
-        e instanceof ApiError
-          ? `${e.message} — ${JSON.stringify(e.body)}`
-          : `Erro ao chamar /books: ${String(e)}`;
-      setError(msg);
+      const response = await listBooks(token);
+      setBooks(response.books);
+    } catch (error) {
       setBooks([]);
+      setBooksError(formatApiError(error, "Erro ao carregar /books"));
     } finally {
-      setLoading(false);
+      setLoadingBooks(false);
     }
-  }, [token]);
+  }, [formatApiError, token]);
 
   React.useEffect(() => {
     loadBooks();
   }, [loadBooks]);
 
+  const loadChapter = React.useCallback(
+    async (bookId: number, chapterSlug: string) => {
+      setChapterLoading(true);
+      setChapterError(null);
+      try {
+        const response = await getCurrentVersionChapterBySlug(token, bookId, chapterSlug);
+        setActiveChapter({
+          chapter: response.chapter,
+          previousSlug: response.previous_slug,
+          nextSlug: response.next_slug,
+        });
+      } catch (error) {
+        setActiveChapter(null);
+        setChapterError(formatApiError(error, "Erro ao abrir capítulo"));
+      } finally {
+        setChapterLoading(false);
+      }
+    },
+    [formatApiError, token]
+  );
+
   const toggleBook = React.useCallback(
     async (bookId: number) => {
-      // fechar o mesmo livro
-      if (openBookId === bookId) {
-        setOpenBookId(null);
-        resetVersions();
-        resetSearch();
+      if (openBook?.bookId === bookId) {
+        setOpenBook(null);
+        setOpenBookError(null);
+        setActiveChapter(null);
+        setChapterError(null);
         return;
       }
 
-      // abrir outro livro
-      setOpenBookId(bookId);
-
-      // limpa UI/erros antes de carregar
-      resetVersions();
-      resetSearch();
-
-      setVersionsLoading(true);
-      try {
-        const res = await listBookVersions(token, bookId);
-        setVersions(res.versions);
-
-        // checa cache dos PDFs
-        const checks = await Promise.all(
-          res.versions.map(async (v) => {
-            const path = getPdfPath(bookId, v.id);
-            const cached = await isPdfCached(path);
-            return [v.id, cached ? ("downloaded" as const) : ("idle" as const)] as const;
-          })
-        );
-
-        setDownloadByVersion((prev) => {
-          const next = { ...prev };
-          for (const [vid, state] of checks) next[vid] = state;
-          return next;
-        });
-      } catch (e) {
-        const msg =
-          e instanceof ApiError
-            ? `${e.message} — ${JSON.stringify(e.body)}`
-            : `Erro ao chamar /books/${bookId}/versions: ${String(e)}`;
-        setVersionsError(msg);
-      } finally {
-        setVersionsLoading(false);
-      }
-    },
-    [openBookId, resetSearch, resetVersions, token]
-  );
-
-  const runSearch = React.useCallback(async () => {
-    if (!openBookId) return;
-
-    const q = query.trim();
-    setHasSearched(true);
-    setSearchError(null);
-
-    if (!q) {
-      setSearchResults([]);
-      setSearchCount(0);
-      return;
-    }
-
-    setSearchLoading(true);
-    try {
-      const res = await searchBook(token, openBookId, q);
-      setSearchResults(res.results ?? []);
-      setSearchCount(typeof res.count === "number" ? res.count : null);
-    } catch (e) {
-      const msg =
-        e instanceof ApiError
-          ? `${e.message} — ${JSON.stringify(e.body)}`
-          : `Erro ao buscar: ${String(e)}`;
-      setSearchError(msg);
-      setSearchResults([]);
-      setSearchCount(null);
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [openBookId, query, token]);
-
-  const renderHighlightedSnippet = React.useCallback(
-    (snippet: string) => {
-      const term = query.trim();
-      if (!term) return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
-
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
-
-      return (
-        <Text style={styles.searchItemSnippet}>
-          {parts.map((part, idx) => {
-            if (part.toLowerCase() === term.toLowerCase()) {
-              return (
-                <Text key={`hit-${idx}`} style={styles.searchHighlight}>
-                  {part}
-                </Text>
-              );
-            }
-            return <Text key={`txt-${idx}`}>{part}</Text>;
-          })}
-        </Text>
-      );
-    },
-    [query]
-  );
-
-  const openReader = React.useCallback(
-    (params: { uri: string; title: string; bookId: number; versionId: number; initialPage?: number }) => {
-      setReader(params);
-    },
-    []
-  );
-
-  const openVersionAtPage = React.useCallback(
-    async (book: Book, version: BookVersion, page?: number) => {
-      setDownloadError(null);
-      const versionLabel = version.version_number ?? version.version;
-      let signedDownloadUrl = "";
+      setOpenBookLoading(true);
+      setOpenBookError(null);
+      setChapterError(null);
+      setActiveChapter(null);
 
       try {
-        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-        signedDownloadUrl = url;
-      } catch (e) {
-        setDownloadError(String(e));
-        return;
-      }
+        const [versionResponse, chaptersResponse] = await Promise.all([
+          getCurrentBookVersion(token, bookId),
+          listCurrentVersionChapters(token, bookId),
+        ]);
 
-      if (Platform.OS === "web") {
-        openReader({
-          uri: signedDownloadUrl,
-          title: `${book.title} — v${versionLabel}`,
-          bookId: book.id,
-          versionId: version.id,
-          initialPage: page,
+        const chapters = chaptersResponse.chapters ?? [];
+        setOpenBook({
+          bookId,
+          version: versionResponse.version,
+          chapters,
         });
-        return;
-      }
 
-      const path = getPdfPath(book.id, version.id);
-      const cached = await isPdfCached(path);
-      if (!cached) {
-        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
-        try {
-          await downloadPdfToPath({ url: signedDownloadUrl, token, path });
-          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
-        } catch (e) {
-          setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
-          setDownloadError(String(e));
-          return;
+        if (chapters.length > 0) {
+          await loadChapter(bookId, chapters[0].slug);
         }
-      }
-
-      const nativeReaderUri = Platform.OS === "android" ? path : signedDownloadUrl;
-      openReader({
-        uri: nativeReaderUri,
-        title: `${book.title} — v${versionLabel}`,
-        bookId: book.id,
-        versionId: version.id,
-        initialPage: page,
-      });
-    },
-    [openReader, token]
-  );
-
-  const downloadVersion = React.useCallback(
-    async (book: Book, version: BookVersion) => {
-      setDownloadError(null);
-      if (Platform.OS === "web") {
-        return openVersionAtPage(book, version);
-      }
-
-      // mobile: baixa e cacheia
-      setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloading" }));
-      try {
-        const { url } = await getVersionDownloadUrl(token, book.id, version.id);
-        const path = getPdfPath(book.id, version.id);
-
-        await downloadPdfToPath({ url, token, path });
-
-        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "downloaded" }));
-        const versionLabel = version.version_number ?? version.version;
-        const nativeReaderUri = Platform.OS === "android" ? path : url;
-        openReader({
-          uri: nativeReaderUri,
-          title: `${book.title} — v${versionLabel}`,
-          bookId: book.id,
-          versionId: version.id,
-        });
-      } catch (e) {
-        setDownloadByVersion((prev) => ({ ...prev, [version.id]: "error" }));
-        setDownloadError(String(e));
+      } catch (error) {
+        setOpenBook(null);
+        setOpenBookError(formatApiError(error, "Erro ao carregar versão atual/capítulos"));
+      } finally {
+        setOpenBookLoading(false);
       }
     },
-    [openReader, openVersionAtPage, token]
+    [formatApiError, loadChapter, openBook?.bookId, token]
   );
 
-  const openVersion = React.useCallback(
-    async (book: Book, version: BookVersion) => {
-      return openVersionAtPage(book, version);
-    },
-    [openVersionAtPage]
-  );
-
-  const webRootStyle = Platform.OS === "web" ? { height: windowHeight } : null;
-  const webScrollStyle = Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
-
-  if (reader) {
-    return (
-      <PdfReaderScreen
-        uri={reader.uri}
-        title={reader.title}
-        initialPage={reader.initialPage}
-        token={token}
-        bookId={reader.bookId}
-        versionId={reader.versionId}
-        onClose={() => setReader(null)}
-      />
-    );
-  }
+  const chapterText = React.useMemo(() => {
+    if (!activeChapter) return "";
+    return activeChapter.chapter.content_plain?.trim() || "Sem conteúdo.";
+  }, [activeChapter]);
 
   return (
     <View style={[styles.root, webRootStyle]}>
       <Text style={styles.title}>Biblioteca</Text>
-      <Text style={styles.subtitle}>Livros e versões disponíveis</Text>
+      <Text style={styles.subtitle}>Leitura por capítulos da versão atual</Text>
 
       <View style={styles.row}>
         <Pressable style={styles.button} onPress={loadBooks}>
@@ -347,179 +173,133 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         </Pressable>
       </View>
 
-      {loading ? (
+      {loadingBooks ? (
         <View style={styles.center}>
           <ActivityIndicator />
         </View>
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
+      ) : booksError ? (
+        <Text style={styles.error}>{booksError}</Text>
       ) : (
         <ScrollView style={[styles.scroll, webScrollStyle]} contentContainerStyle={styles.list}>
-          {books.map((b) => (
-            <View key={b.id} style={styles.card}>
-              <Pressable onPress={() => toggleBook(b.id)} style={styles.cardHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.bookTitle}>{b.title}</Text>
-                  <Text style={styles.bookMeta}>
-                    {b.status} • atualizado em {b.updated_at}
-                  </Text>
-                </View>
-                <Text style={styles.chevron}>{openBookId === b.id ? "▾" : "▸"}</Text>
-              </Pressable>
-
-              {openBookId === b.id ? (
-                <View style={styles.panelRoot}>
-                  {/* Tabs */}
-                  <View style={styles.tabs}>
-                    <Pressable
-                      onPress={() => setPanel("search")}
-                      style={[styles.tab, panel === "search" ? styles.tabActive : null]}
-                    >
-                      <Text style={[styles.tabText, panel === "search" ? styles.tabTextActive : null]}>
-                        Buscar
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setPanel("versions")}
-                      style={[styles.tab, panel === "versions" ? styles.tabActive : null]}
-                    >
-                      <Text style={[styles.tabText, panel === "versions" ? styles.tabTextActive : null]}>
-                        Versões
-                      </Text>
-                    </Pressable>
+          {books.map((book) => {
+            const isOpen = openBook?.bookId === book.id;
+            return (
+              <View key={book.id} style={styles.card}>
+                <Pressable onPress={() => toggleBook(book.id)} style={styles.cardHeader}>
+                  <View style={styles.cardHeaderText}>
+                    <Text style={styles.bookTitle}>{book.title}</Text>
+                    <Text style={styles.bookMeta}>
+                      {book.status} • atualizado em {book.updated_at}
+                    </Text>
                   </View>
+                  <Text style={styles.chevron}>{isOpen ? "▾" : "▸"}</Text>
+                </Pressable>
 
-                  {/* Panel: Search */}
-                  {panel === "search" ? (
-                    <View style={styles.searchBox}>
-                      <Text style={styles.sectionTitle}>Buscar neste livro</Text>
-
-                      <View style={styles.searchRow}>
-                        <TextInput
-                          value={query}
-                          onChangeText={setQuery}
-                          placeholder="Digite um termo…"
-                          autoCapitalize="none"
-                          style={styles.searchInput}
-                          editable={!searchLoading}
-                          returnKeyType="search"
-                          onSubmitEditing={runSearch}
-                        />
-
-                        <Pressable
-                          onPress={runSearch}
-                          disabled={searchLoading || !query.trim()}
-                          style={[
-                            styles.searchBtn,
-                            searchLoading || !query.trim() ? styles.searchBtnDisabled : null,
-                          ]}
-                        >
-                          <Text style={styles.searchBtnText}>{searchLoading ? "Buscando..." : "Buscar"}</Text>
-                        </Pressable>
-                      </View>
-
-                      {searchError ? <Text style={styles.error}>{searchError}</Text> : null}
-
-                      {hasSearched && !searchLoading ? (
-                        searchResults.length === 0 ? (
-                          <Text style={styles.empty}>Sem resultados.</Text>
-                        ) : (
-                          <View style={styles.searchResults}>
-                            <Text style={styles.searchMeta}>
-                              {searchCount != null
-                                ? `${searchResults.length} de ${searchCount} resultados`
-                                : `${searchResults.length} resultados`}
-                            </Text>
-
-                            {searchResults.map((r, idx) => (
-                              <Pressable
-                                key={`${r.book_version_id}-${r.page_number}-${idx}`}
-                                style={styles.searchItem}
-                                onPress={() => {
-                                  const book = b;
-                                  const version = versions.find((v) => v.id === r.book_version_id);
-                                  if (!book || !version) {
-                                    Alert.alert("Não foi possível abrir o resultado", "Versão não encontrada.");
-                                    return;
-                                  }
-                                  openVersionAtPage(book, version, r.page_number);
-                                }}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Abrir página ${r.page_number}`}
-                              >
-                                <Text style={styles.searchItemTitle}>
-                                  {r.version} • pág. {r.page_number}
-                                </Text>
-                                {renderHighlightedSnippet(r.snippet)}
-                              </Pressable>
-                            ))}
-                          </View>
-                        )
-                      ) : null}
-                    </View>
-                  ) : null}
-
-                  {/* Panel: Versions */}
-                  {panel === "versions" ? (
-                    <View style={styles.versionsBox}>
-                      {downloadError ? <Text style={styles.error}>{downloadError}</Text> : null}
-
-                      {versionsLoading ? (
+                {isOpen ? (
+                  <View style={styles.panelRoot}>
+                    {openBookLoading ? (
+                      <View style={styles.sectionLoading}>
                         <ActivityIndicator />
-                      ) : versionsError ? (
-                        <Text style={styles.error}>{versionsError}</Text>
-                      ) : versions.length === 0 ? (
-                        <Text style={styles.empty}>Sem versões.</Text>
-                      ) : (
-                        versions.map((v) => {
-                          const dState = downloadByVersion[v.id] ?? "idle";
-                          const canOpenInline = Platform.OS === "web";
-                          const isDownloading = dState === "downloading";
-                          const isDownloaded = canOpenInline ? true : dState === "downloaded";
-                          const hasErr = dState === "error";
+                      </View>
+                    ) : openBookError ? (
+                      <Text style={styles.error}>{openBookError}</Text>
+                    ) : openBook ? (
+                      <View style={styles.panelContent}>
+                        <View style={styles.versionCard}>
+                          <Text style={styles.versionTitle}>Versão atual: {openBook.version.version}</Text>
+                          <Text style={styles.versionMeta}>
+                            status: {openBook.version.status} • publicada em {openBook.version.published_at}
+                          </Text>
+                          {!!openBook.version.changelog && (
+                            <Text style={styles.versionChangelog} numberOfLines={3}>
+                              {openBook.version.changelog}
+                            </Text>
+                          )}
+                        </View>
 
-                          return (
-                            <View key={v.id} style={styles.versionRow}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={styles.versionTitle}>{v.version}</Text>
-                                <Text style={styles.versionMeta}>
-                                  {v.status} • publicado em {v.published_at}
-                                </Text>
-                                <Text style={styles.versionChangelog} numberOfLines={4}>
-                                  {v.changelog}
-                                </Text>
+                        <View style={styles.summaryCard}>
+                          <Text style={styles.sectionTitle}>Sumário</Text>
+                          {openBook.chapters.length === 0 ? (
+                            <Text style={styles.empty}>Sem capítulos na versão atual.</Text>
+                          ) : (
+                            openBook.chapters.map((chapter) => {
+                              const active = activeChapter?.chapter.slug === chapter.slug;
+                              return (
+                                <Pressable
+                                  key={chapter.id}
+                                  onPress={() => loadChapter(book.id, chapter.slug)}
+                                  style={[styles.chapterItem, active ? styles.chapterItemActive : null]}
+                                >
+                                  <Text style={[styles.chapterOrder, active ? styles.chapterTextActive : null]}>
+                                    {chapter.order}.
+                                  </Text>
+                                  <Text
+                                    style={[styles.chapterTitle, active ? styles.chapterTextActive : null]}
+                                    numberOfLines={2}
+                                  >
+                                    {chapter.title}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })
+                          )}
+                        </View>
+
+                        <View style={styles.chapterCard}>
+                          <View style={styles.chapterHeader}>
+                            <Text style={styles.sectionTitle}>
+                              {activeChapter ? activeChapter.chapter.title : "Capítulo"}
+                            </Text>
+                            {chapterLoading ? <ActivityIndicator size="small" /> : null}
+                          </View>
+
+                          {chapterError ? <Text style={styles.error}>{chapterError}</Text> : null}
+
+                          {activeChapter ? (
+                            <>
+                              <View style={styles.chapterNav}>
+                                <Pressable
+                                  onPress={() => {
+                                    if (!activeChapter.previousSlug) return;
+                                    loadChapter(book.id, activeChapter.previousSlug);
+                                  }}
+                                  disabled={!activeChapter.previousSlug || chapterLoading}
+                                  style={[
+                                    styles.navButton,
+                                    !activeChapter.previousSlug || chapterLoading ? styles.navButtonDisabled : null,
+                                  ]}
+                                >
+                                  <Text style={styles.navButtonText}>Capítulo anterior</Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => {
+                                    if (!activeChapter.nextSlug) return;
+                                    loadChapter(book.id, activeChapter.nextSlug);
+                                  }}
+                                  disabled={!activeChapter.nextSlug || chapterLoading}
+                                  style={[
+                                    styles.navButton,
+                                    !activeChapter.nextSlug || chapterLoading ? styles.navButtonDisabled : null,
+                                  ]}
+                                >
+                                  <Text style={styles.navButtonText}>Próximo capítulo</Text>
+                                </Pressable>
                               </View>
 
-                              <Pressable
-                                onPress={() => (isDownloaded ? openVersion(b, v) : downloadVersion(b, v))}
-                                disabled={isDownloading}
-                                style={[
-                                  styles.downloadBtn,
-                                  isDownloaded ? styles.downloadBtnDone : null,
-                                  isDownloading ? styles.downloadBtnDisabled : null,
-                                ]}
-                              >
-                                <Text style={styles.downloadBtnText}>
-                                  {isDownloaded
-                                    ? "Abrir"
-                                    : isDownloading
-                                    ? "Baixando..."
-                                    : hasErr
-                                    ? "Tentar novamente"
-                                    : "Baixar"}
-                                </Text>
-                              </Pressable>
-                            </View>
-                          );
-                        })
-                      )}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-          ))}
+                              <Text style={styles.chapterContent}>{chapterText}</Text>
+                            </>
+                          ) : (
+                            <Text style={styles.empty}>Selecione um capítulo no sumário.</Text>
+                          )}
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
         </ScrollView>
       )}
     </View>
@@ -532,7 +312,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     padding: 16,
     gap: 12,
-    maxWidth: 720,
+    maxWidth: 860,
     width: "100%",
     alignSelf: "center",
   },
@@ -547,86 +327,76 @@ const styles = StyleSheet.create({
   buttonDanger: { backgroundColor: "#b00020" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 
-  error: { color: "#b00020", fontFamily: "monospace" },
+  error: { color: "#b00020", fontFamily: "monospace", paddingHorizontal: 14, paddingBottom: 8 },
 
-  scroll: {
-    flex: 1,
-    minHeight: 0,
-  },
+  scroll: { flex: 1, minHeight: 0 },
   list: { gap: 12, paddingTop: 8, paddingBottom: 24, flexGrow: 1 },
 
   card: { borderWidth: 1, borderColor: "#ddd", borderRadius: 12, backgroundColor: "#fff" },
   cardHeader: { padding: 14, flexDirection: "row", alignItems: "center", gap: 10 },
+  cardHeaderText: { flex: 1 },
   chevron: { fontSize: 18, color: "#444" },
-
   bookTitle: { fontSize: 16, fontWeight: "700" },
   bookMeta: { fontSize: 12, color: "#666" },
 
   panelRoot: { borderTopWidth: 1, borderTopColor: "#eee" },
+  sectionLoading: { paddingVertical: 20 },
+  panelContent: { padding: 14, gap: 12 },
 
-  // Tabs
-  tabs: { flexDirection: "row", gap: 10, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8 },
-  tab: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-  },
-  tabActive: { backgroundColor: "#111", borderColor: "#111" },
-  tabText: { fontSize: 13, fontWeight: "700", color: "#111" },
-  tabTextActive: { color: "#fff" },
-
-  // Search
-  sectionTitle: { fontSize: 13, fontWeight: "700", marginBottom: 8, color: "#111" },
-
-  searchBox: { paddingHorizontal: 14, paddingBottom: 14, gap: 8 },
-  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
-  searchInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: "#fff",
-  },
-  searchBtn: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: "#111" },
-  searchBtnDisabled: { opacity: 0.5 },
-  searchBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-
-  searchResults: { gap: 10, paddingTop: 6 },
-  searchMeta: { fontSize: 12, color: "#666" },
-  searchItem: {
+  versionCard: {
     borderWidth: 1,
     borderColor: "#eee",
     borderRadius: 10,
+    backgroundColor: "#fafafa",
+    padding: 10,
+    gap: 4,
+  },
+  versionTitle: { fontSize: 14, fontWeight: "700", color: "#111" },
+  versionMeta: { fontSize: 12, color: "#555" },
+  versionChangelog: { fontSize: 13, color: "#222" },
+
+  summaryCard: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    padding: 10,
+    gap: 8,
+  },
+  sectionTitle: { fontSize: 13, fontWeight: "700", color: "#111" },
+  chapterItem: {
+    flexDirection: "row",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 8,
     padding: 10,
     backgroundColor: "#fafafa",
   },
-  searchItemTitle: { fontSize: 12, fontWeight: "700", color: "#111", marginBottom: 4 },
-  searchItemSnippet: { fontSize: 13, color: "#333" },
-  searchHighlight: { fontWeight: "700" },
+  chapterItemActive: { backgroundColor: "#111", borderColor: "#111" },
+  chapterOrder: { fontSize: 13, color: "#333", fontWeight: "700", minWidth: 18 },
+  chapterTitle: { fontSize: 13, color: "#111", flexShrink: 1, fontWeight: "600" },
+  chapterTextActive: { color: "#fff" },
 
-  // Versions
-  versionsBox: { paddingHorizontal: 14, paddingBottom: 14, gap: 10 },
-  versionRow: { paddingVertical: 6, gap: 4 },
-  versionTitle: { fontSize: 14, fontWeight: "700" },
-  versionMeta: { fontSize: 12, color: "#666" },
-  versionChangelog: { fontSize: 13, color: "#222" },
-  empty: { color: "#666" },
-
-  downloadBtn: {
-    alignSelf: "flex-start",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  chapterCard: {
+    borderWidth: 1,
+    borderColor: "#eee",
     borderRadius: 10,
-    backgroundColor: "#111",
-    marginTop: 6,
+    backgroundColor: "#fff",
+    padding: 10,
+    gap: 10,
   },
-  downloadBtnDone: { backgroundColor: "#2e7d32" },
-  downloadBtnDisabled: { opacity: 0.7 },
-  downloadBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  chapterHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  chapterNav: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  navButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#111",
+  },
+  navButtonDisabled: { opacity: 0.45 },
+  navButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  chapterContent: { fontSize: 14, color: "#222", lineHeight: 20 },
+
+  empty: { color: "#666", fontSize: 13 },
 });

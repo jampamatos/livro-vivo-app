@@ -2,7 +2,15 @@ jest.mock("../src/config/api", () => ({
   API_BASE_URL: "http://example.test",
 }));
 
-import { getVersionDownloadUrl, listBooks, listBookVersions, searchBook } from "../src/api/books";
+import {
+  getCurrentBookVersion,
+  getCurrentVersionChapterBySlug,
+  getVersionDownloadUrl,
+  listBooks,
+  listBookVersions,
+  listCurrentVersionChapters,
+  searchBook,
+} from "../src/api/books";
 import { apiFetch } from "../src/api/http";
 
 jest.mock("../src/api/http", () => ({
@@ -24,6 +32,24 @@ describe("api/books", () => {
     apiFetchMock.mockResolvedValueOnce({ book: {}, versions: [] });
     await listBookVersions("t123", 1);
     expect(apiFetchMock).toHaveBeenCalledWith("/books/1/versions/", { token: "t123" });
+  });
+
+  it("getCurrentBookVersion chama /books/:id/current-version/ com token", async () => {
+    apiFetchMock.mockResolvedValueOnce({ book: {}, version: {} });
+    await getCurrentBookVersion("t123", 1);
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/current-version/", { token: "t123" });
+  });
+
+  it("listCurrentVersionChapters chama /books/:id/current-version/chapters/ com token", async () => {
+    apiFetchMock.mockResolvedValueOnce({ chapters: [] });
+    await listCurrentVersionChapters("t123", 1);
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/current-version/chapters/", { token: "t123" });
+  });
+
+  it("getCurrentVersionChapterBySlug chama endpoint por slug com token", async () => {
+    apiFetchMock.mockResolvedValueOnce({ chapter: {} });
+    await getCurrentVersionChapterBySlug("t123", 1, "intro-1");
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/current-version/chapters/intro-1/", { token: "t123" });
   });
 
   it("searchBook chama /books/:id/search/?q=... com token", async () => {
