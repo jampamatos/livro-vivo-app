@@ -72,15 +72,24 @@ export type CurrentBookChapterBySlugResponse = {
 };
 
 export type BookSearchResult = {
+  page_number: number; // compat legado (mapeado para chapter_order)
+  chapter_id: number;
+  chapter_slug: string;
+  chapter_title: string;
+  chapter_order: number;
+  occurrence: number;
+  match_start: number;
+  match_end: number;
   book_version_id: number;
   version: string; // ex: "2024.01"
-  page_number: number; // 1-based
   snippet: string; // trecho
 };
 
 export type BookSearchResponse = {
   q: string;
   count: number;
+  limit: number;
+  offset: number;
   results: BookSearchResult[];
 };
 
@@ -123,7 +132,21 @@ export async function getVersionDownloadUrl(token: string, bookId: number, versi
   return { url: absolute };
 }
 
-export function searchBook(token: string, bookId: number, q: string) {
+export function searchBook(
+  token: string,
+  bookId: number,
+  q: string,
+  options?: { limit?: number; offset?: number; bookVersionId?: number }
+) {
   const params = new URLSearchParams({ q });
+  if (typeof options?.limit === "number") {
+    params.set("limit", String(options.limit));
+  }
+  if (typeof options?.offset === "number") {
+    params.set("offset", String(options.offset));
+  }
+  if (typeof options?.bookVersionId === "number") {
+    params.set("book_version_id", String(options.bookVersionId));
+  }
   return apiFetch<BookSearchResponse>(`/books/${bookId}/search/?${params.toString()}`, { token });
 }

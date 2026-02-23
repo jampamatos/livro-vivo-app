@@ -53,9 +53,21 @@ describe("api/books", () => {
   });
 
   it("searchBook chama /books/:id/search/?q=... com token", async () => {
-    apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, result: [] });
+    apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, results: [], limit: 20, offset: 0 });
     await searchBook("t123", 1, "foo");
     expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo", { token: "t123" });
+  });
+
+  it("searchBook aceita paginação limit/offset", async () => {
+    apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, results: [], limit: 10, offset: 20 });
+    await searchBook("t123", 1, "foo", { limit: 10, offset: 20 });
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo&limit=10&offset=20", { token: "t123" });
+  });
+
+  it("searchBook aceita filtro por versão", async () => {
+    apiFetchMock.mockResolvedValueOnce({ q: "foo", count: 0, results: [], limit: 20, offset: 0 });
+    await searchBook("t123", 1, "foo", { bookVersionId: 7 });
+    expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo&book_version_id=7", { token: "t123" });
   });
 
   it("getVersionDownloadUrl normaliza URL relativa", async () => {

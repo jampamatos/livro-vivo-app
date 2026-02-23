@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -15,12 +16,15 @@ import {
   Book,
   BookChapter,
   BookChapterSummary,
+  BookSearchResult,
   BookVersion,
   getCurrentBookVersion,
   getCurrentVersionChapterBySlug,
   listBooks,
   listCurrentVersionChapters,
+  searchBook,
 } from "../api/books";
+import { BookReaderScreen } from "./BookReaderScreen";
 
 type Props = {
   token: string;
@@ -40,6 +44,12 @@ type LoadedChapterState = {
   nextSlug: string | null;
 };
 
+type ReaderFocus = {
+  query: string;
+  matchStart: number;
+  matchEnd: number;
+};
+
 export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const { height: windowHeight } = useWindowDimensions();
 
@@ -54,6 +64,14 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [chapterLoading, setChapterLoading] = React.useState(false);
   const [chapterError, setChapterError] = React.useState<string | null>(null);
   const [activeChapter, setActiveChapter] = React.useState<LoadedChapterState | null>(null);
+  const [readerFocus, setReaderFocus] = React.useState<ReaderFocus | null>(null);
+
+  const [query, setQuery] = React.useState("");
+  const [searchLoading, setSearchLoading] = React.useState(false);
+  const [searchError, setSearchError] = React.useState<string | null>(null);
+  const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
+  const [searchCount, setSearchCount] = React.useState<number | null>(null);
+  const [hasSearched, setHasSearched] = React.useState(false);
 
   const webRootStyle = React.useMemo(() => {
     return Platform.OS === "web" ? { height: windowHeight } : null;
@@ -67,6 +85,15 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       return `${prefix}: ${error.message} — ${JSON.stringify(error.body)}`;
     }
     return `${prefix}: ${String(error)}`;
+  }, []);
+
+  const resetSearch = React.useCallback(() => {
+    setQuery("");
+    setSearchLoading(false);
+    setSearchError(null);
+    setSearchResults([]);
+    setSearchCount(null);
+    setHasSearched(false);
   }, []);
 
   const loadBooks = React.useCallback(async () => {
@@ -88,7 +115,11 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   }, [loadBooks]);
 
   const loadChapter = React.useCallback(
-    async (bookId: number, chapterSlug: string) => {
+    async (
+      bookId: number,
+      chapterSlug: string,
+      options?: { focus?: ReaderFocus | null }
+    ) => {
       setChapterLoading(true);
       setChapterError(null);
       try {
@@ -98,8 +129,10 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
           previousSlug: response.previous_slug,
           nextSlug: response.next_slug,
         });
+        setReaderFocus(options?.focus ?? null);
       } catch (error) {
         setActiveChapter(null);
+        setReaderFocus(null);
         setChapterError(formatApiError(error, "Erro ao abrir capítulo"));
       } finally {
         setChapterLoading(false);
@@ -114,7 +147,9 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBook(null);
         setOpenBookError(null);
         setActiveChapter(null);
+        setReaderFocus(null);
         setChapterError(null);
+        resetSearch();
         return;
       }
 
@@ -122,6 +157,8 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       setOpenBookError(null);
       setChapterError(null);
       setActiveChapter(null);
+      setReaderFocus(null);
+      resetSearch();
 
       try {
         const [versionResponse, chaptersResponse] = await Promise.all([
@@ -137,7 +174,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         });
 
         if (chapters.length > 0) {
-          await loadChapter(bookId, chapters[0].slug);
+          await loadChapter(bookId, chapters[0].slug, { focus: null });
         }
       } catch (error) {
         setOpenBook(null);
@@ -146,18 +183,71 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBookLoading(false);
       }
     },
-    [formatApiError, loadChapter, openBook?.bookId, token]
+    [formatApiError, loadChapter, openBook?.bookId, resetSearch, token]
   );
 
-  const chapterText = React.useMemo(() => {
-    if (!activeChapter) return "";
-    return activeChapter.chapter.content_plain?.trim() || "Sem conteúdo.";
-  }, [activeChapter]);
+  const runSearch = React.useCallback(async () => {
+    if (!openBook) return;
+    const normalizedQuery = query.trim();
+    setHasSearched(true);
+    setSearchError(null);
+
+    if (!normalizedQuery) {
+      setSearchResults([]);
+      setSearchCount(0);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const response = await searchBook(token, openBook.bookId, normalizedQuery, {
+        limit: 20,
+        offset: 0,
+        bookVersionId: openBook.version.id,
+      });
+      setSearchResults(response.results ?? []);
+      setSearchCount(typeof response.count === "number" ? response.count : null);
+    } catch (error) {
+      setSearchResults([]);
+      setSearchCount(null);
+      setSearchError(formatApiError(error, "Erro ao buscar no capítulo"));
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [formatApiError, openBook, query, token]);
+
+  const renderHighlightedSnippet = React.useCallback(
+    (snippet: string) => {
+      const term = query.trim();
+      if (!term) {
+        return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
+      }
+
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
+
+      return (
+        <Text style={styles.searchItemSnippet}>
+          {parts.map((part, idx) => {
+            if (part.toLowerCase() === term.toLowerCase()) {
+              return (
+                <Text key={`hit-${idx}`} style={styles.searchHighlight}>
+                  {part}
+                </Text>
+              );
+            }
+            return <Text key={`txt-${idx}`}>{part}</Text>;
+          })}
+        </Text>
+      );
+    },
+    [query]
+  );
 
   return (
     <View style={[styles.root, webRootStyle]}>
       <Text style={styles.title}>Biblioteca</Text>
-      <Text style={styles.subtitle}>Leitura por capítulos da versão atual</Text>
+      <Text style={styles.subtitle}>Leitura e busca por capítulos</Text>
 
       <View style={styles.row}>
         <Pressable style={styles.button} onPress={loadBooks}>
@@ -217,6 +307,72 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                           )}
                         </View>
 
+                        <View style={styles.searchBox}>
+                          <Text style={styles.sectionTitle}>Buscar neste livro</Text>
+                          <View style={styles.searchRow}>
+                            <TextInput
+                              value={query}
+                              onChangeText={setQuery}
+                              placeholder="Digite um termo..."
+                              autoCapitalize="none"
+                              style={styles.searchInput}
+                              editable={!searchLoading}
+                              returnKeyType="search"
+                              onSubmitEditing={runSearch}
+                            />
+
+                            <Pressable
+                              onPress={runSearch}
+                              disabled={searchLoading || !query.trim()}
+                              style={[
+                                styles.searchBtn,
+                                searchLoading || !query.trim() ? styles.searchBtnDisabled : null,
+                              ]}
+                            >
+                              <Text style={styles.searchBtnText}>
+                                {searchLoading ? "Buscando..." : "Buscar"}
+                              </Text>
+                            </Pressable>
+                          </View>
+
+                          {searchError ? <Text style={styles.errorInline}>{searchError}</Text> : null}
+
+                          {hasSearched && !searchLoading ? (
+                            searchResults.length === 0 ? (
+                              <Text style={styles.empty}>Sem resultados.</Text>
+                            ) : (
+                              <View style={styles.searchResults}>
+                                <Text style={styles.searchMeta}>
+                                  {searchCount != null
+                                    ? `${searchResults.length} de ${searchCount} resultados`
+                                    : `${searchResults.length} resultados`}
+                                </Text>
+
+                                {searchResults.map((result) => (
+                                  <Pressable
+                                    key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
+                                    style={styles.searchItem}
+                                    onPress={() =>
+                                      loadChapter(book.id, result.chapter_slug, {
+                                      focus: {
+                                        query: query.trim(),
+                                        matchStart: result.match_start,
+                                        matchEnd: result.match_end,
+                                      },
+                                    })
+                                  }
+                                >
+                                  <Text style={styles.searchItemTitle}>
+                                    Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
+                                  </Text>
+                                  {renderHighlightedSnippet(result.snippet)}
+                                </Pressable>
+                                ))}
+                              </View>
+                            )
+                          ) : null}
+                        </View>
+
                         <View style={styles.summaryCard}>
                           <Text style={styles.sectionTitle}>Sumário</Text>
                           {openBook.chapters.length === 0 ? (
@@ -227,7 +383,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                               return (
                                 <Pressable
                                   key={chapter.id}
-                                  onPress={() => loadChapter(book.id, chapter.slug)}
+                                  onPress={() => loadChapter(book.id, chapter.slug, { focus: null })}
                                   style={[styles.chapterItem, active ? styles.chapterItemActive : null]}
                                 >
                                   <Text style={[styles.chapterOrder, active ? styles.chapterTextActive : null]}>
@@ -245,54 +401,22 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                           )}
                         </View>
 
-                        <View style={styles.chapterCard}>
-                          <View style={styles.chapterHeader}>
-                            <Text style={styles.sectionTitle}>
-                              {activeChapter ? activeChapter.chapter.title : "Capítulo"}
-                            </Text>
-                            {chapterLoading ? <ActivityIndicator size="small" /> : null}
-                          </View>
-
-                          {chapterError ? <Text style={styles.error}>{chapterError}</Text> : null}
-
-                          {activeChapter ? (
-                            <>
-                              <View style={styles.chapterNav}>
-                                <Pressable
-                                  onPress={() => {
-                                    if (!activeChapter.previousSlug) return;
-                                    loadChapter(book.id, activeChapter.previousSlug);
-                                  }}
-                                  disabled={!activeChapter.previousSlug || chapterLoading}
-                                  style={[
-                                    styles.navButton,
-                                    !activeChapter.previousSlug || chapterLoading ? styles.navButtonDisabled : null,
-                                  ]}
-                                >
-                                  <Text style={styles.navButtonText}>Capítulo anterior</Text>
-                                </Pressable>
-
-                                <Pressable
-                                  onPress={() => {
-                                    if (!activeChapter.nextSlug) return;
-                                    loadChapter(book.id, activeChapter.nextSlug);
-                                  }}
-                                  disabled={!activeChapter.nextSlug || chapterLoading}
-                                  style={[
-                                    styles.navButton,
-                                    !activeChapter.nextSlug || chapterLoading ? styles.navButtonDisabled : null,
-                                  ]}
-                                >
-                                  <Text style={styles.navButtonText}>Próximo capítulo</Text>
-                                </Pressable>
-                              </View>
-
-                              <Text style={styles.chapterContent}>{chapterText}</Text>
-                            </>
-                          ) : (
-                            <Text style={styles.empty}>Selecione um capítulo no sumário.</Text>
-                          )}
-                        </View>
+                        <BookReaderScreen
+                          chapter={activeChapter?.chapter ?? null}
+                          loading={chapterLoading}
+                          error={chapterError}
+                          focus={readerFocus}
+                          onPrevious={() => {
+                            if (!activeChapter?.previousSlug) return;
+                            loadChapter(book.id, activeChapter.previousSlug, { focus: null });
+                          }}
+                          onNext={() => {
+                            if (!activeChapter?.nextSlug) return;
+                            loadChapter(book.id, activeChapter.nextSlug, { focus: null });
+                          }}
+                          canGoPrevious={!!activeChapter?.previousSlug}
+                          canGoNext={!!activeChapter?.nextSlug}
+                        />
                       </View>
                     ) : null}
                   </View>
@@ -328,6 +452,7 @@ const styles = StyleSheet.create({
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
 
   error: { color: "#b00020", fontFamily: "monospace", paddingHorizontal: 14, paddingBottom: 8 },
+  errorInline: { color: "#b00020", fontFamily: "monospace", paddingTop: 6 },
 
   scroll: { flex: 1, minHeight: 0 },
   list: { gap: 12, paddingTop: 8, paddingBottom: 24, flexGrow: 1 },
@@ -355,7 +480,7 @@ const styles = StyleSheet.create({
   versionMeta: { fontSize: 12, color: "#555" },
   versionChangelog: { fontSize: 13, color: "#222" },
 
-  summaryCard: {
+  searchBox: {
     borderWidth: 1,
     borderColor: "#eee",
     borderRadius: 10,
@@ -364,6 +489,41 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: { fontSize: 13, fontWeight: "700", color: "#111" },
+  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: "#fff",
+  },
+  searchBtn: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, backgroundColor: "#111" },
+  searchBtnDisabled: { opacity: 0.5 },
+  searchBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  searchResults: { gap: 10, paddingTop: 2 },
+  searchMeta: { fontSize: 12, color: "#666" },
+  searchItem: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "#fafafa",
+  },
+  searchItemTitle: { fontSize: 12, fontWeight: "700", color: "#111", marginBottom: 4 },
+  searchItemSnippet: { fontSize: 13, color: "#333" },
+  searchHighlight: { fontWeight: "700", backgroundColor: "#fff59d" },
+
+  summaryCard: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    padding: 10,
+    gap: 8,
+  },
   chapterItem: {
     flexDirection: "row",
     gap: 8,
@@ -377,26 +537,6 @@ const styles = StyleSheet.create({
   chapterOrder: { fontSize: 13, color: "#333", fontWeight: "700", minWidth: 18 },
   chapterTitle: { fontSize: 13, color: "#111", flexShrink: 1, fontWeight: "600" },
   chapterTextActive: { color: "#fff" },
-
-  chapterCard: {
-    borderWidth: 1,
-    borderColor: "#eee",
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    padding: 10,
-    gap: 10,
-  },
-  chapterHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  chapterNav: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  navButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: "#111",
-  },
-  navButtonDisabled: { opacity: 0.45 },
-  navButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  chapterContent: { fontSize: 14, color: "#222", lineHeight: 20 },
 
   empty: { color: "#666", fontSize: 13 },
 });
