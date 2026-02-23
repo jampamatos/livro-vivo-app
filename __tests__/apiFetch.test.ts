@@ -3,7 +3,19 @@ jest.mock("../src/config/api", () => ({
   API_BASE_URL: "http://example.test",
 }));
 
-import { ApiError, apiFetch } from "../src/api/http";
+jest.mock("../src/auth/tokenStorage", () => ({
+  getAuthSession: jest.fn(),
+  setAuthSession: jest.fn(),
+  clearAuthSession: jest.fn(),
+}));
+
+jest.mock("../src/auth/sessionBus", () => ({
+  emitSessionChanged: jest.fn(),
+}));
+
+import { ApiError, apiFetch, buildAuthHeader } from "../src/api/http";
+import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
+import { emitSessionChanged } from "../src/auth/sessionBus";
 
 type MockResponse = {
   ok: boolean;
@@ -28,7 +40,39 @@ function mockFetchOnce(resp: MockResponse) {
   });
 }
 
+function createFetchResponse(resp: MockResponse) {
+  const headers = {
+    get: (name: string) =>
+      name.toLowerCase() === "content-type" ? resp.contentType ?? "" : null,
+  };
+
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    headers,
+    json: async () => resp.jsonData,
+    text: async () => resp.textData ?? "",
+  };
+}
+
+const getAuthSessionMock = getAuthSession as unknown as jest.Mock;
+const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
+const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
+const emitSessionChangedMock = emitSessionChanged as unknown as jest.Mock;
+
 describe("apiFetch", () => {
+  beforeEach(() => {
+    getAuthSessionMock.mockReset();
+    setAuthSessionMock.mockReset();
+    clearAuthSessionMock.mockReset();
+    emitSessionChangedMock.mockReset();
+  });
+
+  it("buildAuthHeader usa Bearer para JWT e Token para chave legada", () => {
+    expect(buildAuthHeader("aaa.bbb.ccc")).toBe("Bearer aaa.bbb.ccc");
+    expect(buildAuthHeader("TOK123")).toBe("Token TOK123");
+  });
+
   it("monta URL corretamente (com e sem /) e retorna JSON", async () => {
     mockFetchOnce({
       ok: true,
@@ -66,6 +110,26 @@ describe("apiFetch", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: "Token TOK123",
+        }),
+      })
+    );
+  });
+
+  it("inclui Authorization Bearer quando token parece JWT", async () => {
+    mockFetchOnce({
+      ok: true,
+      status: 200,
+      contentType: "application/json",
+      jsonData: { ok: true },
+    });
+
+    await apiFetch("/me/entitlements/", { token: "aaa.bbb.ccc" });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://example.test/me/entitlements/",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer aaa.bbb.ccc",
         }),
       })
     );
@@ -122,5 +186,157 @@ describe("apiFetch", () => {
       expect(err.status).toBe(403);
       expect(err.body).toEqual({ detail: "Forbidden" });
     }
+  });
+
+  it("em 401 com token tenta refresh, persiste sessão e refaz request", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "old.old.old",
+      refreshToken: "REFRESH_1",
+    });
+
+    (globalThis as any).fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: false,
+          status: 401,
+          contentType: "application/json",
+          jsonData: { detail: "expired" },
+        })
+      )
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: true,
+          status: 200,
+          contentType: "application/json",
+          jsonData: { access: "new.new.new", refresh: "REFRESH_2" },
+        })
+      )
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: true,
+          status: 200,
+          contentType: "application/json",
+          jsonData: { ok: true },
+        })
+      );
+
+    const data = await apiFetch<{ ok: boolean }>("/secure/", { token: "old.old.old" });
+    expect(data).toEqual({ ok: true });
+
+    expect(setAuthSessionMock).toHaveBeenCalledWith({
+      accessToken: "new.new.new",
+      refreshToken: "REFRESH_2",
+    });
+    expect(emitSessionChangedMock).toHaveBeenCalledWith({
+      accessToken: "new.new.new",
+      refreshToken: "REFRESH_2",
+    });
+
+    const fetchMock = (globalThis as any).fetch as jest.Mock;
+    const retryHeaders = fetchMock.mock.calls[2][1].headers as Record<string, string>;
+    expect(retryHeaders.Authorization).toBe("Bearer new.new.new");
+  });
+
+  it("em refresh inválido limpa sessão e emite logout", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "old.old.old",
+      refreshToken: "REFRESH_1",
+    });
+
+    (globalThis as any).fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: false,
+          status: 401,
+          contentType: "application/json",
+          jsonData: { detail: "expired" },
+        })
+      )
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: false,
+          status: 401,
+          contentType: "application/json",
+          jsonData: { detail: "refresh expired" },
+        })
+      );
+
+    await expect(apiFetch("/secure/", { token: "old.old.old" })).rejects.toBeInstanceOf(ApiError);
+    expect(clearAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(emitSessionChangedMock).toHaveBeenCalledWith(null);
+  });
+
+  it("não tenta refresh quando não existe refresh token na sessão", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "old.old.old",
+      refreshToken: null,
+    });
+
+    (globalThis as any).fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createFetchResponse({
+          ok: false,
+          status: 401,
+          contentType: "application/json",
+          jsonData: { detail: "expired" },
+        })
+      );
+
+    await expect(apiFetch("/secure/", { token: "old.old.old" })).rejects.toBeInstanceOf(ApiError);
+
+    const fetchMock = (globalThis as any).fetch as jest.Mock;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(setAuthSessionMock).not.toHaveBeenCalled();
+    expect(clearAuthSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("deduplica refresh concorrente (apenas 1 chamada /auth/refresh/)", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "old.old.old",
+      refreshToken: "REFRESH_1",
+    });
+
+    (globalThis as any).fetch = jest.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+      if (url.endsWith("/auth/refresh/")) {
+        return createFetchResponse({
+          ok: true,
+          status: 200,
+          contentType: "application/json",
+          jsonData: { access: "new.new.new", refresh: "REFRESH_2" },
+        });
+      }
+
+      const authHeader = (init?.headers as Record<string, string> | undefined)?.Authorization;
+      if (authHeader === "Bearer new.new.new") {
+        return createFetchResponse({
+          ok: true,
+          status: 200,
+          contentType: "application/json",
+          jsonData: { ok: true },
+        });
+      }
+
+      return createFetchResponse({
+        ok: false,
+        status: 401,
+        contentType: "application/json",
+        jsonData: { detail: "expired" },
+      });
+    });
+
+    const result = await Promise.all([
+      apiFetch<{ ok: boolean }>("/secure/a", { token: "old.old.old" }),
+      apiFetch<{ ok: boolean }>("/secure/b", { token: "old.old.old" }),
+    ]);
+
+    expect(result).toEqual([{ ok: true }, { ok: true }]);
+
+    const fetchMock = (globalThis as any).fetch as jest.Mock;
+    const refreshCalls = fetchMock.mock.calls.filter(([url]: [string]) => url.endsWith("/auth/refresh/"));
+    expect(refreshCalls).toHaveLength(1);
+    expect(getAuthSessionMock).toHaveBeenCalledTimes(1);
   });
 });
