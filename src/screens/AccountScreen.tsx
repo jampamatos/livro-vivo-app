@@ -1,6 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
-import { getMyEntitlements } from "../api/entitlements";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { getMyEntitlements, type EntitlementsResponse, type SubscriptionStatus, type SubscriptionTier } from "../api/entitlements";
 
 type Props = {
   token: string;
@@ -14,9 +14,29 @@ function maskToken(token: string) {
   return `${token.slice(0, 4)}…${token.slice(-4)}`;
 }
 
+function formatTier(tier: SubscriptionTier | null | undefined) {
+  if (!tier) return "Sem assinatura ativa";
+  if (tier === "professional") return "Profissional";
+  return "Essencial";
+}
+
+function formatStatus(status: SubscriptionStatus | null | undefined) {
+  if (!status) return "-";
+  if (status === "active") return "Ativa";
+  if (status === "canceled") return "Cancelada";
+  return "Inativa";
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR");
+}
+
 export function AccountScreen({ token, onBack, onLogout }: Props) {
   const [loading, setLoading] = React.useState(true);
-  const [entitlements, setEntitlements] = React.useState<unknown>(null);
+  const [data, setData] = React.useState<EntitlementsResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -27,10 +47,10 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
         setError(null);
         const res = await getMyEntitlements(token);
         if (!alive) return;
-        setEntitlements(res);
-      } catch (e: any) {
+        setData(res);
+      } catch {
         if (!alive) return;
-        setError("Não foi possível carregar seus acessos (entitlements).");
+        setError("Não foi possível carregar seus acessos.");
       } finally {
         if (!alive) return;
         setLoading(false);
@@ -40,6 +60,9 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
       alive = false;
     };
   }, [token]);
+
+  const activeBookEntitlements =
+    data?.entitlements?.filter((entitlement) => entitlement.product === "book" && entitlement.is_active).length ?? 0;
 
   return (
     <View style={styles.container}>
@@ -62,24 +85,30 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
       <Text style={styles.label}>Sessão</Text>
       <Text style={styles.mono}>Token: {maskToken(token)}</Text>
 
-      <Text style={[styles.label, { marginTop: 16 }]}>Acessos</Text>
-
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={styles.muted}>Carregando entitlements…</Text>
+          <Text style={styles.muted}>Carregando assinatura…</Text>
         </View>
       ) : error ? (
         <Text style={styles.error}>{error}</Text>
       ) : (
-        <ScrollView style={styles.box} contentContainerStyle={{ padding: 12 }}>
-          <Text style={styles.mono}>{JSON.stringify(entitlements, null, 2)}</Text>
-        </ScrollView>
-      )}
+        <View style={styles.content}>
+          <View style={styles.box}>
+            <Text style={styles.sectionTitle}>Assinatura</Text>
+            <Text style={styles.planName}>{formatTier(data?.effective_tier)}</Text>
+            <Text style={styles.meta}>Status: {formatStatus(data?.subscription?.status)}</Text>
+            <Text style={styles.meta}>Founder: {data?.subscription?.is_founder ? "Sim" : "Não"}</Text>
+            <Text style={styles.meta}>Expira em: {formatDateTime(data?.subscription?.expires_at)}</Text>
+          </View>
 
-      <Text style={[styles.muted, { marginTop: 12 }]}>
-        Perfil (nome/e-mail/profissão) entra no B11.2+ junto do auth real.
-      </Text>
+          <View style={styles.box}>
+            <Text style={styles.sectionTitle}>Entitlements</Text>
+            <Text style={styles.meta}>Total: {data?.entitlements?.length ?? 0}</Text>
+            <Text style={styles.meta}>Livros ativos: {activeBookEntitlements}</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -101,8 +130,12 @@ const styles = StyleSheet.create({
   title: { marginTop: 16, fontSize: 22, fontWeight: "800" },
   label: { marginTop: 10, fontSize: 13, fontWeight: "700", opacity: 0.75 },
   mono: { fontFamily: "monospace", fontSize: 12 },
-  box: { marginTop: 10, borderWidth: 1, borderColor: "#EEE", borderRadius: 12, backgroundColor: "#FFF", flex: 1 },
+  content: { marginTop: 16, gap: 10 },
+  box: { borderWidth: 1, borderColor: "#EEE", borderRadius: 12, backgroundColor: "#FFF", padding: 12, gap: 4 },
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#333", marginBottom: 2 },
+  planName: { fontSize: 18, fontWeight: "800" },
+  meta: { fontSize: 13, color: "#333" },
   center: { paddingVertical: 20, alignItems: "center", gap: 8 },
   muted: { opacity: 0.7 },
-  error: { marginTop: 8, color: "#B00020" },
+  error: { marginTop: 16, color: "#B00020" },
 });

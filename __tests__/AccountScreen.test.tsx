@@ -31,7 +31,7 @@ describe("AccountScreen", () => {
     getMyEntitlementsMock.mockReset();
   });
 
-  it("carrega entitlements e exibe retorno em JSON", async () => {
+  it("carrega assinatura e exibe resumo amigável", async () => {
     let resolveEntitlements: (value: unknown) => void = () => {};
     const entitlementsPromise = new Promise((resolve) => {
       resolveEntitlements = resolve;
@@ -41,18 +41,47 @@ describe("AccountScreen", () => {
     const tree = await renderScreen("abcd1234efgh5678");
 
     const initialJson = JSON.stringify(tree.toJSON());
-    expect(initialJson).toContain("Carregando entitlements");
+    expect(initialJson).toContain("Carregando assinatura");
     expect(initialJson).toContain('"Token: ","abcd…5678"');
 
-    resolveEntitlements({ plan: "premium", modules: ["library"] });
+    resolveEntitlements({
+      effective_tier: "professional",
+      subscription: {
+        id: 1,
+        tier: "professional",
+        status: "active",
+        is_founder: true,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [
+        {
+          id: 10,
+          product: "book",
+          book_id: 1,
+          subscription_id: null,
+          tier: null,
+          is_founder: false,
+          status: "active",
+          expires_at: null,
+          is_active: true,
+          source: "admin",
+        },
+      ],
+    });
 
     await flushEffects();
 
     const finalJson = JSON.stringify(tree.toJSON());
     expect(getMyEntitlementsMock).toHaveBeenCalledWith("abcd1234efgh5678");
-    expect(finalJson).toContain("premium");
-    expect(finalJson).toContain("library");
-    expect(finalJson).not.toContain("Carregando entitlements");
+    expect(finalJson).toContain("Profissional");
+    expect(finalJson).toContain("Status");
+    expect(finalJson).toContain("Ativa");
+    expect(finalJson).toContain("Founder");
+    expect(finalJson).toContain("Sim");
+    expect(finalJson).toContain("Livros ativos");
+    expect(finalJson).not.toContain("Carregando assinatura");
     expect(finalJson).not.toContain("Não foi possível carregar seus acessos");
   });
 
@@ -73,7 +102,7 @@ describe("AccountScreen", () => {
     await flushEffects();
 
     expect(JSON.stringify(tree.toJSON())).toContain(
-      "Não foi possível carregar seus acessos (entitlements)."
+      "Não foi possível carregar seus acessos."
     );
   });
 
