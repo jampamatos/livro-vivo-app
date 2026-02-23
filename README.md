@@ -100,6 +100,38 @@ No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `ht
 Além disso, o endpoint de download do PDF precisa aceitar o header `Authorization`
 e permitir a origem do web (CORS + `Access-Control-Allow-Headers: Authorization`).
 
+## Plano de migração PDF -> texto nativo (E3-02)
+
+Objetivo: habilitar leitura chapter-first sem quebrar o fluxo atual em produção.
+
+### Feature flag de rollout no app
+
+- `EXPO_PUBLIC_BOOK_CONTENT_MODE`: `pdf` | `hybrid` | `chapters`
+  - `pdf` (default): app usa leitor legado de PDF.
+  - `hybrid`: app prioriza reader de capítulos e faz fallback para PDF quando necessário.
+  - `chapters`: app opera somente no reader de capítulos (sem fallback para usuário final).
+
+### Compatibilidade temporária com backend
+
+- `pdf`: consome apenas endpoints legados de versão/página/download.
+- `hybrid`: consome endpoints chapter-first quando disponíveis, mantendo fallback em endpoints legados.
+- `chapters`: assume contrato chapter-first como padrão de produto.
+
+### Runbook de staging (reproduzível)
+
+1. Publicar build com flag em `pdf` (sem mudança de comportamento).
+2. Após backend em `hybrid`, subir build com app também em `hybrid`.
+3. Executar smoke test:
+   - livro com capítulos -> reader nativo por capítulo
+   - livro sem capítulos -> fallback PDF
+4. Validar sessão, busca e anotações sem regressão.
+5. Promover para `chapters` no beta founder e depois para 100%.
+
+### Rollback operacional
+
+- Rollback rápido: voltar `EXPO_PUBLIC_BOOK_CONTENT_MODE=pdf`.
+- Se necessário, reverter build do app mantendo dados/schemas já migrados no backend.
+
 ## Estrutura (atual)
 
 - `src/auth/` — armazenamento do token
