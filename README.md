@@ -70,7 +70,6 @@ npm run ios
 npx expo start --dev-client
 ```
 
-
 > Dica: para testar **web e Android ao mesmo tempo**, use dois terminais:
 >
 > - Terminal 1: `npx expo start --web`
