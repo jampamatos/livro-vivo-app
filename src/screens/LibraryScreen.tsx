@@ -43,6 +43,7 @@ type LoadedChapterState = {
   chapter: BookChapter;
   previousSlug: string | null;
   nextSlug: string | null;
+  cacheSource: "network" | "cache";
 };
 
 type ReaderFocus = {
@@ -194,6 +195,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
           chapter: response.chapter,
           previousSlug: response.previous_slug,
           nextSlug: response.next_slug,
+          cacheSource: response.cache_source === "cache" ? "cache" : "network",
         });
         setReaderFocus(params.focus ?? null);
         setReaderInitialOffset(Math.max(0, params.restoreOffset ?? 0));
@@ -615,6 +617,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
               fontScale={readerFontScale}
               onFontScaleChange={setReaderFontScale}
               chapter={activeChapter?.chapter ?? null}
+              offlineCached={activeChapter?.cacheSource === "cache"}
               loading={chapterLoading}
               error={chapterError}
               focus={readerFocus}
