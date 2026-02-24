@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -24,8 +25,18 @@ import {
   listCurrentVersionChapters,
   searchBook,
 } from "../api/books";
+import {
+  Annotation,
+  createAnnotation,
+  deleteAnnotation,
+  listChapterAnnotationsForVersion,
+} from "../api/annotations";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
-import { BookReaderScreen } from "./BookReaderScreen";
+import {
+  BookReaderScreen,
+  ReaderAnnotationDraft,
+  ReaderAnnotationHighlight,
+} from "./BookReaderScreen";
 
 type Props = {
   token: string;
@@ -51,6 +62,8 @@ type ReaderFocus = {
   matchStart: number;
   matchEnd: number;
 };
+
+type AnnotationDraft = ReaderAnnotationDraft;
 
 type ChapterLoadParams = {
   bookId: number;
@@ -87,7 +100,19 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [readerMode, setReaderMode] = React.useState(false);
   const [readerSearchOpen, setReaderSearchOpen] = React.useState(false);
   const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
+  const [annotationMode, setAnnotationMode] = React.useState(false);
   const [readerFontScale, setReaderFontScale] = React.useState(1);
+
+  const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
+  const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
+  const [annotationsSyncError, setAnnotationsSyncError] = React.useState<string | null>(null);
+  const [annotationDraft, setAnnotationDraft] = React.useState<AnnotationDraft | null>(null);
+  const [pendingNativeDraft, setPendingNativeDraft] = React.useState<AnnotationDraft | null>(null);
+  const [annotationDraftNote, setAnnotationDraftNote] = React.useState("");
+  const [annotationDraftColor, setAnnotationDraftColor] = React.useState("yellow");
+  const [annotationSaving, setAnnotationSaving] = React.useState(false);
+  const [annotationDetailId, setAnnotationDetailId] = React.useState<number | null>(null);
+  const [annotationDeleting, setAnnotationDeleting] = React.useState(false);
 
   const saveProgressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingProgressRef = React.useRef<{
@@ -108,6 +133,16 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const formatApiError = React.useCallback((error: unknown, prefix: string) => {
     if (error instanceof ApiError) {
       return `${prefix}: ${error.message} — ${JSON.stringify(error.body)}`;
+    }
+    return `${prefix}: ${String(error)}`;
+  }, []);
+
+  const formatAnnotationError = React.useCallback((error: unknown, prefix: string) => {
+    if (error instanceof ApiError) {
+      if (error.status >= 500) {
+        return `${prefix}: erro no servidor. Verifique se as migrations da API foram aplicadas.`;
+      }
+      return `${prefix}: ${error.message}`;
     }
     return `${prefix}: ${String(error)}`;
   }, []);
@@ -228,7 +263,18 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setReaderMode(false);
         setReaderSearchOpen(false);
         setReaderSummaryOpen(false);
+        setAnnotationMode(false);
         setReaderFontScale(1);
+        setAnnotations([]);
+        setAnnotationsSyncError(null);
+        setAnnotationsLoading(false);
+        setAnnotationDraft(null);
+        setPendingNativeDraft(null);
+        setAnnotationDraftNote("");
+        setAnnotationDraftColor("yellow");
+        setAnnotationSaving(false);
+        setAnnotationDetailId(null);
+        setAnnotationDeleting(false);
         setChapterError(null);
         resetSearch();
         if (saveProgressTimerRef.current) {
@@ -248,7 +294,18 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       setReaderMode(false);
       setReaderSearchOpen(false);
       setReaderSummaryOpen(false);
+      setAnnotationMode(false);
       setReaderFontScale(1);
+      setAnnotations([]);
+      setAnnotationsSyncError(null);
+      setAnnotationsLoading(false);
+      setAnnotationDraft(null);
+      setPendingNativeDraft(null);
+      setAnnotationDraftNote("");
+      setAnnotationDraftColor("yellow");
+      setAnnotationSaving(false);
+      setAnnotationDetailId(null);
+      setAnnotationDeleting(false);
       resetSearch();
 
       if (saveProgressTimerRef.current) {
@@ -332,6 +389,22 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     }
   }, [formatApiError, openBook, query, token]);
 
+  const openReaderChapter = React.useCallback(
+    (chapterSlug: string, focus: ReaderFocus | null = null) => {
+      if (!openBook) return;
+      setReaderMode(true);
+      setAnnotationDetailId(null);
+      void loadChapter({
+        bookId: openBook.bookId,
+        versionId: openBook.version.id,
+        chapterSlug,
+        focus,
+        restoreOffset: 0,
+      });
+    },
+    [loadChapter, openBook]
+  );
+
   const compactSnippet = React.useCallback((snippet: string, term: string) => {
     const normalizedTerm = term.trim().toLowerCase();
     const words = snippet.trim().split(/\s+/).filter(Boolean);
@@ -380,6 +453,96 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     return deduped;
   }, [compactSnippet, searchResults, submittedQuery]);
 
+  const loadAnnotations = React.useCallback(async () => {
+    if (!openBook) return;
+    setAnnotationsLoading(true);
+    setAnnotationsSyncError(null);
+    try {
+      const response = await listChapterAnnotationsForVersion(token, openBook.version.id);
+      setAnnotations(response);
+    } catch (error) {
+      setAnnotations([]);
+      setAnnotationsSyncError(formatAnnotationError(error, "Erro ao carregar anotações"));
+    } finally {
+      setAnnotationsLoading(false);
+    }
+  }, [formatAnnotationError, openBook, token]);
+
+  React.useEffect(() => {
+    if (!readerMode || !openBook) return;
+    void loadAnnotations();
+  }, [loadAnnotations, openBook, readerMode]);
+
+  const activeChapterAnnotations = React.useMemo<ReaderAnnotationHighlight[]>(() => {
+    if (!activeChapter) return [];
+    return annotations
+      .filter((annotation) => annotation.chapter === activeChapter.chapter.id)
+      .map((annotation) => ({
+        id: annotation.id,
+        startOffset: annotation.start_offset,
+        endOffset: annotation.end_offset,
+        excerpt: annotation.excerpt,
+        note: annotation.note,
+        color: annotation.color,
+      }));
+  }, [activeChapter, annotations]);
+
+  const selectedAnnotation = React.useMemo(() => {
+    if (annotationDetailId == null) return null;
+    return annotations.find((annotation) => annotation.id === annotationDetailId) ?? null;
+  }, [annotationDetailId, annotations]);
+
+  const saveAnnotationDraft = React.useCallback(async () => {
+    if (!openBook || !annotationDraft) return;
+    setAnnotationSaving(true);
+    setAnnotationsSyncError(null);
+    try {
+      await createAnnotation(token, {
+        book_version: openBook.version.id,
+        chapter: annotationDraft.chapterId,
+        selector: annotationDraft.selector,
+        start_offset: annotationDraft.startOffset,
+        end_offset: annotationDraft.endOffset,
+        excerpt: annotationDraft.excerpt,
+        note: annotationDraftNote.trim(),
+        color: annotationDraftColor,
+      });
+      setAnnotationDraft(null);
+      setPendingNativeDraft(null);
+      setAnnotationDraftNote("");
+      setAnnotationDraftColor("yellow");
+      setAnnotationMode(false);
+      await loadAnnotations();
+    } catch (error) {
+      setAnnotationsSyncError(formatAnnotationError(error, "Erro ao sincronizar anotação"));
+    } finally {
+      setAnnotationSaving(false);
+    }
+  }, [
+    annotationDraft,
+    annotationDraftColor,
+    annotationDraftNote,
+    formatAnnotationError,
+    loadAnnotations,
+    openBook,
+    token,
+  ]);
+
+  const deleteSelectedAnnotation = React.useCallback(async () => {
+    if (!selectedAnnotation) return;
+    setAnnotationDeleting(true);
+    setAnnotationsSyncError(null);
+    try {
+      await deleteAnnotation(token, selectedAnnotation.id);
+      setAnnotationDetailId(null);
+      await loadAnnotations();
+    } catch (error) {
+      setAnnotationsSyncError(formatAnnotationError(error, "Erro ao apagar anotação"));
+    } finally {
+      setAnnotationDeleting(false);
+    }
+  }, [formatAnnotationError, loadAnnotations, selectedAnnotation, token]);
+
   const renderHighlightedSnippet = React.useCallback(
     (snippet: string) => {
       const term = submittedQuery.trim();
@@ -409,17 +572,6 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   );
 
   const activeBookMeta = openBook ? books.find((book) => book.id === openBook.bookId) ?? null : null;
-  const openReaderChapter = (chapterSlug: string, focus: ReaderFocus | null = null) => {
-    if (!openBook) return;
-    setReaderMode(true);
-    void loadChapter({
-      bookId: openBook.bookId,
-      versionId: openBook.version.id,
-      chapterSlug,
-      focus,
-      restoreOffset: 0,
-    });
-  };
 
   const closeReader = () => {
     if (saveProgressTimerRef.current) {
@@ -430,6 +582,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     setReaderMode(false);
     setReaderSearchOpen(false);
     setReaderSummaryOpen(false);
+    setAnnotationMode(false);
     setOpenBook(null);
     setOpenBookLoading(false);
     setOpenBookError(null);
@@ -437,6 +590,16 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     setReaderFocus(null);
     setReaderInitialOffset(0);
     setReaderFontScale(1);
+    setAnnotations([]);
+    setAnnotationsSyncError(null);
+    setAnnotationsLoading(false);
+    setAnnotationDraft(null);
+    setPendingNativeDraft(null);
+    setAnnotationDraftNote("");
+    setAnnotationDraftColor("yellow");
+    setAnnotationSaving(false);
+    setAnnotationDetailId(null);
+    setAnnotationDeleting(false);
     resetSearch();
   };
 
@@ -497,6 +660,28 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
               </Pressable>
 
               <Pressable
+                style={[styles.readerIconButton, annotationMode ? styles.readerIconButtonActive : null]}
+                onPress={() => {
+                  setAnnotationMode((current) => {
+                    const next = !current;
+                    if (!next) {
+                      setAnnotationDraft(null);
+                      setPendingNativeDraft(null);
+                    }
+                    return next;
+                  });
+                  setAnnotationDraftNote("");
+                  setAnnotationsSyncError(null);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Alternar modo anotação"
+              >
+                <Text style={[styles.readerIconText, annotationMode ? styles.readerIconTextActive : null]}>
+                  ✎
+                </Text>
+              </Pressable>
+
+              <Pressable
                 style={[styles.readerIconButton, readerFontScale <= 0.9 ? styles.readerIconButtonDisabled : null]}
                 onPress={() => setReaderFontScale((current) => clampReaderFontScale(current - 0.1))}
                 disabled={readerFontScale <= 0.9}
@@ -517,6 +702,39 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
               </Pressable>
             </View>
           </View>
+
+          {annotationMode ? (
+            <View style={styles.annotationModeBanner}>
+              <Text style={styles.annotationModeTitle}>Modo anotação ativo</Text>
+              <Text style={styles.annotationModeSubtitle}>
+                {annotationsLoading
+                  ? "Carregando anotações..."
+                  : Platform.OS === "web"
+                    ? "Selecione um trecho com o mouse para criar destaque."
+                    : "Toque e segure para preparar um trecho, depois confirme para anotar."}
+              </Text>
+            </View>
+          ) : null}
+
+          {pendingNativeDraft && Platform.OS !== "web" ? (
+            <View style={styles.nativeDraftBanner}>
+              <Text style={styles.nativeDraftTitle}>Trecho preparado</Text>
+              <Text style={styles.nativeDraftExcerpt} numberOfLines={2}>
+                "{pendingNativeDraft.excerpt}"
+              </Text>
+              <Pressable
+                style={styles.nativeDraftAction}
+                onPress={() => {
+                  setAnnotationDraft(pendingNativeDraft);
+                  setPendingNativeDraft(null);
+                }}
+              >
+                <Text style={styles.nativeDraftActionText}>Anotar trecho selecionado</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {annotationsSyncError ? <Text style={styles.errorInline}>{annotationsSyncError}</Text> : null}
 
           {readerSearchOpen ? (
             <View style={styles.readerPanel}>
@@ -635,6 +853,23 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
               onNext={goToNextChapter}
               canGoPrevious={!!activeChapter?.previousSlug}
               canGoNext={!!activeChapter?.nextSlug}
+              annotationMode={annotationMode}
+              allowNativeParagraphFallback={Platform.OS !== "web"}
+              annotations={activeChapterAnnotations}
+              onOpenAnnotation={(annotationId) => {
+                setAnnotationDetailId(annotationId);
+              }}
+              onCreateAnnotationDraft={(draft) => {
+                if (!annotationMode) return;
+                setAnnotationDraftNote("");
+                setAnnotationDraftColor("yellow");
+                setAnnotationsSyncError(null);
+                if (Platform.OS === "web") {
+                  setAnnotationDraft(draft);
+                  return;
+                }
+                setPendingNativeDraft(draft);
+              }}
             />
           </View>
 
@@ -666,6 +901,151 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
             </Pressable>
           </View>
         </View>
+
+        <Modal
+          visible={!!annotationDraft}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!annotationSaving) {
+              setAnnotationDraft(null);
+            }
+          }}
+        >
+          <View style={styles.annotationModalBackdrop}>
+            <View style={styles.annotationModalCard}>
+              <Text style={styles.annotationModalTitle}>Nova anotação</Text>
+              {annotationDraft ? (
+                <>
+                  <Text style={styles.annotationModalMeta}>
+                    Cap. {annotationDraft.chapterOrder} • {annotationDraft.chapterTitle}
+                  </Text>
+                  <Text style={styles.annotationModalExcerpt} numberOfLines={5}>
+                    "{annotationDraft.excerpt}"
+                  </Text>
+                </>
+              ) : null}
+
+              <View style={styles.annotationColorRow}>
+                {[
+                  { value: "yellow", label: "Amarelo" },
+                  { value: "green", label: "Verde" },
+                  { value: "blue", label: "Azul" },
+                  { value: "pink", label: "Rosa" },
+                ].map((color) => {
+                  const selected = color.value === annotationDraftColor;
+                  return (
+                    <Pressable
+                      key={color.value}
+                      onPress={() => setAnnotationDraftColor(color.value)}
+                      style={[
+                        styles.annotationColorChip,
+                        selected ? styles.annotationColorChipSelected : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.annotationColorChipText,
+                          selected ? styles.annotationColorChipTextSelected : null,
+                        ]}
+                      >
+                        {color.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <TextInput
+                value={annotationDraftNote}
+                onChangeText={setAnnotationDraftNote}
+                placeholder="Nota (opcional)"
+                multiline
+                style={styles.annotationNoteInput}
+              />
+
+              <View style={styles.annotationModalActions}>
+                <Pressable
+                  onPress={() => {
+                    setAnnotationDraft(null);
+                    setPendingNativeDraft(null);
+                  }}
+                  disabled={annotationSaving}
+                  style={styles.annotationModalCancel}
+                >
+                  <Text style={styles.annotationModalCancelText}>Cancelar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    void saveAnnotationDraft();
+                  }}
+                  disabled={annotationSaving}
+                  style={[
+                    styles.annotationModalSave,
+                    annotationSaving ? styles.annotationModalButtonDisabled : null,
+                  ]}
+                >
+                  <Text style={styles.annotationModalSaveText}>
+                    {annotationSaving ? "Salvando..." : "Salvar"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={selectedAnnotation != null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!annotationDeleting) {
+              setAnnotationDetailId(null);
+            }
+          }}
+        >
+          <View style={styles.annotationModalBackdrop}>
+            <View style={styles.annotationModalCard}>
+              <Text style={styles.annotationModalTitle}>Anotação</Text>
+              {selectedAnnotation ? (
+                <>
+                  <Text style={styles.annotationModalExcerpt} numberOfLines={6}>
+                    "{selectedAnnotation.excerpt || "Trecho sem preview"}"
+                  </Text>
+                  {selectedAnnotation.note?.trim() ? (
+                    <Text style={styles.annotationModalNote}>Nota: {selectedAnnotation.note}</Text>
+                  ) : (
+                    <Text style={styles.annotationModalNoteMuted}>Sem nota adicional.</Text>
+                  )}
+                </>
+              ) : null}
+
+              <View style={styles.annotationModalActions}>
+                <Pressable
+                  onPress={() => setAnnotationDetailId(null)}
+                  disabled={annotationDeleting}
+                  style={styles.annotationModalCancel}
+                >
+                  <Text style={styles.annotationModalCancelText}>Fechar</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    void deleteSelectedAnnotation();
+                  }}
+                  disabled={annotationDeleting}
+                  style={[
+                    styles.annotationModalDelete,
+                    annotationDeleting ? styles.annotationModalButtonDisabled : null,
+                  ]}
+                >
+                  <Text style={styles.annotationModalDeleteText}>
+                    {annotationDeleting ? "Apagando..." : "Apagar"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -902,6 +1282,36 @@ const styles = StyleSheet.create({
   readerIconButtonDisabled: { opacity: 0.35 },
   readerIconText: { fontSize: 14, fontWeight: "700", color: "#111" },
   readerIconTextActive: { color: "#fff" },
+  annotationModeBanner: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#d9c56a",
+    backgroundColor: "#fff7d9",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  annotationModeTitle: { fontSize: 12, fontWeight: "700", color: "#47380d" },
+  annotationModeSubtitle: { fontSize: 12, color: "#5a4a15" },
+  nativeDraftBanner: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#c9c3b6",
+    backgroundColor: "#efede6",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  nativeDraftTitle: { fontSize: 12, fontWeight: "700", color: "#1d1d1d" },
+  nativeDraftExcerpt: { fontSize: 12, color: "#3b3b3b" },
+  nativeDraftAction: {
+    alignSelf: "flex-start",
+    borderRadius: 8,
+    backgroundColor: "#111",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  nativeDraftActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   readerPanel: {
     borderRadius: 12,
     borderWidth: 1,
@@ -958,6 +1368,76 @@ const styles = StyleSheet.create({
   readerPageButtonDisabled: { opacity: 0.4 },
   readerPageButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   readerProgressText: { fontSize: 13, color: "#444", fontWeight: "700", minWidth: 48, textAlign: "center" },
+
+  annotationModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  annotationModalCard: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#cbc6ba",
+    backgroundColor: "#f6f3ea",
+    padding: 14,
+    gap: 10,
+  },
+  annotationModalTitle: { fontSize: 16, fontWeight: "700", color: "#161616" },
+  annotationModalMeta: { fontSize: 12, color: "#585858" },
+  annotationModalExcerpt: { fontSize: 14, color: "#242424" },
+  annotationColorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  annotationColorChip: {
+    borderWidth: 1,
+    borderColor: "#8b877d",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "#fff",
+  },
+  annotationColorChipSelected: { borderColor: "#111", backgroundColor: "#111" },
+  annotationColorChipText: { fontSize: 12, color: "#111", fontWeight: "700" },
+  annotationColorChipTextSelected: { color: "#fff" },
+  annotationNoteInput: {
+    borderWidth: 1,
+    borderColor: "#c6c3ba",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 52,
+    maxHeight: 140,
+  },
+  annotationModalNote: { fontSize: 13, color: "#2b2b2b", fontStyle: "italic" },
+  annotationModalNoteMuted: { fontSize: 12, color: "#777" },
+  annotationModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
+  annotationModalCancel: {
+    borderWidth: 1,
+    borderColor: "#9e9a90",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
+  annotationModalCancelText: { fontSize: 12, color: "#333", fontWeight: "700" },
+  annotationModalSave: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#111",
+  },
+  annotationModalSaveText: { fontSize: 12, color: "#fff", fontWeight: "700" },
+  annotationModalDelete: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#b00020",
+  },
+  annotationModalDeleteText: { fontSize: 12, color: "#fff", fontWeight: "700" },
+  annotationModalButtonDisabled: { opacity: 0.5 },
 
   empty: { color: "#666", fontSize: 13 },
 });

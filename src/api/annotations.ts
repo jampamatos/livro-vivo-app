@@ -95,6 +95,10 @@ export function listAnnotations(
   return apiFetch<Annotation[]>(qs ? `/annotations/?${qs}` : "/annotations/", { token });
 }
 
+export function listChapterAnnotationsForVersion(token: string, bookVersionId: number) {
+  return listAnnotations(token, { bookVersionId });
+}
+
 export function updateAnnotation(
   token: string,
   annotationId: number,
