@@ -285,20 +285,6 @@ export function BookReaderScreen({
     [renderInlineText, scaled]
   );
 
-  const focusExcerpt = React.useMemo(() => {
-    if (!hasFocusedMatch) return null;
-    const contextChars = 220;
-    const start = Math.max(0, matchStart - contextChars);
-    const end = Math.min(chapterText.length, matchEnd + contextChars);
-    return {
-      beforeEllipsis: start > 0,
-      afterEllipsis: end < chapterText.length,
-      before: chapterText.slice(start, matchStart),
-      match: chapterText.slice(matchStart, matchEnd),
-      after: chapterText.slice(matchEnd, end),
-    };
-  }, [chapterText, hasFocusedMatch, matchEnd, matchStart]);
-
   const panResponder = React.useMemo(() => {
     if (!enableSwipeNavigation || Platform.OS === "web") {
       return null;
@@ -334,19 +320,6 @@ export function BookReaderScreen({
 
       {chapter ? (
         <>
-          {focusExcerpt ? (
-            <View style={styles.focusBox}>
-              <Text style={styles.focusTitle}>Trecho encontrado: "{focus?.query}"</Text>
-              <Text style={styles.focusText}>
-                {focusExcerpt.beforeEllipsis ? "..." : ""}
-                {focusExcerpt.before}
-                <Text style={styles.focusMatch}>{focusExcerpt.match}</Text>
-                {focusExcerpt.after}
-                {focusExcerpt.afterEllipsis ? "..." : ""}
-              </Text>
-            </View>
-          ) : null}
-
           {showControls ? (
             <View style={styles.chapterNav}>
               <Pressable
@@ -461,17 +434,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111" },
   loading: { fontSize: 12, color: "#555" },
   error: { color: "#b00020", fontFamily: "monospace", marginBottom: 4 },
-  focusBox: {
-    borderWidth: 1,
-    borderColor: "#ece3a0",
-    backgroundColor: "#fffbe6",
-    borderRadius: 8,
-    padding: 10,
-    gap: 6,
-  },
-  focusTitle: { fontSize: 12, fontWeight: "700", color: "#3e3a12" },
-  focusText: { fontSize: 13, color: "#2d2d2d", lineHeight: 19 },
-  focusMatch: { backgroundColor: "#fff176", fontWeight: "700" },
   chapterNav: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" },
   navButton: {
     paddingVertical: 8,

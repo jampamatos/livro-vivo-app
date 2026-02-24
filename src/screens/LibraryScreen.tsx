@@ -82,6 +82,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
   const [searchCount, setSearchCount] = React.useState<number | null>(null);
   const [hasSearched, setHasSearched] = React.useState(false);
+  const [submittedQuery, setSubmittedQuery] = React.useState("");
   const [readerMode, setReaderMode] = React.useState(false);
   const [readerSearchOpen, setReaderSearchOpen] = React.useState(false);
   const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
@@ -117,6 +118,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     setSearchResults([]);
     setSearchCount(null);
     setHasSearched(false);
+    setSubmittedQuery("");
   }, []);
 
   const clampReaderFontScale = React.useCallback((value: number) => {
@@ -301,6 +303,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     if (!openBook) return;
     const normalizedQuery = query.trim();
     setHasSearched(true);
+    setSubmittedQuery(normalizedQuery);
     setSearchError(null);
 
     if (!normalizedQuery) {
@@ -344,7 +347,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   }, []);
 
   const displayedSearchResults = React.useMemo(() => {
-    const term = query.trim();
+    const term = submittedQuery.trim();
     if (!term) return [];
 
     const sorted = [...searchResults].sort((a, b) => {
@@ -373,11 +376,11 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     }
 
     return deduped;
-  }, [compactSnippet, query, searchResults]);
+  }, [compactSnippet, searchResults, submittedQuery]);
 
   const renderHighlightedSnippet = React.useCallback(
     (snippet: string) => {
-      const term = query.trim();
+      const term = submittedQuery.trim();
       if (!term) {
         return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
       }
@@ -400,7 +403,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         </Text>
       );
     },
-    [query]
+    [submittedQuery]
   );
 
   const activeBookMeta = openBook ? books.find((book) => book.id === openBook.bookId) ?? null : null;
@@ -554,7 +557,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                         style={styles.searchItem}
                         onPress={() => {
                           openReaderChapter(result.chapter_slug, {
-                            query: query.trim(),
+                            query: submittedQuery.trim(),
                             matchStart: result.match_start,
                             matchEnd: result.match_end,
                           });
