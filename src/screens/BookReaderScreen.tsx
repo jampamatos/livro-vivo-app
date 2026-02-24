@@ -21,6 +21,7 @@ type Props = {
   onNext: () => void;
   canGoPrevious: boolean;
   canGoNext: boolean;
+  offlineCached?: boolean;
   mode?: "embedded" | "reader";
   showHeader?: boolean;
   showControls?: boolean;
@@ -40,6 +41,7 @@ export function BookReaderScreen({
   onNext,
   canGoPrevious,
   canGoNext,
+  offlineCached = false,
   mode = "embedded",
   showHeader = true,
   showControls = true,
@@ -317,6 +319,7 @@ export function BookReaderScreen({
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {offlineCached ? <Text style={styles.offlineBadge}>Sem conexão: exibindo capítulo em cache.</Text> : null}
 
       {chapter ? (
         <>
@@ -434,6 +437,17 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111" },
   loading: { fontSize: 12, color: "#555" },
   error: { color: "#b00020", fontFamily: "monospace", marginBottom: 4 },
+  offlineBadge: {
+    borderWidth: 1,
+    borderColor: "#dccb90",
+    backgroundColor: "#fff7db",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: "#5a4a15",
+    fontWeight: "600",
+  },
   chapterNav: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" },
   navButton: {
     paddingVertical: 8,

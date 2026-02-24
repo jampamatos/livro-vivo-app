@@ -1,5 +1,17 @@
 import { apiFetch } from "./http";
 import { API_BASE_URL } from "../config/api";
+import {
+  getCachedBooksList,
+  getCachedCurrentBookVersion,
+  getCachedCurrentVersionChapterBySlug,
+  getCachedCurrentVersionChapters,
+  saveBooksList,
+  saveCurrentBookVersion,
+  saveCurrentVersionChapter,
+  saveCurrentVersionChapters,
+  shouldInvalidateChapterCacheByVersion,
+  clearChapterCache,
+} from "../storage/chapterCache";
 
 export type Book = {
   id: number;
@@ -21,7 +33,7 @@ export type BookVersion = {
   created_at: string;
 };
 
-export type BooksListResponse = { books: Book[] };
+export type BooksListResponse = { books: Book[]; cache_source?: "network" | "cache" };
 
 export type BookVersionResponse = {
   book: Book;
@@ -31,6 +43,7 @@ export type BookVersionResponse = {
 export type CurrentBookVersionResponse = {
   book: Book;
   version: BookVersion;
+  cache_source?: "network" | "cache";
 };
 
 export type BookChapterSummary = {
@@ -59,6 +72,7 @@ export type CurrentBookChapterSummaryResponse = {
   book_version_id: number;
   version: string;
   chapters: BookChapterSummary[];
+  cache_source?: "network" | "cache";
 };
 
 export type CurrentBookChapterBySlugResponse = {
@@ -69,6 +83,7 @@ export type CurrentBookChapterBySlugResponse = {
   chapter: BookChapter;
   previous_slug: string | null;
   next_slug: string | null;
+  cache_source?: "network" | "cache";
 };
 
 export type BookSearchResult = {
@@ -94,7 +109,17 @@ export type BookSearchResponse = {
 };
 
 export function listBooks(token: string) {
-  return apiFetch<BooksListResponse>("/books/", { token });
+  return (async () => {
+    try {
+      const response = await apiFetch<BooksListResponse>("/books/", { token });
+      await saveBooksList(response);
+      return { ...response, cache_source: "network" as const };
+    } catch (error) {
+      const cached = await getCachedBooksList();
+      if (cached) return { ...cached, cache_source: "cache" as const };
+      throw error;
+    }
+  })();
 }
 
 export function listBookVersions(token: string, bookId: number) {
@@ -102,18 +127,57 @@ export function listBookVersions(token: string, bookId: number) {
 }
 
 export function getCurrentBookVersion(token: string, bookId: number) {
-  return apiFetch<CurrentBookVersionResponse>(`/books/${bookId}/current-version/`, { token });
+  return (async () => {
+    try {
+      const response = await apiFetch<CurrentBookVersionResponse>(`/books/${bookId}/current-version/`, {
+        token,
+      });
+
+      if (await shouldInvalidateChapterCacheByVersion(bookId, response.version)) {
+        await clearChapterCache(bookId);
+      }
+      await saveCurrentBookVersion(bookId, response);
+      return { ...response, cache_source: "network" as const };
+    } catch (error) {
+      const cached = await getCachedCurrentBookVersion(bookId);
+      if (cached) return { ...cached, cache_source: "cache" as const };
+      throw error;
+    }
+  })();
 }
 
 export function listCurrentVersionChapters(token: string, bookId: number) {
-  return apiFetch<CurrentBookChapterSummaryResponse>(`/books/${bookId}/current-version/chapters/`, { token });
+  return (async () => {
+    try {
+      const response = await apiFetch<CurrentBookChapterSummaryResponse>(
+        `/books/${bookId}/current-version/chapters/`,
+        { token }
+      );
+      await saveCurrentVersionChapters(bookId, response);
+      return { ...response, cache_source: "network" as const };
+    } catch (error) {
+      const cached = await getCachedCurrentVersionChapters(bookId);
+      if (cached) return { ...cached, cache_source: "cache" as const };
+      throw error;
+    }
+  })();
 }
 
 export function getCurrentVersionChapterBySlug(token: string, bookId: number, chapterSlug: string) {
-  return apiFetch<CurrentBookChapterBySlugResponse>(
-    `/books/${bookId}/current-version/chapters/${encodeURIComponent(chapterSlug)}/`,
-    { token }
-  );
+  return (async () => {
+    try {
+      const response = await apiFetch<CurrentBookChapterBySlugResponse>(
+        `/books/${bookId}/current-version/chapters/${encodeURIComponent(chapterSlug)}/`,
+        { token }
+      );
+      await saveCurrentVersionChapter(bookId, response);
+      return { ...response, cache_source: "network" as const };
+    } catch (error) {
+      const cached = await getCachedCurrentVersionChapterBySlug(bookId, chapterSlug);
+      if (cached) return { ...cached, cache_source: "cache" as const };
+      throw error;
+    }
+  })();
 }
 
 export type DownloadUrlResponse = { url: string };
