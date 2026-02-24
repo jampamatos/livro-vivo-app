@@ -1,12 +1,15 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { ActivityIndicator } from "react-native";
+import { ActivityIndicator, Linking } from "react-native";
 
 import App from "../App";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
 import { setSessionListener } from "../src/auth/sessionBus";
 import { logout } from "../src/api/auth";
+import type { BookChapter } from "../src/api/books";
 import type { AuthSession } from "../src/auth/authSession";
+import { BookReaderScreen } from "../src/screens/BookReaderScreen";
+import { buildRichTextBlocks } from "../src/utils/richText";
 
 jest.mock("../src/auth/tokenStorage", () => ({
   getAuthSession: jest.fn(),
@@ -376,5 +379,157 @@ describe("App", () => {
     await pressByTestId(tree, "community-created");
     expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
     expect(JSON.stringify(tree.toJSON())).toContain("post:Criado");
+  });
+});
+
+describe("reader rich text + a11y baseline", () => {
+  const baseChapter: BookChapter = {
+    id: 1,
+    book_version: 1,
+    order: 1,
+    title: "Capítulo de teste",
+    slug: "cap-1",
+    content_rich:
+      '<h2>Título H2</h2><h3>Subtítulo H3</h3><p>Texto <a href="https://example.com">com link</a> e <strong>negrito</strong>.</p><ul><li>Item UL 1</li><li>Item UL 2</li></ul>',
+    content_plain: "Título H2 Subtítulo H3 Texto com link e negrito. Item UL 1 Item UL 2",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("mantém tags permitidas e remove href inseguro", () => {
+    const blocks = buildRichTextBlocks(
+      '<h2>Capítulo</h2><p><a href="javascript:alert(1)">ruim</a> <a href="www.livro-vivo.app">bom</a></p>',
+      "fallback"
+    );
+    expect(blocks.map((block) => block.type)).toEqual(["heading2", "paragraph"]);
+
+    const paragraph = blocks[1];
+    if (paragraph.type !== "paragraph") {
+      throw new Error("parágrafo esperado");
+    }
+
+    const unsafeLink = paragraph.inlines.find(
+      (inline) => inline.type === "text" && inline.href?.startsWith("javascript:")
+    );
+    const safeLink = paragraph.inlines.find(
+      (inline) => inline.type === "text" && inline.href === "https://www.livro-vivo.app"
+    );
+
+    expect(unsafeLink).toBeUndefined();
+    expect(safeLink).toBeDefined();
+  });
+
+  it("renderiza heading/list/link com semântica de acessibilidade", () => {
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={baseChapter}
+          loading={false}
+          error={null}
+          focus={null}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const headers = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) => node.props.accessibilityRole === "header"
+    );
+    const links = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) => node.props.accessibilityRole === "link"
+    );
+    const lists = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) => node.props.accessibilityRole === "list"
+    );
+    const listItems = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Item de lista")
+    );
+
+    expect(headers.length).toBeGreaterThan(0);
+    expect(links.length).toBeGreaterThan(0);
+    expect(lists.length).toBeGreaterThan(0);
+    expect(listItems.length).toBeGreaterThanOrEqual(2);
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("permite ajustar escala de fonte no reader", () => {
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={baseChapter}
+          loading={false}
+          error={null}
+          focus={null}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    expect(JSON.stringify(tree!.toJSON())).toContain("100");
+
+    act(() => {
+      tree!.root.findByProps({ testID: "reader-font-increase" }).props.onPress();
+    });
+
+    const scaleLabel = tree!.root.findByProps({
+      accessibilityLabel: "Escala da fonte 110 por cento",
+    });
+    expect(scaleLabel).toBeTruthy();
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("abre link com segurança e normaliza url sem protocolo", async () => {
+    const openUrlSpy = jest.spyOn(Linking, "openURL").mockResolvedValueOnce(true);
+    const chapterWithDomainLink: BookChapter = {
+      ...baseChapter,
+      content_rich: '<p>Confira <a href="www.example.com">o site</a>.</p>',
+      content_plain: "Confira o site.",
+    };
+
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapterWithDomainLink}
+          loading={false}
+          error={null}
+          focus={null}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const linkNode = tree!.root.find(
+      (node: renderer.ReactTestInstance) =>
+        node.props.accessibilityRole === "link" && node.props.accessibilityLabel === "Abrir link o site"
+    );
+
+    await act(async () => {
+      await linkNode.props.onPress();
+    });
+
+    expect(openUrlSpy).toHaveBeenCalledWith("https://www.example.com");
+
+    openUrlSpy.mockRestore();
+    act(() => {
+      tree!.unmount();
+    });
   });
 });
