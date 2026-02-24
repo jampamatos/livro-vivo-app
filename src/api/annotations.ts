@@ -1,34 +1,67 @@
 import { apiFetch } from "./http";
 
-/** Retângulo normalizado (0..1) relativo ao tamanho da página. */
+/** Compat legado PDF (mantido para não quebrar importações existentes). */
 export type NormalizedRect = { x: number; y: number; w: number; h: number };
+
+export type AnnotationSelector = Record<string, unknown>;
 
 export type Annotation = {
   id: number;
-  book_version: number; // backend
-  page_number: number;
-  rects_normalizados: NormalizedRect[];
+  book_version: number;
+  chapter: number;
+  selector: AnnotationSelector;
+  start_offset: number;
+  end_offset: number;
+  excerpt: string;
   note: string;
   color: string;
   created_at: string;
   updated_at: string;
+  // Campos legados opcionais durante transição.
+  page_number?: number;
+  rects_normalizados?: NormalizedRect[];
 };
 
-export type CreatedAnnotationPayload = {
-  book_version: number; // se o backend exigir book_version_id, a gente ajusta
+export type ChapterAnnotationPayload = {
+  book_version: number;
+  chapter: number;
+  selector: AnnotationSelector;
+  start_offset: number;
+  end_offset: number;
+  excerpt?: string;
+  note?: string;
+  color?: string;
+};
+
+export type LegacyPdfAnnotationPayload = {
+  book_version: number;
   page_number: number;
   rects_normalizados: NormalizedRect[];
   note?: string;
   color?: string;
 };
 
-export type UpdateAnnotationPayload = Partial<{
-  book_version: number;
-  page_number: number;
-  rects_normalizados: NormalizedRect[];
-  note: string;
-  color: string;
-}>;
+export type CreatedAnnotationPayload = ChapterAnnotationPayload | LegacyPdfAnnotationPayload;
+
+export type UpdateAnnotationPayload = Partial<
+  ChapterAnnotationPayload &
+    LegacyPdfAnnotationPayload & {
+      book_version: number;
+      chapter: number;
+      selector: AnnotationSelector;
+      start_offset: number;
+      end_offset: number;
+      excerpt: string;
+      note: string;
+      color: string;
+    }
+>;
+
+export type ListAnnotationsFilters = {
+  bookVersionId?: number;
+  chapterId?: number;
+  chapterSlug?: string;
+};
 
 export function createAnnotation(token: string, payload: CreatedAnnotationPayload) {
   return apiFetch<Annotation>("/annotations/", {
@@ -38,9 +71,28 @@ export function createAnnotation(token: string, payload: CreatedAnnotationPayloa
   });
 }
 
-export function listAnnotations(token: string, bookVersionId?: number) {
-  const qs = bookVersionId ? `?book_version=${bookVersionId}` : "";
-  return apiFetch<Annotation[]>(`/annotations/${qs}`, { token });
+export function listAnnotations(
+  token: string,
+  filtersOrBookVersionId?: ListAnnotationsFilters | number
+) {
+  const filters =
+    typeof filtersOrBookVersionId === "number"
+      ? { bookVersionId: filtersOrBookVersionId }
+      : filtersOrBookVersionId ?? {};
+
+  const params = new URLSearchParams();
+  if (typeof filters.bookVersionId === "number") {
+    params.set("book_version", String(filters.bookVersionId));
+  }
+  if (typeof filters.chapterId === "number") {
+    params.set("chapter_id", String(filters.chapterId));
+  }
+  if (filters.chapterSlug) {
+    params.set("chapter_slug", filters.chapterSlug);
+  }
+
+  const qs = params.toString();
+  return apiFetch<Annotation[]>(qs ? `/annotations/?${qs}` : "/annotations/", { token });
 }
 
 export function updateAnnotation(
