@@ -10,6 +10,26 @@ type ReaderFocus = {
   matchEnd: number;
 };
 
+export type ReaderAnnotationDraft = {
+  chapterId: number;
+  chapterSlug: string;
+  chapterOrder: number;
+  chapterTitle: string;
+  excerpt: string;
+  startOffset: number;
+  endOffset: number;
+  selector: Record<string, unknown>;
+};
+
+export type ReaderAnnotationHighlight = {
+  id: number;
+  startOffset: number;
+  endOffset: number;
+  excerpt: string;
+  note?: string;
+  color?: string;
+};
+
 type Props = {
   chapter: BookChapter | null;
   loading: boolean;
@@ -28,7 +48,62 @@ type Props = {
   fontScale?: number;
   onFontScaleChange?: (scale: number) => void;
   enableSwipeNavigation?: boolean;
+  annotationMode?: boolean;
+  allowNativeParagraphFallback?: boolean;
+  annotations?: ReaderAnnotationHighlight[];
+  onCreateAnnotationDraft?: (draft: ReaderAnnotationDraft) => void;
+  onOpenAnnotation?: (annotationId: number) => void;
 };
+
+type InlineCursor = { current: number };
+
+type DecoratedSegment = {
+  text: string;
+  isSearchMatch: boolean;
+  annotation: ReaderAnnotationHighlight | null;
+};
+
+const MIN_FONT_SCALE = 0.9;
+const MAX_FONT_SCALE = 1.35;
+const STEP_FONT_SCALE = 0.1;
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ");
+}
+
+function normalizeForMatch(value: string): string {
+  return collapseWhitespace(value).trim();
+}
+
+function findBestOccurrence(haystack: string, needle: string, approxIndex: number): number {
+  if (!haystack || !needle) return -1;
+  let best = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let from = 0;
+
+  while (from < haystack.length) {
+    const idx = haystack.indexOf(needle, from);
+    if (idx < 0) break;
+    const dist = Math.abs(idx - approxIndex);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      best = idx;
+    }
+    from = idx + 1;
+  }
+
+  return best;
+}
+
+function annotationBgColor(color: string | undefined): string {
+  const normalized = (color || "yellow").trim().toLowerCase();
+  if (normalized === "green") return "#b9f6ca";
+  if (normalized === "blue") return "#bbdefb";
+  if (normalized === "pink") return "#f8bbd0";
+  if (normalized === "orange") return "#ffd8a8";
+  if (normalized.startsWith("#")) return normalized;
+  return "#fff59d";
+}
 
 export function BookReaderScreen({
   chapter,
@@ -48,17 +123,23 @@ export function BookReaderScreen({
   fontScale: controlledFontScale,
   onFontScaleChange,
   enableSwipeNavigation = false,
+  annotationMode = false,
+  allowNativeParagraphFallback = false,
+  annotations = [],
+  onCreateAnnotationDraft,
+  onOpenAnnotation,
 }: Props) {
   const scrollRef = React.useRef<ScrollView | null>(null);
+  const readingColumnRef = React.useRef<any>(null);
+
   const chapterText = chapter?.content_plain || "";
   const [contentHeight, setContentHeight] = React.useState(0);
   const [viewportHeight, setViewportHeight] = React.useState(0);
   const [internalFontScale, setInternalFontScale] = React.useState(1);
-  const MIN_FONT_SCALE = 0.9;
-  const MAX_FONT_SCALE = 1.35;
-  const STEP_FONT_SCALE = 0.1;
+
   const matchStart = focus?.matchStart ?? -1;
   const matchEnd = focus?.matchEnd ?? -1;
+  const focusQuery = focus?.query.trim() ?? "";
 
   const hasFocusedMatch =
     chapter != null &&
@@ -70,30 +151,8 @@ export function BookReaderScreen({
     () => buildRichTextBlocks(chapter?.content_rich, chapter?.content_plain),
     [chapter?.content_plain, chapter?.content_rich]
   );
+
   const currentFontScale = controlledFontScale ?? internalFontScale;
-  const focusQuery = focus?.query.trim() ?? "";
-
-  React.useEffect(() => {
-    if (!chapter) return;
-    const hasAutoFocusTarget =
-      hasFocusedMatch && chapterText.length > 0 && contentHeight > 0 && viewportHeight > 0;
-    if (hasAutoFocusTarget) {
-      const ratio = Math.max(0, Math.min(1, matchStart / chapterText.length));
-      const targetOffset = Math.max(0, contentHeight * ratio - viewportHeight * 0.25);
-      scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
-      return;
-    }
-    scrollRef.current?.scrollTo({ y: Math.max(0, initialScrollOffset), animated: false });
-  }, [
-    chapter?.slug,
-    chapterText.length,
-    contentHeight,
-    hasFocusedMatch,
-    initialScrollOffset,
-    matchStart,
-    viewportHeight,
-  ]);
-
   const clampFontScale = React.useCallback((value: number) => {
     if (value < MIN_FONT_SCALE) return MIN_FONT_SCALE;
     if (value > MAX_FONT_SCALE) return MAX_FONT_SCALE;
@@ -118,6 +177,29 @@ export function BookReaderScreen({
     setInternalFontScale(next);
   }, [clampFontScale, controlledFontScale, currentFontScale, onFontScaleChange]);
 
+  React.useEffect(() => {
+    if (!chapter) return;
+    const hasAutoFocusTarget =
+      hasFocusedMatch && chapterText.length > 0 && contentHeight > 0 && viewportHeight > 0;
+
+    if (hasAutoFocusTarget) {
+      const ratio = Math.max(0, Math.min(1, matchStart / chapterText.length));
+      const targetOffset = Math.max(0, contentHeight * ratio - viewportHeight * 0.25);
+      scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
+      return;
+    }
+
+    scrollRef.current?.scrollTo({ y: Math.max(0, initialScrollOffset), animated: false });
+  }, [
+    chapter?.slug,
+    chapterText.length,
+    contentHeight,
+    hasFocusedMatch,
+    initialScrollOffset,
+    matchStart,
+    viewportHeight,
+  ]);
+
   const openLink = React.useCallback(async (href: string | undefined) => {
     const normalizedHref = normalizeRichTextHref(href);
     if (!normalizedHref || normalizedHref.startsWith("#")) return;
@@ -130,7 +212,7 @@ export function BookReaderScreen({
           try {
             opened.opener = null;
           } catch {
-            // ignore: some browsers block changing opener directly
+            // ignore
           }
         }
         return;
@@ -140,7 +222,7 @@ export function BookReaderScreen({
     try {
       await Linking.openURL(normalizedHref);
     } catch {
-      // no-op: broken URL should not crash reader.
+      // no-op
     }
   }, []);
 
@@ -149,33 +231,100 @@ export function BookReaderScreen({
     [currentFontScale]
   );
 
-  const renderSegmentsWithHighlight = React.useCallback(
-    (text: string) => {
-      if (!focusQuery || focusQuery.length < 2) return text;
-      const escaped = focusQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const parts = text.split(new RegExp(`(${escaped})`, "ig"));
-      return parts.map((part, idx) => {
-        if (part.toLowerCase() === focusQuery.toLowerCase()) {
-          return (
-            <Text key={`focus-${idx}`} style={styles.contentMatch}>
-              {part}
-            </Text>
-          );
-        }
-        return <React.Fragment key={`text-${idx}`}>{part}</React.Fragment>;
+  const annotationRanges = React.useMemo(() => {
+    return (annotations || [])
+      .filter((item) => item.startOffset >= 0 && item.endOffset > item.startOffset)
+      .sort((a, b) => {
+        if (a.startOffset !== b.startOffset) return a.startOffset - b.startOffset;
+        return a.endOffset - b.endOffset;
       });
+  }, [annotations]);
+
+  const splitDecoratedSegments = React.useCallback(
+    (text: string, globalStart: number): DecoratedSegment[] => {
+      if (!text) return [];
+      const boundaries = new Set<number>([0, text.length]);
+      const globalEnd = globalStart + text.length;
+
+      annotationRanges.forEach((annotation) => {
+        const overlapStart = Math.max(globalStart, annotation.startOffset);
+        const overlapEnd = Math.min(globalEnd, annotation.endOffset);
+        if (overlapStart < overlapEnd) {
+          boundaries.add(overlapStart - globalStart);
+          boundaries.add(overlapEnd - globalStart);
+        }
+      });
+
+      const normalizedQuery = focusQuery.trim();
+      if (normalizedQuery.length >= 2) {
+        const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escaped, "ig");
+        let match = regex.exec(text);
+        while (match) {
+          boundaries.add(match.index);
+          boundaries.add(match.index + match[0].length);
+          match = regex.exec(text);
+        }
+      }
+
+      const sorted = [...boundaries].sort((a, b) => a - b);
+      const out: DecoratedSegment[] = [];
+      for (let idx = 0; idx < sorted.length - 1; idx += 1) {
+        const localStart = sorted[idx];
+        const localEnd = sorted[idx + 1];
+        if (localEnd <= localStart) continue;
+
+        const segmentText = text.slice(localStart, localEnd);
+        if (!segmentText) continue;
+
+        const segGlobalStart = globalStart + localStart;
+        const segGlobalEnd = globalStart + localEnd;
+
+        const annotation =
+          annotationRanges.find(
+            (item) => item.startOffset <= segGlobalStart && item.endOffset >= segGlobalEnd
+          ) ?? null;
+
+        const isSearchMatch =
+          normalizedQuery.length >= 2 && segmentText.toLowerCase() === normalizedQuery.toLowerCase();
+
+        out.push({
+          text: segmentText,
+          isSearchMatch,
+          annotation,
+        });
+      }
+
+      return out;
     },
-    [focusQuery]
+    [annotationRanges, focusQuery]
   );
 
   const renderInlineText = React.useCallback(
-    (inlines: RichInlineNode[], baseStyle: object, textRole: "text" | "header" = "text") => {
+    (
+      inlines: RichInlineNode[],
+      baseStyle: object,
+      cursor: InlineCursor,
+      textRole: "text" | "header" = "text"
+    ) => {
+      const canOpenAnnotation = !annotationMode && typeof onOpenAnnotation === "function";
       return (
-        <Text style={baseStyle} allowFontScaling accessibilityRole={textRole}>
+        <Text
+          style={baseStyle}
+          allowFontScaling
+          accessibilityRole={textRole}
+          selectable={annotationMode}
+          selectionColor="#9ec5fe"
+        >
           {inlines.map((node, index) => {
             if (node.type === "lineBreak") {
+              cursor.current += 1;
               return <React.Fragment key={`br-${index}`}>{"\n"}</React.Fragment>;
             }
+
+            const start = cursor.current;
+            const nodeText = node.text;
+            cursor.current = start + nodeText.length;
 
             const inlineStyle = [
               styles.inlineBase,
@@ -184,6 +333,8 @@ export function BookReaderScreen({
               node.underline ? styles.inlineUnderline : null,
               node.href ? styles.inlineLink : null,
             ];
+
+            const segments = splitDecoratedSegments(nodeText, start);
 
             if (node.href) {
               return (
@@ -196,101 +347,344 @@ export function BookReaderScreen({
                     void openLink(node.href);
                   }}
                 >
-                  {renderSegmentsWithHighlight(node.text)}
+                  {segments.map((segment, segIdx) => (
+                    <Text
+                      key={`seg-${index}-${segIdx}`}
+                      style={[
+                        segment.annotation
+                          ? {
+                              backgroundColor: annotationBgColor(segment.annotation.color),
+                              borderRadius: 2,
+                            }
+                          : null,
+                        segment.isSearchMatch ? styles.contentMatch : null,
+                      ]}
+                      selectable={annotationMode}
+                    >
+                      {segment.text}
+                    </Text>
+                  ))}
                 </Text>
               );
             }
 
             return (
               <Text key={`text-${index}`} style={inlineStyle}>
-                {renderSegmentsWithHighlight(node.text)}
+                {segments.map((segment, segIdx) => (
+                  <Text
+                    key={`seg-${index}-${segIdx}`}
+                    style={[
+                      segment.annotation
+                        ? {
+                            backgroundColor: annotationBgColor(segment.annotation.color),
+                            borderRadius: 2,
+                          }
+                        : null,
+                      segment.isSearchMatch ? styles.contentMatch : null,
+                    ]}
+                    selectable={annotationMode}
+                    accessibilityRole={canOpenAnnotation && segment.annotation ? "button" : undefined}
+                    onPress={
+                      canOpenAnnotation && segment.annotation
+                        ? () => {
+                            onOpenAnnotation?.(segment.annotation!.id);
+                          }
+                        : undefined
+                    }
+                  >
+                    {segment.text}
+                  </Text>
+                ))}
               </Text>
             );
           })}
         </Text>
       );
     },
-    [openLink, renderSegmentsWithHighlight]
+    [annotationMode, onOpenAnnotation, openLink, splitDecoratedSegments]
   );
 
+  const toInlinePlainText = React.useCallback((inlines: RichInlineNode[]) => {
+    return inlines
+      .map((node) => (node.type === "lineBreak" ? " " : node.text))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+  }, []);
+
+  const longPressTargets = React.useMemo(() => {
+    if (!chapter) return new Map<string, Omit<ReaderAnnotationDraft, "selector">>();
+    const plain = chapter.content_plain || "";
+    const map = new Map<string, Omit<ReaderAnnotationDraft, "selector">>();
+    let cursor = 0;
+
+    const register = (key: string, excerpt: string) => {
+      const normalized = normalizeForMatch(excerpt);
+      if (!normalized || !plain) return;
+
+      let startOffset = plain.indexOf(normalized, cursor);
+      if (startOffset < 0) startOffset = plain.indexOf(normalized);
+      if (startOffset < 0) return;
+
+      const endOffset = startOffset + normalized.length;
+      cursor = endOffset;
+      map.set(key, {
+        chapterId: chapter.id,
+        chapterSlug: chapter.slug,
+        chapterOrder: chapter.order,
+        chapterTitle: chapter.title,
+        excerpt: normalized,
+        startOffset,
+        endOffset,
+      });
+    };
+
+    richBlocks.forEach((block, blockIndex) => {
+      if (block.type === "list") {
+        block.items.forEach((item, itemIndex) => {
+          register(`list-${blockIndex}-${itemIndex}`, toInlinePlainText(item));
+        });
+        return;
+      }
+      register(`block-${blockIndex}`, toInlinePlainText(block.inlines));
+    });
+
+    return map;
+  }, [chapter, richBlocks, toInlinePlainText]);
+
+  const allowLongPressFallback =
+    allowNativeParagraphFallback &&
+    Platform.OS !== "web" &&
+    annotationMode &&
+    !!onCreateAnnotationDraft;
+
+  const emitLongPressDraft = React.useCallback(
+    (targetKey: string, blockType: string) => {
+      if (!chapter || !onCreateAnnotationDraft) return;
+      const target = longPressTargets.get(targetKey);
+      if (!target) return;
+
+      onCreateAnnotationDraft({
+        ...target,
+        selector: {
+          kind: "reader-selection",
+          source: "long-press",
+          block_type: blockType,
+          chapter_slug: target.chapterSlug,
+          chapter_order: target.chapterOrder,
+        },
+      });
+    },
+    [chapter, longPressTargets, onCreateAnnotationDraft]
+  );
+
+  const handleWebSelectionEnd = React.useCallback(() => {
+    if (Platform.OS !== "web" || !annotationMode || !chapter || !onCreateAnnotationDraft) {
+      return;
+    }
+
+    const win = (globalThis as any).window;
+    const selection = win?.getSelection?.();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+    const rawSelected = selection.toString();
+    const selectedCollapsed = collapseWhitespace(rawSelected);
+    const selectedText = selectedCollapsed.trim();
+    if (selectedText.length < 2) return;
+
+    const container = readingColumnRef.current as any;
+    if (!container || typeof container.contains !== "function") return;
+
+    const anchorNode = selection.anchorNode as Node | null;
+    const focusNode = selection.focusNode as Node | null;
+    if ((anchorNode && !container.contains(anchorNode)) || (focusNode && !container.contains(focusNode))) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const prefixRange = range.cloneRange();
+    prefixRange.selectNodeContents(container);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    const prefixCollapsed = collapseWhitespace(prefixRange.toString());
+    const leadingSpaces = selectedCollapsed.length - selectedCollapsed.trimStart().length;
+
+    const plain = chapter.content_plain || "";
+    const approxStart = Math.max(0, Math.min(plain.length, prefixCollapsed.length + leadingSpaces));
+    let startOffset = plain.indexOf(selectedText, approxStart);
+    if (startOffset < 0) {
+      startOffset = findBestOccurrence(plain, selectedText, approxStart);
+    }
+    if (startOffset < 0) return;
+    const endOffset = startOffset + selectedText.length;
+    const excerpt = plain.slice(startOffset, endOffset);
+
+    onCreateAnnotationDraft({
+      chapterId: chapter.id,
+      chapterSlug: chapter.slug,
+      chapterOrder: chapter.order,
+      chapterTitle: chapter.title,
+      excerpt,
+      startOffset,
+      endOffset,
+      selector: {
+        kind: "reader-selection",
+        source: "dom-selection",
+        chapter_slug: chapter.slug,
+        chapter_order: chapter.order,
+      },
+    });
+
+    selection.removeAllRanges();
+  }, [annotationMode, chapter, onCreateAnnotationDraft]);
+
   const renderBlock = React.useCallback(
-    (block: RichBlockNode, index: number) => {
+    (block: RichBlockNode, index: number, cursor: InlineCursor) => {
       if (block.type === "heading2") {
-        return (
-          <View key={`block-${index}`} accessibilityRole="header" accessibilityLabel="Título de seção nível 2">
+        const content = (
+          <View accessibilityRole="header" accessibilityLabel="Título de seção nível 2">
             {renderInlineText(
               block.inlines,
               [styles.h2, { fontSize: scaled(28), lineHeight: scaled(36) }],
+              cursor,
               "header"
             )}
           </View>
+        );
+
+        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
+        return (
+          <Pressable
+            key={`block-${index}`}
+            onLongPress={() => emitLongPressDraft(`block-${index}`, "heading2")}
+            delayLongPress={260}
+          >
+            {content}
+          </Pressable>
         );
       }
 
       if (block.type === "heading3") {
-        return (
-          <View key={`block-${index}`} accessibilityRole="header" accessibilityLabel="Título de seção nível 3">
+        const content = (
+          <View accessibilityRole="header" accessibilityLabel="Título de seção nível 3">
             {renderInlineText(
               block.inlines,
               [styles.h3, { fontSize: scaled(23), lineHeight: scaled(31) }],
+              cursor,
               "header"
             )}
           </View>
         );
+
+        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
+        return (
+          <Pressable
+            key={`block-${index}`}
+            onLongPress={() => emitLongPressDraft(`block-${index}`, "heading3")}
+            delayLongPress={260}
+          >
+            {content}
+          </Pressable>
+        );
       }
 
       if (block.type === "blockquote") {
-        return (
-          <View key={`block-${index}`} style={styles.blockquote}>
-            {renderInlineText(block.inlines, [
-              styles.blockquoteText,
-              { fontSize: scaled(18), lineHeight: scaled(31) },
-            ])}
+        const content = (
+          <View style={styles.blockquote}>
+            {renderInlineText(
+              block.inlines,
+              [styles.blockquoteText, { fontSize: scaled(18), lineHeight: scaled(31) }],
+              cursor
+            )}
           </View>
+        );
+
+        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
+        return (
+          <Pressable
+            key={`block-${index}`}
+            onLongPress={() => emitLongPressDraft(`block-${index}`, "blockquote")}
+            delayLongPress={260}
+          >
+            {content}
+          </Pressable>
         );
       }
 
       if (block.type === "list") {
         return (
           <View key={`block-${index}`} style={styles.list} accessibilityRole="list">
-            {block.items.map((item, itemIndex) => (
-              <View
-                key={`item-${itemIndex}`}
-                style={styles.listItemRow}
-                accessibilityRole="text"
-                accessibilityLabel={`Item de lista ${itemIndex + 1}`}
-              >
-                <Text style={[styles.listMarker, { fontSize: scaled(18), lineHeight: scaled(31) }]}>
-                  {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
-                </Text>
+            {block.items.map((item, itemIndex) => {
+              const content = (
+                <>
+                  <Text style={[styles.listMarker, { fontSize: scaled(18), lineHeight: scaled(31) }]}> 
+                    {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
+                  </Text>
                 <View style={styles.listItemTextWrap}>
-                  {renderInlineText(item, [
-                    styles.listText,
-                    { fontSize: scaled(18), lineHeight: scaled(31) },
-                  ])}
+                    {itemIndex > 0 ? (() => {
+                      cursor.current += 1;
+                      return null;
+                    })() : null}
+                    {renderInlineText(
+                      item,
+                      [styles.listText, { fontSize: scaled(18), lineHeight: scaled(31) }],
+                      cursor
+                    )}
+                  </View>
+                </>
+              );
+
+              return (
+                <View
+                  key={`item-${itemIndex}`}
+                  style={styles.listItemRow}
+                  accessibilityRole="text"
+                  accessibilityLabel={`Item de lista ${itemIndex + 1}`}
+                >
+                  {allowLongPressFallback ? (
+                    <Pressable
+                      style={styles.listItemPressable}
+                      onLongPress={() => emitLongPressDraft(`list-${index}-${itemIndex}`, "list-item")}
+                      delayLongPress={260}
+                    >
+                      {content}
+                    </Pressable>
+                  ) : (
+                    <View style={styles.listItemPressable}>{content}</View>
+                  )}
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         );
       }
 
-      return (
-        <View key={`block-${index}`} style={styles.paragraphWrap}>
-          {renderInlineText(block.inlines, [
-            styles.paragraph,
-            { fontSize: scaled(18), lineHeight: scaled(31) },
-          ])}
+      const paragraph = (
+        <View style={styles.paragraphWrap}>
+          {renderInlineText(
+            block.inlines,
+            [styles.paragraph, { fontSize: scaled(18), lineHeight: scaled(31) }],
+            cursor
+          )}
         </View>
       );
+
+      if (!allowLongPressFallback) return <View key={`block-${index}`}>{paragraph}</View>;
+      return (
+        <Pressable
+          key={`block-${index}`}
+          onLongPress={() => emitLongPressDraft(`block-${index}`, "paragraph")}
+          delayLongPress={260}
+        >
+          {paragraph}
+        </Pressable>
+      );
     },
-    [renderInlineText, scaled]
+    [allowLongPressFallback, emitLongPressDraft, renderInlineText, scaled]
   );
 
   const panResponder = React.useMemo(() => {
-    if (!enableSwipeNavigation || Platform.OS === "web") {
-      return null;
-    }
+    if (!enableSwipeNavigation || Platform.OS === "web") return null;
+
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) =>
         Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
@@ -305,6 +699,11 @@ export function BookReaderScreen({
       },
     });
   }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious]);
+
+  const webSelectionHandlers =
+    Platform.OS === "web"
+      ? ({ onMouseUp: handleWebSelectionEnd, onTouchEnd: handleWebSelectionEnd } as any)
+      : {};
 
   return (
     <View
@@ -353,10 +752,7 @@ export function BookReaderScreen({
                 hitSlop={8}
                 onPress={decreaseFontScale}
                 disabled={currentFontScale <= MIN_FONT_SCALE}
-                style={[
-                  styles.scaleButton,
-                  currentFontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null,
-                ]}
+                style={[styles.scaleButton, currentFontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null]}
               >
                 <Text style={styles.scaleButtonText}>A-</Text>
               </Pressable>
@@ -374,10 +770,7 @@ export function BookReaderScreen({
                 hitSlop={8}
                 onPress={increaseFontScale}
                 disabled={currentFontScale >= MAX_FONT_SCALE}
-                style={[
-                  styles.scaleButton,
-                  currentFontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null,
-                ]}
+                style={[styles.scaleButton, currentFontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null]}
               >
                 <Text style={styles.scaleButtonText}>A+</Text>
               </Pressable>
@@ -386,7 +779,10 @@ export function BookReaderScreen({
 
           <ScrollView
             ref={scrollRef}
-            style={[styles.contentScroll, mode === "embedded" ? styles.contentScrollEmbedded : styles.contentScrollReader]}
+            style={[
+              styles.contentScroll,
+              mode === "embedded" ? styles.contentScrollEmbedded : styles.contentScrollReader,
+            ]}
             contentContainerStyle={styles.contentContainer}
             scrollEventThrottle={200}
             onLayout={(event) => {
@@ -399,9 +795,18 @@ export function BookReaderScreen({
               onScrollOffsetChange?.(event.nativeEvent.contentOffset.y);
             }}
             accessibilityLabel={`Conteúdo do capítulo ${chapter.title}`}
+            {...webSelectionHandlers}
           >
-            <View style={styles.readingColumn}>
-              {richBlocks.map((block, index) => renderBlock(block, index))}
+            <View ref={readingColumnRef} style={styles.readingColumn}>
+              {(() => {
+                const cursor: InlineCursor = { current: 0 };
+                return richBlocks.map((block, index) => {
+                  if (index > 0) {
+                    cursor.current += 1;
+                  }
+                  return renderBlock(block, index, cursor);
+                });
+              })()}
             </View>
           </ScrollView>
         </>
@@ -499,6 +904,7 @@ const styles = StyleSheet.create({
   blockquoteText: { color: "#3f3320", fontStyle: "italic" },
   list: { gap: 8, marginVertical: 4 },
   listItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  listItemPressable: { flexDirection: "row", alignItems: "flex-start", gap: 8, flex: 1 },
   listMarker: { minWidth: 22, color: "#1f2937", fontWeight: "600" },
   listItemTextWrap: { flex: 1 },
   listText: { color: "#272727" },

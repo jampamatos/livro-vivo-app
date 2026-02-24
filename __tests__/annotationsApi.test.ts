@@ -1,6 +1,7 @@
 import {
   createAnnotation,
   deleteAnnotation,
+  listChapterAnnotationsForVersion,
   listAnnotations,
   updateAnnotation,
 } from "../src/api/annotations";
@@ -56,10 +57,24 @@ describe("api/annotations", () => {
     );
   });
 
+  it("listAnnotations aceita filtros por capítulo sem versão", async () => {
+    apiFetchMock.mockResolvedValueOnce([]);
+    await listAnnotations("t123", { chapterId: 7, chapterSlug: "cap-7" });
+    expect(apiFetchMock).toHaveBeenCalledWith("/annotations/?chapter_id=7&chapter_slug=cap-7", {
+      token: "t123",
+    });
+  });
+
   it("listAnnotations sem id chama /annotations/", async () => {
     apiFetchMock.mockResolvedValueOnce([]);
     await listAnnotations("t123");
     expect(apiFetchMock).toHaveBeenCalledWith("/annotations/", { token: "t123" });
+  });
+
+  it("listChapterAnnotationsForVersion usa filtro chapter-first por versão", async () => {
+    apiFetchMock.mockResolvedValueOnce([]);
+    await listChapterAnnotationsForVersion("t123", 55);
+    expect(apiFetchMock).toHaveBeenCalledWith("/annotations/?book_version=55", { token: "t123" });
   });
 
   it("updateAnnotation faz PATCH em /annotations/:id/", async () => {
