@@ -92,6 +92,7 @@ export default function App() {
   if (route === "main") {
     return (
       <MainScreen
+        token={token}
         onOpenLibrary={() => setRoute("library")}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
@@ -160,6 +161,7 @@ export default function App() {
   // fallback seguro
   return (
     <MainScreen
+      token={token}
       onOpenLibrary={() => setRoute("library")}
       onOpenCaseLaw={() => setRoute("caselaw")}
       onOpenCommunity={() => setRoute("community")}

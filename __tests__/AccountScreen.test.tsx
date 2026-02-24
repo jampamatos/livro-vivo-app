@@ -2,12 +2,14 @@ import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { AccountScreen } from "../src/screens/AccountScreen";
-import { getMyEntitlements } from "../src/api/entitlements";
+import { getMeProfile, getMyEntitlements } from "../src/api/entitlements";
 
 jest.mock("../src/api/entitlements", () => ({
+  getMeProfile: jest.fn(),
   getMyEntitlements: jest.fn(),
 }));
 
+const getMeProfileMock = getMeProfile as unknown as jest.Mock;
 const getMyEntitlementsMock = getMyEntitlements as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
@@ -28,23 +30,18 @@ async function renderScreen(token: string, onBack = jest.fn(), onLogout = jest.f
 
 describe("AccountScreen", () => {
   beforeEach(() => {
+    getMeProfileMock.mockReset();
     getMyEntitlementsMock.mockReset();
   });
 
-  it("carrega assinatura e exibe resumo amigável", async () => {
-    let resolveEntitlements: (value: unknown) => void = () => {};
-    const entitlementsPromise = new Promise((resolve) => {
-      resolveEntitlements = resolve;
+  it("carrega perfil e assinatura profissional de forma amigável", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor Guglinski",
+      profession: "Advogado",
     });
-    getMyEntitlementsMock.mockReturnValueOnce(entitlementsPromise);
-
-    const tree = await renderScreen("abcd1234efgh5678");
-
-    const initialJson = JSON.stringify(tree.toJSON());
-    expect(initialJson).toContain("Carregando assinatura");
-    expect(initialJson).toContain('"Token: ","abcd…5678"');
-
-    resolveEntitlements({
+    getMyEntitlementsMock.mockResolvedValueOnce({
       effective_tier: "professional",
       subscription: {
         id: 1,
@@ -71,43 +68,80 @@ describe("AccountScreen", () => {
       ],
     });
 
-    await flushEffects();
-
-    const finalJson = JSON.stringify(tree.toJSON());
-    expect(getMyEntitlementsMock).toHaveBeenCalledWith("abcd1234efgh5678");
-    expect(finalJson).toContain("Profissional");
-    expect(finalJson).toContain("Status");
-    expect(finalJson).toContain("Ativa");
-    expect(finalJson).toContain("Founder");
-    expect(finalJson).toContain("Sim");
-    expect(finalJson).toContain("Livros ativos");
-    expect(finalJson).not.toContain("Carregando assinatura");
-    expect(finalJson).not.toContain("Não foi possível carregar seus acessos");
-  });
-
-  it("mascara token curto com asteriscos", async () => {
-    getMyEntitlementsMock.mockResolvedValueOnce({ ok: true });
-
-    const tree = await renderScreen("short");
-    expect(JSON.stringify(tree.toJSON())).toContain('"Token: ","**********"');
-
-    await flushEffects();
-  });
-
-  it("mostra mensagem de erro quando API falha", async () => {
-    getMyEntitlementsMock.mockRejectedValueOnce(new Error("boom"));
-
     const tree = await renderScreen("token-ok");
-
     await flushEffects();
 
-    expect(JSON.stringify(tree.toJSON())).toContain(
-      "Não foi possível carregar seus acessos."
-    );
+    const json = JSON.stringify(tree.toJSON());
+    expect(getMeProfileMock).toHaveBeenCalledWith("token-ok");
+    expect(getMyEntitlementsMock).toHaveBeenCalledWith("token-ok");
+    expect(json).toContain("Minha Conta");
+    expect(json).toContain("Vitor Guglinski");
+    expect(json).toContain("Advogado");
+    expect(json).toContain("vitor@example.com");
+    expect(json).toContain("Profissional");
+    expect(json).toContain("Founder");
+    expect(json).toContain("Biblioteca • Comunidade • Jurisprudência • Banco de Peças • Curso");
+    expect(json).toContain("Editar perfil");
+    expect(json).toContain("Alterar senha");
+    expect(json).not.toContain("Não foi possível carregar os dados da sua conta.");
+  });
+
+  it("mostra plano essencial com módulos correspondentes", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 2,
+      email: "ana@example.com",
+      name: "Ana",
+      profession: "",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "essential",
+      subscription: {
+        id: 2,
+        tier: "essential",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+
+    const tree = await renderScreen("token-essential");
+    await flushEffects();
+
+    const json = JSON.stringify(tree.toJSON());
+    expect(json).toContain("Essencial");
+    expect(json).toContain("Biblioteca • Comunidade");
+    expect(json).not.toContain("Jurisprudência • Banco de Peças • Curso");
+  });
+
+  it("mostra erro quando API falha", async () => {
+    getMeProfileMock.mockRejectedValueOnce(new Error("boom"));
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: null,
+      subscription: null,
+      entitlements: [],
+    });
+
+    const tree = await renderScreen("token-error");
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Não foi possível carregar os dados da sua conta.");
   });
 
   it("aciona botões Voltar e Sair", async () => {
-    getMyEntitlementsMock.mockResolvedValueOnce({ entitlements: [] });
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor",
+      profession: "Advogado",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: null,
+      subscription: null,
+      entitlements: [],
+    });
     const onBack = jest.fn();
     const onLogout = jest.fn();
 
