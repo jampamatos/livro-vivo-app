@@ -127,22 +127,39 @@ function parseHtmlTree(html: string): HtmlElementNode {
   return root;
 }
 
-function sanitizeHref(href: string | undefined): string | undefined {
+export function normalizeRichTextHref(href: string | undefined): string | undefined {
   if (!href) return undefined;
   const trimmed = href.trim();
   if (!trimmed) return undefined;
 
-  const lower = trimmed.toLowerCase();
-  if (
-    lower.startsWith("http://") ||
-    lower.startsWith("https://") ||
-    lower.startsWith("mailto:") ||
-    lower.startsWith("tel:") ||
-    lower.startsWith("/") ||
-    lower.startsWith("#")
-  ) {
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) {
     return trimmed;
   }
+
+  if (trimmed.startsWith("//")) {
+    return `https:${trimmed}`;
+  }
+
+  const withoutWhitespace = trimmed.replace(/\s+/g, "");
+  const lower = withoutWhitespace.toLowerCase();
+  const schemeMatch = lower.match(/^([a-z][a-z0-9+.-]*):/);
+  if (schemeMatch) {
+    const scheme = schemeMatch[1];
+    if (scheme === "http" || scheme === "https" || scheme === "mailto" || scheme === "tel") {
+      return withoutWhitespace;
+    }
+    return undefined;
+  }
+
+  if (lower.startsWith("www.")) {
+    return `https://${withoutWhitespace}`;
+  }
+
+  const domainLike = /^([a-z0-9-]+\.)+[a-z]{2,}(\/[^\s]*)?$/i.test(withoutWhitespace);
+  if (domainLike) {
+    return `https://${withoutWhitespace}`;
+  }
+
   return undefined;
 }
 
@@ -164,7 +181,7 @@ function sanitizeNode(node: HtmlNode): HtmlNode[] {
 
   const attrs: Record<string, string> = {};
   if (node.tag === "a") {
-    const href = sanitizeHref(node.attrs.href);
+    const href = normalizeRichTextHref(node.attrs.href);
     if (href) attrs.href = href;
   }
 

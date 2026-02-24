@@ -1,8 +1,8 @@
 import React from "react";
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { BookChapter } from "../api/books";
-import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
+import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
 
 type ReaderFocus = {
   query: string;
@@ -21,6 +21,12 @@ type Props = {
   onNext: () => void;
   canGoPrevious: boolean;
   canGoNext: boolean;
+  mode?: "embedded" | "reader";
+  showHeader?: boolean;
+  showControls?: boolean;
+  fontScale?: number;
+  onFontScaleChange?: (scale: number) => void;
+  enableSwipeNavigation?: boolean;
 };
 
 export function BookReaderScreen({
@@ -34,10 +40,18 @@ export function BookReaderScreen({
   onNext,
   canGoPrevious,
   canGoNext,
+  mode = "embedded",
+  showHeader = true,
+  showControls = true,
+  fontScale: controlledFontScale,
+  onFontScaleChange,
+  enableSwipeNavigation = false,
 }: Props) {
   const scrollRef = React.useRef<ScrollView | null>(null);
   const chapterText = chapter?.content_plain || "";
-  const [fontScale, setFontScale] = React.useState(1);
+  const [contentHeight, setContentHeight] = React.useState(0);
+  const [viewportHeight, setViewportHeight] = React.useState(0);
+  const [internalFontScale, setInternalFontScale] = React.useState(1);
   const MIN_FONT_SCALE = 0.9;
   const MAX_FONT_SCALE = 1.35;
   const STEP_FONT_SCALE = 0.1;
@@ -54,14 +68,29 @@ export function BookReaderScreen({
     () => buildRichTextBlocks(chapter?.content_rich, chapter?.content_plain),
     [chapter?.content_plain, chapter?.content_rich]
   );
+  const currentFontScale = controlledFontScale ?? internalFontScale;
+  const focusQuery = focus?.query.trim() ?? "";
 
   React.useEffect(() => {
     if (!chapter) return;
-    scrollRef.current?.scrollTo({
-      y: Math.max(0, initialScrollOffset),
-      animated: false,
-    });
-  }, [chapter?.slug, initialScrollOffset]);
+    const hasAutoFocusTarget =
+      hasFocusedMatch && chapterText.length > 0 && contentHeight > 0 && viewportHeight > 0;
+    if (hasAutoFocusTarget) {
+      const ratio = Math.max(0, Math.min(1, matchStart / chapterText.length));
+      const targetOffset = Math.max(0, contentHeight * ratio - viewportHeight * 0.25);
+      scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
+      return;
+    }
+    scrollRef.current?.scrollTo({ y: Math.max(0, initialScrollOffset), animated: false });
+  }, [
+    chapter?.slug,
+    chapterText.length,
+    contentHeight,
+    hasFocusedMatch,
+    initialScrollOffset,
+    matchStart,
+    viewportHeight,
+  ]);
 
   const clampFontScale = React.useCallback((value: number) => {
     if (value < MIN_FONT_SCALE) return MIN_FONT_SCALE;
@@ -70,23 +99,72 @@ export function BookReaderScreen({
   }, []);
 
   const increaseFontScale = React.useCallback(() => {
-    setFontScale((prev) => clampFontScale(prev + STEP_FONT_SCALE));
-  }, [clampFontScale]);
+    const next = clampFontScale(currentFontScale + STEP_FONT_SCALE);
+    if (typeof controlledFontScale === "number") {
+      onFontScaleChange?.(next);
+      return;
+    }
+    setInternalFontScale(next);
+  }, [clampFontScale, controlledFontScale, currentFontScale, onFontScaleChange]);
 
   const decreaseFontScale = React.useCallback(() => {
-    setFontScale((prev) => clampFontScale(prev - STEP_FONT_SCALE));
-  }, [clampFontScale]);
+    const next = clampFontScale(currentFontScale - STEP_FONT_SCALE);
+    if (typeof controlledFontScale === "number") {
+      onFontScaleChange?.(next);
+      return;
+    }
+    setInternalFontScale(next);
+  }, [clampFontScale, controlledFontScale, currentFontScale, onFontScaleChange]);
 
   const openLink = React.useCallback(async (href: string | undefined) => {
-    if (!href || href.startsWith("#")) return;
+    const normalizedHref = normalizeRichTextHref(href);
+    if (!normalizedHref || normalizedHref.startsWith("#")) return;
+
+    if (Platform.OS === "web") {
+      const webWindow = (globalThis as any).window;
+      if (webWindow && typeof webWindow.open === "function") {
+        const opened = webWindow.open(normalizedHref, "_blank", "noopener,noreferrer");
+        if (opened && typeof opened === "object") {
+          try {
+            opened.opener = null;
+          } catch {
+            // ignore: some browsers block changing opener directly
+          }
+        }
+        return;
+      }
+    }
+
     try {
-      await Linking.openURL(href);
+      await Linking.openURL(normalizedHref);
     } catch {
       // no-op: broken URL should not crash reader.
     }
   }, []);
 
-  const scaled = React.useCallback((base: number) => Number((base * fontScale).toFixed(2)), [fontScale]);
+  const scaled = React.useCallback(
+    (base: number) => Number((base * currentFontScale).toFixed(2)),
+    [currentFontScale]
+  );
+
+  const renderSegmentsWithHighlight = React.useCallback(
+    (text: string) => {
+      if (!focusQuery || focusQuery.length < 2) return text;
+      const escaped = focusQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const parts = text.split(new RegExp(`(${escaped})`, "ig"));
+      return parts.map((part, idx) => {
+        if (part.toLowerCase() === focusQuery.toLowerCase()) {
+          return (
+            <Text key={`focus-${idx}`} style={styles.contentMatch}>
+              {part}
+            </Text>
+          );
+        }
+        return <React.Fragment key={`text-${idx}`}>{part}</React.Fragment>;
+      });
+    },
+    [focusQuery]
+  );
 
   const renderInlineText = React.useCallback(
     (inlines: RichInlineNode[], baseStyle: object, textRole: "text" | "header" = "text") => {
@@ -116,21 +194,21 @@ export function BookReaderScreen({
                     void openLink(node.href);
                   }}
                 >
-                  {node.text}
+                  {renderSegmentsWithHighlight(node.text)}
                 </Text>
               );
             }
 
             return (
               <Text key={`text-${index}`} style={inlineStyle}>
-                {node.text}
+                {renderSegmentsWithHighlight(node.text)}
               </Text>
             );
           })}
         </Text>
       );
     },
-    [openLink]
+    [openLink, renderSegmentsWithHighlight]
   );
 
   const renderBlock = React.useCallback(
@@ -221,12 +299,36 @@ export function BookReaderScreen({
     };
   }, [chapterText, hasFocusedMatch, matchEnd, matchStart]);
 
+  const panResponder = React.useMemo(() => {
+    if (!enableSwipeNavigation || Platform.OS === "web") {
+      return null;
+    }
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx <= -70 && canGoNext) {
+          onNext();
+          return;
+        }
+        if (gestureState.dx >= 70 && canGoPrevious) {
+          onPrevious();
+        }
+      },
+    });
+  }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious]);
+
   return (
-    <View style={styles.chapterCard}>
-      <View style={styles.chapterHeader}>
-        <Text style={styles.sectionTitle}>{chapter ? chapter.title : "Capítulo"}</Text>
-        {loading ? <Text style={styles.loading}>Carregando...</Text> : null}
-      </View>
+    <View
+      style={[styles.chapterCard, mode === "embedded" ? styles.chapterCardEmbedded : styles.chapterCardReader]}
+      {...(panResponder ? panResponder.panHandlers : {})}
+    >
+      {showHeader ? (
+        <View style={styles.chapterHeader}>
+          <Text style={styles.sectionTitle}>{chapter ? chapter.title : "Capítulo"}</Text>
+          {loading ? <Text style={styles.loading}>Carregando...</Text> : null}
+        </View>
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -245,70 +347,78 @@ export function BookReaderScreen({
             </View>
           ) : null}
 
-          <View style={styles.chapterNav}>
-            <Pressable
-              onPress={onPrevious}
-              disabled={!canGoPrevious || loading}
-              accessibilityRole="button"
-              accessibilityLabel="Capítulo anterior"
-              style={[styles.navButton, !canGoPrevious || loading ? styles.navButtonDisabled : null]}
-            >
-              <Text style={styles.navButtonText}>Capítulo anterior</Text>
-            </Pressable>
+          {showControls ? (
+            <View style={styles.chapterNav}>
+              <Pressable
+                onPress={onPrevious}
+                disabled={!canGoPrevious || loading}
+                accessibilityRole="button"
+                accessibilityLabel="Capítulo anterior"
+                style={[styles.navButton, !canGoPrevious || loading ? styles.navButtonDisabled : null]}
+              >
+                <Text style={styles.navButtonText}>Capítulo anterior</Text>
+              </Pressable>
 
-            <Pressable
-              onPress={onNext}
-              disabled={!canGoNext || loading}
-              accessibilityRole="button"
-              accessibilityLabel="Próximo capítulo"
-              style={[styles.navButton, !canGoNext || loading ? styles.navButtonDisabled : null]}
-            >
-              <Text style={styles.navButtonText}>Próximo capítulo</Text>
-            </Pressable>
+              <Pressable
+                onPress={onNext}
+                disabled={!canGoNext || loading}
+                accessibilityRole="button"
+                accessibilityLabel="Próximo capítulo"
+                style={[styles.navButton, !canGoNext || loading ? styles.navButtonDisabled : null]}
+              >
+                <Text style={styles.navButtonText}>Próximo capítulo</Text>
+              </Pressable>
 
-            <Pressable
-              testID="reader-font-decrease"
-              accessibilityRole="button"
-              accessibilityLabel="Diminuir tamanho da fonte"
-              accessibilityHint="Reduz o tamanho da fonte do capítulo"
-              hitSlop={8}
-              onPress={decreaseFontScale}
-              disabled={fontScale <= MIN_FONT_SCALE}
-              style={[
-                styles.scaleButton,
-                fontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null,
-              ]}
-            >
-              <Text style={styles.scaleButtonText}>A-</Text>
-            </Pressable>
-            <Text
-              style={styles.scaleLabel}
-              accessibilityLabel={`Escala da fonte ${Math.round(fontScale * 100)} por cento`}
-            >
-              {Math.round(fontScale * 100)}%
-            </Text>
-            <Pressable
-              testID="reader-font-increase"
-              accessibilityRole="button"
-              accessibilityLabel="Aumentar tamanho da fonte"
-              accessibilityHint="Aumenta o tamanho da fonte do capítulo"
-              hitSlop={8}
-              onPress={increaseFontScale}
-              disabled={fontScale >= MAX_FONT_SCALE}
-              style={[
-                styles.scaleButton,
-                fontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null,
-              ]}
-            >
-              <Text style={styles.scaleButtonText}>A+</Text>
-            </Pressable>
-          </View>
+              <Pressable
+                testID="reader-font-decrease"
+                accessibilityRole="button"
+                accessibilityLabel="Diminuir tamanho da fonte"
+                accessibilityHint="Reduz o tamanho da fonte do capítulo"
+                hitSlop={8}
+                onPress={decreaseFontScale}
+                disabled={currentFontScale <= MIN_FONT_SCALE}
+                style={[
+                  styles.scaleButton,
+                  currentFontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null,
+                ]}
+              >
+                <Text style={styles.scaleButtonText}>A-</Text>
+              </Pressable>
+              <Text
+                style={styles.scaleLabel}
+                accessibilityLabel={`Escala da fonte ${Math.round(currentFontScale * 100)} por cento`}
+              >
+                {Math.round(currentFontScale * 100)}%
+              </Text>
+              <Pressable
+                testID="reader-font-increase"
+                accessibilityRole="button"
+                accessibilityLabel="Aumentar tamanho da fonte"
+                accessibilityHint="Aumenta o tamanho da fonte do capítulo"
+                hitSlop={8}
+                onPress={increaseFontScale}
+                disabled={currentFontScale >= MAX_FONT_SCALE}
+                style={[
+                  styles.scaleButton,
+                  currentFontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null,
+                ]}
+              >
+                <Text style={styles.scaleButtonText}>A+</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           <ScrollView
             ref={scrollRef}
-            style={styles.contentScroll}
+            style={[styles.contentScroll, mode === "embedded" ? styles.contentScrollEmbedded : styles.contentScrollReader]}
             contentContainerStyle={styles.contentContainer}
             scrollEventThrottle={200}
+            onLayout={(event) => {
+              setViewportHeight(event.nativeEvent.layout.height);
+            }}
+            onContentSizeChange={(_, height) => {
+              setContentHeight(height);
+            }}
             onScroll={(event) => {
               onScrollOffsetChange?.(event.nativeEvent.contentOffset.y);
             }}
@@ -328,13 +438,24 @@ export function BookReaderScreen({
 
 const styles = StyleSheet.create({
   chapterCard: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 12,
+  },
+  chapterCardEmbedded: {
     borderWidth: 1,
     borderColor: "#e6e3dc",
     borderRadius: 12,
     backgroundColor: "#f7f5f0",
-    padding: 12,
-    gap: 12,
     maxHeight: 780,
+  },
+  chapterCardReader: {
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: "transparent",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    flex: 1,
   },
   chapterHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#111" },
@@ -371,7 +492,9 @@ const styles = StyleSheet.create({
   scaleButtonDisabled: { opacity: 0.45 },
   scaleButtonText: { color: "#111", fontSize: 12, fontWeight: "700" },
   scaleLabel: { fontSize: 12, color: "#444", minWidth: 42, textAlign: "center" },
-  contentScroll: { minHeight: 220, maxHeight: 620 },
+  contentScroll: { minHeight: 220 },
+  contentScrollEmbedded: { maxHeight: 620 },
+  contentScrollReader: { flex: 1, minHeight: 0 },
   contentContainer: { paddingVertical: 16, paddingHorizontal: 10 },
   readingColumn: {
     width: "100%",
@@ -381,6 +504,7 @@ const styles = StyleSheet.create({
   },
   paragraphWrap: { marginBottom: 2 },
   inlineBase: { color: "#272727" },
+  contentMatch: { backgroundColor: "#fff176", fontWeight: "700" },
   inlineBold: { fontWeight: "700" },
   inlineItalic: { fontStyle: "italic" },
   inlineUnderline: { textDecorationLine: "underline" },

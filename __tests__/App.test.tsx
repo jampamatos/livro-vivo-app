@@ -1,6 +1,6 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { ActivityIndicator } from "react-native";
+import { ActivityIndicator, Linking } from "react-native";
 
 import App from "../App";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
@@ -398,7 +398,7 @@ describe("reader rich text + a11y baseline", () => {
 
   it("mantém tags permitidas e remove href inseguro", () => {
     const blocks = buildRichTextBlocks(
-      '<h2>Capítulo</h2><p><a href="javascript:alert(1)">ruim</a> <a href="https://livro-vivo.app">bom</a></p>',
+      '<h2>Capítulo</h2><p><a href="javascript:alert(1)">ruim</a> <a href="www.livro-vivo.app">bom</a></p>',
       "fallback"
     );
     expect(blocks.map((block) => block.type)).toEqual(["heading2", "paragraph"]);
@@ -412,7 +412,7 @@ describe("reader rich text + a11y baseline", () => {
       (inline) => inline.type === "text" && inline.href?.startsWith("javascript:")
     );
     const safeLink = paragraph.inlines.find(
-      (inline) => inline.type === "text" && inline.href === "https://livro-vivo.app"
+      (inline) => inline.type === "text" && inline.href === "https://www.livro-vivo.app"
     );
 
     expect(unsafeLink).toBeUndefined();
@@ -487,6 +487,47 @@ describe("reader rich text + a11y baseline", () => {
       accessibilityLabel: "Escala da fonte 110 por cento",
     });
     expect(scaleLabel).toBeTruthy();
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("abre link com segurança e normaliza url sem protocolo", async () => {
+    const openUrlSpy = jest.spyOn(Linking, "openURL").mockResolvedValueOnce(true);
+    const chapterWithDomainLink: BookChapter = {
+      ...baseChapter,
+      content_rich: '<p>Confira <a href="www.example.com">o site</a>.</p>',
+      content_plain: "Confira o site.",
+    };
+
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapterWithDomainLink}
+          loading={false}
+          error={null}
+          focus={null}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const linkNode = tree!.root.find(
+      (node: renderer.ReactTestInstance) =>
+        node.props.accessibilityRole === "link" && node.props.accessibilityLabel === "Abrir link o site"
+    );
+
+    await act(async () => {
+      await linkNode.props.onPress();
+    });
+
+    expect(openUrlSpy).toHaveBeenCalledWith("https://www.example.com");
+
+    openUrlSpy.mockRestore();
     act(() => {
       tree!.unmount();
     });
