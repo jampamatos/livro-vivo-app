@@ -2,6 +2,14 @@ import { apiFetch } from "./http";
 
 export type SubscriptionTier = "essential" | "professional";
 export type SubscriptionStatus = "active" | "inactive" | "canceled";
+export type ModuleAccessTier = SubscriptionTier | null;
+
+export type MeProfileResponse = {
+  id: number;
+  email: string;
+  name: string;
+  profession: string;
+};
 
 export type EntitlementItem = {
   id: number;
@@ -31,6 +39,10 @@ export type EntitlementsResponse = {
   effective_tier: SubscriptionTier | null;
   subscription: SubscriptionSnapshot | null;
 };
+
+export function getMeProfile(token: string) {
+  return apiFetch<MeProfileResponse>("/me/", { token });
+}
 
 export function getMyEntitlements(token: string) {
   return apiFetch<EntitlementsResponse>("/me/entitlements/", { token });

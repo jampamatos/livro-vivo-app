@@ -1,18 +1,20 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
-import { getMyEntitlements, type EntitlementsResponse, type SubscriptionStatus, type SubscriptionTier } from "../api/entitlements";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+
+import {
+  getMeProfile,
+  getMyEntitlements,
+  type EntitlementsResponse,
+  type MeProfileResponse,
+  type SubscriptionStatus,
+  type SubscriptionTier,
+} from "../api/entitlements";
 
 type Props = {
   token: string;
   onBack: () => void;
   onLogout: () => void;
 };
-
-function maskToken(token: string) {
-  if (!token) return "";
-  if (token.length <= 10) return "**********";
-  return `${token.slice(0, 4)}…${token.slice(-4)}`;
-}
 
 function formatTier(tier: SubscriptionTier | null | undefined) {
   if (!tier) return "Sem assinatura ativa";
@@ -34,35 +36,64 @@ function formatDateTime(value?: string | null) {
   return date.toLocaleString("pt-BR");
 }
 
+function getInitials(name: string) {
+  const cleaned = (name || "").trim();
+  if (!cleaned) return "LV";
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function getModuleLabels(tier: SubscriptionTier | null | undefined) {
+  if (tier === "professional") {
+    return ["Biblioteca", "Comunidade", "Jurisprudência", "Banco de Peças", "Curso"];
+  }
+  if (tier === "essential") {
+    return ["Biblioteca", "Comunidade"];
+  }
+  return [];
+}
+
 export function AccountScreen({ token, onBack, onLogout }: Props) {
   const [loading, setLoading] = React.useState(true);
-  const [data, setData] = React.useState<EntitlementsResponse | null>(null);
+  const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
+  const [profile, setProfile] = React.useState<MeProfileResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let alive = true;
+
     (async () => {
       try {
         setLoading(true);
         setError(null);
-        const res = await getMyEntitlements(token);
+
+        const [profileRes, entitlementsRes] = await Promise.all([
+          getMeProfile(token),
+          getMyEntitlements(token),
+        ]);
+
         if (!alive) return;
-        setData(res);
+        setProfile(profileRes);
+        setEntitlements(entitlementsRes);
       } catch {
         if (!alive) return;
-        setError("Não foi possível carregar seus acessos.");
+        setError("Não foi possível carregar os dados da sua conta.");
       } finally {
         if (!alive) return;
         setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, [token]);
 
-  const activeBookEntitlements =
-    data?.entitlements?.filter((entitlement) => entitlement.product === "book" && entitlement.is_active).length ?? 0;
+  const displayName = (profile?.name || "").trim() || "Nome não informado";
+  const displayProfession = (profile?.profession || "").trim() || "Profissão não informada";
+  const displayEmail = (profile?.email || "").trim() || "-";
+  const modules = getModuleLabels(entitlements?.effective_tier);
 
   return (
     <View style={styles.container}>
@@ -82,30 +113,60 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
       </View>
 
       <Text style={styles.title}>Minha Conta</Text>
-      <Text style={styles.label}>Sessão</Text>
-      <Text style={styles.mono}>Token: {maskToken(token)}</Text>
+      <Text style={styles.subtitle}>Seu plano, dados de perfil e módulos liberados.</Text>
 
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={styles.muted}>Carregando assinatura…</Text>
+          <Text style={styles.muted}>Carregando dados da conta…</Text>
         </View>
       ) : error ? (
         <Text style={styles.error}>{error}</Text>
       ) : (
         <View style={styles.content}>
           <View style={styles.box}>
+            <View style={styles.profileRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{getInitials(profile?.name || "")}</Text>
+              </View>
+              <View style={styles.profileMain}>
+                <Text style={styles.profileName}>{displayName}</Text>
+                <Text style={styles.profileMeta}>{displayProfession}</Text>
+                <Text style={styles.profileMeta}>{displayEmail}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.box, styles.subscriptionBox]}>
             <Text style={styles.sectionTitle}>Assinatura</Text>
-            <Text style={styles.planName}>{formatTier(data?.effective_tier)}</Text>
-            <Text style={styles.meta}>Status: {formatStatus(data?.subscription?.status)}</Text>
-            <Text style={styles.meta}>Founder: {data?.subscription?.is_founder ? "Sim" : "Não"}</Text>
-            <Text style={styles.meta}>Expira em: {formatDateTime(data?.subscription?.expires_at)}</Text>
+            <Text style={styles.planName}>{formatTier(entitlements?.effective_tier)}</Text>
+            <Text style={styles.meta}>Status: {formatStatus(entitlements?.subscription?.status)}</Text>
+            <Text style={styles.meta}>Founder: {entitlements?.subscription?.is_founder ? "Sim" : "Não"}</Text>
+            <Text style={styles.meta}>Expira em: {formatDateTime(entitlements?.subscription?.expires_at)}</Text>
           </View>
 
           <View style={styles.box}>
-            <Text style={styles.sectionTitle}>Entitlements</Text>
-            <Text style={styles.meta}>Total: {data?.entitlements?.length ?? 0}</Text>
-            <Text style={styles.meta}>Livros ativos: {activeBookEntitlements}</Text>
+            <Text style={styles.sectionTitle}>Módulos liberados</Text>
+            {modules.length === 0 ? (
+              <Text style={styles.meta}>Nenhum módulo liberado sem assinatura ativa.</Text>
+            ) : (
+              <Text style={styles.meta}>{modules.join(" • ")}</Text>
+            )}
+          </View>
+
+          <View style={styles.box}>
+            <Text style={styles.sectionTitle}>Ajustes da conta</Text>
+            <View style={styles.actionsRow}>
+              <Pressable style={[styles.secondaryAction, styles.disabledAction]} disabled>
+                <Text style={styles.secondaryActionText}>Editar perfil</Text>
+              </Pressable>
+              <Pressable style={[styles.secondaryAction, styles.disabledAction]} disabled>
+                <Text style={styles.secondaryActionText}>Alterar senha</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.actionHint}>
+              Edição de perfil e mudança de senha serão habilitadas em um próximo byte.
+            </Text>
           </View>
         </View>
       )}
@@ -118,7 +179,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   headerBtn: {
     borderWidth: 1,
-    borderColor: "#DDD",
+    borderColor: "#d5d2ca",
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -127,15 +188,56 @@ const styles = StyleSheet.create({
   headerBtnText: { fontWeight: "700" },
   dangerBtn: { borderColor: "#F2B8B5" },
   dangerText: { color: "#B00020" },
-  title: { marginTop: 16, fontSize: 22, fontWeight: "800" },
-  label: { marginTop: 10, fontSize: 13, fontWeight: "700", opacity: 0.75 },
-  mono: { fontFamily: "monospace", fontSize: 12 },
+
+  title: { marginTop: 16, fontSize: 24, fontWeight: "800", color: "#14110c" },
+  subtitle: { marginTop: 6, fontSize: 13, color: "#5f5a51" },
+
   content: { marginTop: 16, gap: 10 },
-  box: { borderWidth: 1, borderColor: "#EEE", borderRadius: 12, backgroundColor: "#FFF", padding: 12, gap: 4 },
-  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#333", marginBottom: 2 },
-  planName: { fontSize: 18, fontWeight: "800" },
-  meta: { fontSize: 13, color: "#333" },
+  box: {
+    borderWidth: 1,
+    borderColor: "#ebe6db",
+    borderRadius: 12,
+    backgroundColor: "#FFF",
+    padding: 12,
+    gap: 4,
+  },
+  subscriptionBox: {
+    borderColor: "#e5dfd1",
+    backgroundColor: "#fbf8f2",
+  },
+
+  profileRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#f1ecdf",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontWeight: "800", color: "#4d3e22" },
+  profileMain: { gap: 2 },
+  profileName: { fontSize: 17, fontWeight: "800", color: "#1f1a13" },
+  profileMeta: { fontSize: 13, color: "#4f483d" },
+
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#3f382e", marginBottom: 2 },
+  planName: { fontSize: 18, fontWeight: "800", color: "#1a1610" },
+  meta: { fontSize: 13, color: "#363126" },
+
+  actionsRow: { marginTop: 4, flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  secondaryAction: {
+    borderWidth: 1,
+    borderColor: "#bfb8aa",
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    backgroundColor: "#fff",
+  },
+  secondaryActionText: { fontWeight: "700", color: "#464036" },
+  disabledAction: { opacity: 0.55 },
+  actionHint: { marginTop: 6, fontSize: 12, color: "#6b6558" },
+
   center: { paddingVertical: 20, alignItems: "center", gap: 8 },
-  muted: { opacity: 0.7 },
+  muted: { opacity: 0.75 },
   error: { marginTop: 16, color: "#B00020" },
 });
