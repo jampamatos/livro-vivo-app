@@ -24,6 +24,7 @@ import {
   listCurrentVersionChapters,
   searchBook,
 } from "../api/books";
+import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
 import { BookReaderScreen } from "./BookReaderScreen";
 
 type Props = {
@@ -50,6 +51,14 @@ type ReaderFocus = {
   matchEnd: number;
 };
 
+type ChapterLoadParams = {
+  bookId: number;
+  versionId: number;
+  chapterSlug: string;
+  focus?: ReaderFocus | null;
+  restoreOffset?: number;
+};
+
 export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const { height: windowHeight } = useWindowDimensions();
 
@@ -65,6 +74,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [chapterError, setChapterError] = React.useState<string | null>(null);
   const [activeChapter, setActiveChapter] = React.useState<LoadedChapterState | null>(null);
   const [readerFocus, setReaderFocus] = React.useState<ReaderFocus | null>(null);
+  const [readerInitialOffset, setReaderInitialOffset] = React.useState(0);
 
   const [query, setQuery] = React.useState("");
   const [searchLoading, setSearchLoading] = React.useState(false);
@@ -72,6 +82,14 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
   const [searchResults, setSearchResults] = React.useState<BookSearchResult[]>([]);
   const [searchCount, setSearchCount] = React.useState<number | null>(null);
   const [hasSearched, setHasSearched] = React.useState(false);
+
+  const saveProgressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingProgressRef = React.useRef<{
+    bookId: number;
+    versionId: number;
+    chapterSlug: string;
+    scrollOffset: number;
+  } | null>(null);
 
   const webRootStyle = React.useMemo(() => {
     return Platform.OS === "web" ? { height: windowHeight } : null;
@@ -96,6 +114,31 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     setHasSearched(false);
   }, []);
 
+  const flushReadingProgress = React.useCallback(async () => {
+    if (!pendingProgressRef.current) return;
+    const payload = pendingProgressRef.current;
+    pendingProgressRef.current = null;
+    await saveReadingProgress({
+      bookId: payload.bookId,
+      versionId: payload.versionId,
+      chapterSlug: payload.chapterSlug,
+      scrollOffset: payload.scrollOffset,
+    });
+  }, []);
+
+  const scheduleReadingProgressSave = React.useCallback(
+    (payload: { bookId: number; versionId: number; chapterSlug: string; scrollOffset: number }) => {
+      pendingProgressRef.current = payload;
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+      }
+      saveProgressTimerRef.current = setTimeout(() => {
+        void flushReadingProgress();
+      }, 300);
+    },
+    [flushReadingProgress]
+  );
+
   const loadBooks = React.useCallback(async () => {
     setLoadingBooks(true);
     setBooksError(null);
@@ -114,31 +157,49 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     loadBooks();
   }, [loadBooks]);
 
+  React.useEffect(() => {
+    return () => {
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+        saveProgressTimerRef.current = null;
+      }
+      void flushReadingProgress();
+    };
+  }, [flushReadingProgress]);
+
   const loadChapter = React.useCallback(
-    async (
-      bookId: number,
-      chapterSlug: string,
-      options?: { focus?: ReaderFocus | null }
-    ) => {
+    async (params: ChapterLoadParams) => {
       setChapterLoading(true);
       setChapterError(null);
       try {
-        const response = await getCurrentVersionChapterBySlug(token, bookId, chapterSlug);
+        const response = await getCurrentVersionChapterBySlug(
+          token,
+          params.bookId,
+          params.chapterSlug
+        );
         setActiveChapter({
           chapter: response.chapter,
           previousSlug: response.previous_slug,
           nextSlug: response.next_slug,
         });
-        setReaderFocus(options?.focus ?? null);
+        setReaderFocus(params.focus ?? null);
+        setReaderInitialOffset(Math.max(0, params.restoreOffset ?? 0));
+        scheduleReadingProgressSave({
+          bookId: params.bookId,
+          versionId: params.versionId,
+          chapterSlug: params.chapterSlug,
+          scrollOffset: Math.max(0, params.restoreOffset ?? 0),
+        });
       } catch (error) {
         setActiveChapter(null);
         setReaderFocus(null);
+        setReaderInitialOffset(0);
         setChapterError(formatApiError(error, "Erro ao abrir capítulo"));
       } finally {
         setChapterLoading(false);
       }
     },
-    [formatApiError, token]
+    [formatApiError, scheduleReadingProgressSave, token]
   );
 
   const toggleBook = React.useCallback(
@@ -148,8 +209,14 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBookError(null);
         setActiveChapter(null);
         setReaderFocus(null);
+        setReaderInitialOffset(0);
         setChapterError(null);
         resetSearch();
+        if (saveProgressTimerRef.current) {
+          clearTimeout(saveProgressTimerRef.current);
+          saveProgressTimerRef.current = null;
+        }
+        void flushReadingProgress();
         return;
       }
 
@@ -158,7 +225,14 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       setChapterError(null);
       setActiveChapter(null);
       setReaderFocus(null);
+      setReaderInitialOffset(0);
       resetSearch();
+
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+        saveProgressTimerRef.current = null;
+      }
+      void flushReadingProgress();
 
       try {
         const [versionResponse, chaptersResponse] = await Promise.all([
@@ -174,7 +248,23 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         });
 
         if (chapters.length > 0) {
-          await loadChapter(bookId, chapters[0].slug, { focus: null });
+          const restored = await getReadingProgress(bookId, versionResponse.version.id);
+          const chapterFromProgress =
+            restored && chapters.some((chapter) => chapter.slug === restored.chapterSlug)
+              ? restored.chapterSlug
+              : chapters[0].slug;
+          const restoreOffset =
+            restored && restored.chapterSlug === chapterFromProgress
+              ? restored.scrollOffset
+              : 0;
+
+          await loadChapter({
+            bookId,
+            versionId: versionResponse.version.id,
+            chapterSlug: chapterFromProgress,
+            focus: null,
+            restoreOffset,
+          });
         }
       } catch (error) {
         setOpenBook(null);
@@ -183,7 +273,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBookLoading(false);
       }
     },
-    [formatApiError, loadChapter, openBook?.bookId, resetSearch, token]
+    [flushReadingProgress, formatApiError, loadChapter, openBook?.bookId, resetSearch, token]
   );
 
   const runSearch = React.useCallback(async () => {
@@ -353,20 +443,24 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                                     key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
                                     style={styles.searchItem}
                                     onPress={() =>
-                                      loadChapter(book.id, result.chapter_slug, {
-                                      focus: {
-                                        query: query.trim(),
-                                        matchStart: result.match_start,
-                                        matchEnd: result.match_end,
-                                      },
-                                    })
-                                  }
-                                >
-                                  <Text style={styles.searchItemTitle}>
-                                    Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
-                                  </Text>
-                                  {renderHighlightedSnippet(result.snippet)}
-                                </Pressable>
+                                      loadChapter({
+                                        bookId: book.id,
+                                        versionId: openBook.version.id,
+                                        chapterSlug: result.chapter_slug,
+                                        focus: {
+                                          query: query.trim(),
+                                          matchStart: result.match_start,
+                                          matchEnd: result.match_end,
+                                        },
+                                        restoreOffset: 0,
+                                      })
+                                    }
+                                  >
+                                    <Text style={styles.searchItemTitle}>
+                                      Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
+                                    </Text>
+                                    {renderHighlightedSnippet(result.snippet)}
+                                  </Pressable>
                                 ))}
                               </View>
                             )
@@ -383,7 +477,15 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                               return (
                                 <Pressable
                                   key={chapter.id}
-                                  onPress={() => loadChapter(book.id, chapter.slug, { focus: null })}
+                                  onPress={() =>
+                                    loadChapter({
+                                      bookId: book.id,
+                                      versionId: openBook.version.id,
+                                      chapterSlug: chapter.slug,
+                                      focus: null,
+                                      restoreOffset: 0,
+                                    })
+                                  }
                                   style={[styles.chapterItem, active ? styles.chapterItemActive : null]}
                                 >
                                   <Text style={[styles.chapterOrder, active ? styles.chapterTextActive : null]}>
@@ -406,13 +508,35 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
                           loading={chapterLoading}
                           error={chapterError}
                           focus={readerFocus}
+                          initialScrollOffset={readerInitialOffset}
+                          onScrollOffsetChange={(offset) => {
+                            if (!openBook || !activeChapter?.chapter.slug) return;
+                            scheduleReadingProgressSave({
+                              bookId: openBook.bookId,
+                              versionId: openBook.version.id,
+                              chapterSlug: activeChapter.chapter.slug,
+                              scrollOffset: offset,
+                            });
+                          }}
                           onPrevious={() => {
                             if (!activeChapter?.previousSlug) return;
-                            loadChapter(book.id, activeChapter.previousSlug, { focus: null });
+                            loadChapter({
+                              bookId: book.id,
+                              versionId: openBook.version.id,
+                              chapterSlug: activeChapter.previousSlug,
+                              focus: null,
+                              restoreOffset: 0,
+                            });
                           }}
                           onNext={() => {
                             if (!activeChapter?.nextSlug) return;
-                            loadChapter(book.id, activeChapter.nextSlug, { focus: null });
+                            loadChapter({
+                              bookId: book.id,
+                              versionId: openBook.version.id,
+                              chapterSlug: activeChapter.nextSlug,
+                              focus: null,
+                              restoreOffset: 0,
+                            });
                           }}
                           canGoPrevious={!!activeChapter?.previousSlug}
                           canGoNext={!!activeChapter?.nextSlug}
