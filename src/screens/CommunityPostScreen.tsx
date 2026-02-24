@@ -2,11 +2,11 @@ import React from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -137,65 +137,67 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
         </Pressable>
       </View>
 
-      <View style={styles.postCard}>
-        <Text style={styles.postTitle}>{post.title}</Text>
-        <Text style={styles.meta}>
-          por {post.author_display} • {formatDate(post.created_at)}
-        </Text>
-        <Text style={styles.postBody}>{post.body}</Text>
-        <Pressable onPress={reportPost} style={styles.reportBtn}>
-          <Text style={styles.reportText}>Denunciar Post</Text>
-        </Pressable>
-      </View>
-
-      <Text style={styles.sectionTitle}>Comentários</Text>
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.postCard}>
+          <Text style={styles.postTitle}>{post.title}</Text>
+          <Text style={styles.meta}>
+            por {post.author_display} • {formatDate(post.created_at)}
+          </Text>
+          <Text style={styles.postBody}>{post.body}</Text>
+          <Pressable onPress={reportPost} style={styles.reportBtn}>
+            <Text style={styles.reportText}>Denunciar Post</Text>
+          </Pressable>
         </View>
-      ) : (
-        <>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <FlatList
-            data={comments}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={styles.list}
-            renderItem={({ item }) => (
-              <View style={styles.commentCard}>
-                <Text style={styles.commentMeta}>
-                  {item.author_display} • {formatDate(item.created_at)}
-                </Text>
-                <Text style={styles.commentBody}>{item.body}</Text>
-                <Pressable onPress={() => reportComment(item.id)} style={styles.reportMiniBtn}>
-                  <Text style={styles.reportMiniText}>Denunciar</Text>
-                </Pressable>
+        <Text style={styles.sectionTitle}>Comentários</Text>
+        {loading ? (
+          <View style={styles.loadingBlock}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {comments.length === 0 ? (
+              <Text style={styles.muted}>Nenhum comentário ainda. Seja o primeiro :)</Text>
+            ) : (
+              <View style={styles.list}>
+                {comments.map((item) => (
+                  <View key={String(item.id)} style={styles.commentCard}>
+                    <Text style={styles.commentMeta}>
+                      {item.author_display} • {formatDate(item.created_at)}
+                    </Text>
+                    <Text style={styles.commentBody}>{item.body}</Text>
+                    <Pressable onPress={() => reportComment(item.id)} style={styles.reportMiniBtn}>
+                      <Text style={styles.reportMiniText}>Denunciar</Text>
+                    </Pressable>
+                  </View>
+                ))}
               </View>
             )}
-            ListEmptyComponent={
-              <Text style={styles.muted}>Nenhum comentário ainda. Seja o primeiro :)</Text>
-            }
-          />
+          </>
+        )}
 
-          <View style={styles.composer}>
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              placeholder="Escreva um comentário…"
-              style={styles.input}
-              multiline
-            />
-            <Pressable
-              onPress={handleSend}
-              disabled={sending || !text.trim()}
-              style={[styles.sendBtn, (sending || !text.trim()) && styles.sendBtnDisabled]}
-            >
-              <Text style={styles.sendText}>{sending ? "Enviando…" : "Enviar"}</Text>
-            </Pressable>
-          </View>
-        </>
-      )}
+        <View style={styles.composer}>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder="Escreva um comentário…"
+            style={styles.input}
+            multiline
+          />
+          <Pressable
+            onPress={handleSend}
+            disabled={sending || !text.trim()}
+            style={[styles.sendBtn, (sending || !text.trim()) && styles.sendBtnDisabled]}
+          >
+            <Text style={styles.sendText}>{sending ? "Enviando…" : "Enviar"}</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
 
       <Modal
         visible={!!reportTarget}
@@ -257,11 +259,13 @@ const styles = StyleSheet.create({
 
   sectionTitle: { fontSize: 14, fontWeight: "700" },
 
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll: { flex: 1 },
+  scrollContent: { gap: 10, paddingBottom: 16 },
+  loadingBlock: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   error: { color: "crimson" },
   muted: { opacity: 0.7 },
 
-  list: { gap: 10, paddingBottom: 10 },
+  list: { gap: 10 },
   commentCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 },
   commentMeta: { fontSize: 12, opacity: 0.7 },
   commentBody: { fontSize: 13 },
