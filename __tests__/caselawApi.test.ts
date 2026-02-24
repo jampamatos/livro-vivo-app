@@ -24,4 +24,13 @@ describe("api/caselaw", () => {
     await searchCaseLaw("t123");
     expect(apiFetchMock).toHaveBeenCalledWith("/caselaw/", { token: "t123" });
   });
+
+  it("searchCaseLaw ignora filtros vazios e faz encode de query", async () => {
+    apiFetchMock.mockResolvedValueOnce({ results: [] });
+    await searchCaseLaw("t123", { q: "dano moral", court: "", limit: 20, offset: 0 });
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      "/caselaw/?q=dano+moral&limit=20&offset=0",
+      { token: "t123" }
+    );
+  });
 });
