@@ -1,14 +1,23 @@
 import { apiFetch } from "./http";
 
+export type CaseLawAnchor =
+  | string
+  | {
+      id: string;
+      label: string;
+      [key: string]: unknown;
+    };
+
 export type CaseLaw = {
     id: number;
     court: string;
     case_number: string;
     decision_date: string; // YYY-MM-DD
-    summary: string;
+    ementa_rich: string;
+    ementa_plain: string;
     url: string;
+    anchors: CaseLawAnchor[];
     tags: string[];
-    relevance: number;
     created_at: string;
     updated_at: string;
 }
