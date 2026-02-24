@@ -1,13 +1,21 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { BookChapter } from "../api/books";
+
+type ReaderFocus = {
+  query: string;
+  matchStart: number;
+  matchEnd: number;
+};
 
 type Props = {
   chapter: BookChapter | null;
   loading: boolean;
   error: string | null;
-  focus: { query: string; matchStart: number; matchEnd: number } | null;
+  focus: ReaderFocus | null;
+  initialScrollOffset?: number;
+  onScrollOffsetChange?: (offset: number) => void;
   onPrevious: () => void;
   onNext: () => void;
   canGoPrevious: boolean;
@@ -19,11 +27,14 @@ export function BookReaderScreen({
   loading,
   error,
   focus,
+  initialScrollOffset = 0,
+  onScrollOffsetChange,
   onPrevious,
   onNext,
   canGoPrevious,
   canGoNext,
 }: Props) {
+  const scrollRef = React.useRef<ScrollView | null>(null);
   const chapterText = chapter?.content_plain || "";
   const matchStart = focus?.matchStart ?? -1;
   const matchEnd = focus?.matchEnd ?? -1;
@@ -33,6 +44,16 @@ export function BookReaderScreen({
     matchStart >= 0 &&
     matchEnd > matchStart &&
     matchEnd <= chapterText.length;
+
+  React.useEffect(() => {
+    if (!chapter) return;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, initialScrollOffset),
+        animated: false,
+      });
+    });
+  }, [chapter?.slug, initialScrollOffset]);
 
   const focusExcerpt = React.useMemo(() => {
     if (!hasFocusedMatch) return null;
@@ -90,17 +111,27 @@ export function BookReaderScreen({
             </Pressable>
           </View>
 
-          {hasFocusedMatch ? (
-            <Text style={styles.chapterContent}>
-              {chapterText.slice(0, matchStart)}
-              <Text style={styles.contentMatch}>{chapterText.slice(matchStart, matchEnd)}</Text>
-              {chapterText.slice(matchEnd)}
-            </Text>
-          ) : (
-            <Text style={styles.chapterContent}>
-              {chapter.content_plain?.trim() || "Sem conteúdo."}
-            </Text>
-          )}
+          <ScrollView
+            ref={scrollRef}
+            style={styles.contentScroll}
+            contentContainerStyle={styles.contentContainer}
+            scrollEventThrottle={200}
+            onScroll={(event) => {
+              onScrollOffsetChange?.(event.nativeEvent.contentOffset.y);
+            }}
+          >
+            {hasFocusedMatch ? (
+              <Text style={styles.chapterContent}>
+                {chapterText.slice(0, matchStart)}
+                <Text style={styles.contentMatch}>{chapterText.slice(matchStart, matchEnd)}</Text>
+                {chapterText.slice(matchEnd)}
+              </Text>
+            ) : (
+              <Text style={styles.chapterContent}>
+                {chapter.content_plain?.trim() || "Sem conteúdo."}
+              </Text>
+            )}
+          </ScrollView>
         </>
       ) : (
         <Text style={styles.empty}>Selecione um capítulo no sumário.</Text>
@@ -117,6 +148,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     padding: 10,
     gap: 10,
+    maxHeight: 560,
   },
   chapterHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 13, fontWeight: "700", color: "#111" },
@@ -142,6 +174,8 @@ const styles = StyleSheet.create({
   },
   navButtonDisabled: { opacity: 0.45 },
   navButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  contentScroll: { minHeight: 160, maxHeight: 360 },
+  contentContainer: { paddingBottom: 12 },
   chapterContent: { fontSize: 14, color: "#222", lineHeight: 20 },
   contentMatch: { backgroundColor: "#fff176", fontWeight: "700" },
   empty: { color: "#666", fontSize: 13 },
