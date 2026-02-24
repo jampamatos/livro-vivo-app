@@ -19,8 +19,10 @@ describe("api/annotations", () => {
     apiFetchMock.mockResolvedValueOnce({ id: 1 });
     await createAnnotation("t123", {
       book_version: 10,
-      page_number: 3,
-      rects_normalizados: [{ x: 0, y: 0, w: 1, h: 1 }],
+      chapter: 99,
+      selector: { kind: "text-quote" },
+      start_offset: 12,
+      end_offset: 22,
       note: "n1",
       color: "yellow",
     });
@@ -29,8 +31,10 @@ describe("api/annotations", () => {
       token: "t123",
       body: {
         book_version: 10,
-        page_number: 3,
-        rects_normalizados: [{ x: 0, y: 0, w: 1, h: 1 }],
+        chapter: 99,
+        selector: { kind: "text-quote" },
+        start_offset: 12,
+        end_offset: 22,
         note: "n1",
         color: "yellow",
       },
@@ -41,6 +45,15 @@ describe("api/annotations", () => {
     apiFetchMock.mockResolvedValueOnce([]);
     await listAnnotations("t123", 10);
     expect(apiFetchMock).toHaveBeenCalledWith("/annotations/?book_version=10", { token: "t123" });
+  });
+
+  it("listAnnotations aceita filtros chapter-first", async () => {
+    apiFetchMock.mockResolvedValueOnce([]);
+    await listAnnotations("t123", { bookVersionId: 10, chapterId: 2, chapterSlug: "intro" });
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      "/annotations/?book_version=10&chapter_id=2&chapter_slug=intro",
+      { token: "t123" }
+    );
   });
 
   it("listAnnotations sem id chama /annotations/", async () => {
