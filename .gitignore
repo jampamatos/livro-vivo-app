@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# artifacts
+dist-web-ci-local/
+
 # Expo
 .expo/
 dist/
