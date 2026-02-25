@@ -1,11 +1,6 @@
-jest.mock("../src/config/api", () => ({
-  API_BASE_URL: "http://example.test",
-}));
-
 import {
   getCurrentBookVersion,
   getCurrentVersionChapterBySlug,
-  getVersionDownloadUrl,
   listBooks,
   listBookVersions,
   listCurrentVersionChapters,
@@ -215,15 +210,4 @@ describe("api/books", () => {
     expect(apiFetchMock).toHaveBeenCalledWith("/books/1/search/?q=foo&book_version_id=7", { token: "t123" });
   });
 
-  it("getVersionDownloadUrl normaliza URL relativa", async () => {
-    apiFetchMock.mockResolvedValueOnce({ url: "/books/1/versions/2/download/" });
-    const res = await getVersionDownloadUrl("t123", 1, 2);
-    expect(res.url).toBe("http://example.test/books/1/versions/2/download/");
-  });
-
-  it("getVersionDownloadUrl mantém URL absoluta", async () => {
-    apiFetchMock.mockResolvedValueOnce({ url: "https://cdn.example.com/x.pdf" });
-    const res = await getVersionDownloadUrl("t123", 1, 2);
-    expect(res.url).toBe("https://cdn.example.com/x.pdf");
-  });
 });

@@ -1,5 +1,4 @@
 import { apiFetch } from "./http";
-import { API_BASE_URL } from "../config/api";
 import {
   getCachedBooksList,
   getCachedCurrentBookVersion,
@@ -87,7 +86,6 @@ export type CurrentBookChapterBySlugResponse = {
 };
 
 export type BookSearchResult = {
-  page_number: number; // compat legado (mapeado para chapter_order)
   chapter_id: number;
   chapter_slug: string;
   chapter_title: string;
@@ -178,22 +176,6 @@ export function getCurrentVersionChapterBySlug(token: string, bookId: number, ch
       throw error;
     }
   })();
-}
-
-export type DownloadUrlResponse = { url: string };
-
-export async function getVersionDownloadUrl(token: string, bookId: number, versionId: number) {
-  const res = await apiFetch<DownloadUrlResponse>(
-    `/books/${bookId}/versions/${versionId}/download-url`,
-    { token }
-  );
-
-  // Normaliza (aceita relativo ou absoluto).
-  const raw = res.url;
-  const absolute = raw.startsWith("http")
-    ? raw
-    : `${API_BASE_URL}${raw.startsWith("/") ? "" : "/"}${raw}`;
-  return { url: absolute };
 }
 
 export function searchBook(

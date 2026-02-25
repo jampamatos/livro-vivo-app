@@ -24,7 +24,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.DOWNLOAD_WITHOUT_NOTIFICATION",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
       "package": "com.livrovivo.app"
@@ -32,10 +31,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "@config-plugins/react-native-pdf",
-      "@config-plugins/react-native-blob-util",
-      "expo-secure-store"
-    ]
+    "plugins": ["expo-secure-store"]
   }
 }
