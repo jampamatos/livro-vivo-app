@@ -8,6 +8,7 @@ type Props = {
   onOpenLibrary: () => void;
   onOpenCaseLaw: () => void;
   onOpenCommunity: () => void;
+  onOpenCourse: () => void;
   onOpenAccount: () => void;
 };
 
@@ -69,7 +70,14 @@ function HubButton({
   );
 }
 
-export function MainScreen({ token, onOpenLibrary, onOpenCaseLaw, onOpenCommunity, onOpenAccount }: Props) {
+export function MainScreen({
+  token,
+  onOpenLibrary,
+  onOpenCaseLaw,
+  onOpenCommunity,
+  onOpenCourse,
+  onOpenAccount,
+}: Props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
@@ -98,7 +106,7 @@ export function MainScreen({ token, onOpenLibrary, onOpenCaseLaw, onOpenCommunit
   const caselawAccess = resolveAccess("professional", tier, loading);
   const communityAccess = resolveAccess("subscription", tier, loading);
   const piecesAccess = resolveAccess("professional", tier, loading, "Em breve");
-  const courseAccess = resolveAccess("professional", tier, loading, "Em breve");
+  const courseAccess = resolveAccess("professional", tier, loading);
 
   return (
     <View style={styles.container}>
@@ -148,9 +156,10 @@ export function MainScreen({ token, onOpenLibrary, onOpenCaseLaw, onOpenCommunit
         <HubButton
           label="Curso"
           testID="main-course"
+          onPress={onOpenCourse}
           disabled={courseAccess.disabled}
           badge={courseAccess.badge}
-          hint="Recurso previsto para o plano Profissional."
+          hint="Disponível no plano Profissional."
         />
       </View>
     </View>

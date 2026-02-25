@@ -6,6 +6,7 @@ import { CaseLawScreen } from "./src/screens/CaseLawScreen";
 import { CommunityFeedScreen } from "./src/screens/CommunityFeedScreen";
 import { CommunityNewPostScreen } from "./src/screens/CommunityNewPostScreen";
 import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
+import { CourseScreen } from "./src/screens/CourseScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { MainScreen } from "./src/screens/MainScreen";
@@ -24,6 +25,7 @@ type Route =
   | "community"
   | "communityNewPost"
   | "communityPost"
+  | "course"
   | "library";
 
 
@@ -96,6 +98,7 @@ export default function App() {
         onOpenLibrary={() => setRoute("library")}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
+        onOpenCourse={() => setRoute("course")}
         onOpenAccount={() => setRoute("account")}
       />
     );
@@ -111,6 +114,10 @@ export default function App() {
 
   if (route === "library") {
     return <LibraryScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+  }
+
+  if (route === "course") {
+    return <CourseScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
   }
 
   if (route === "community") {
@@ -165,6 +172,7 @@ export default function App() {
       onOpenLibrary={() => setRoute("library")}
       onOpenCaseLaw={() => setRoute("caselaw")}
       onOpenCommunity={() => setRoute("community")}
+      onOpenCourse={() => setRoute("course")}
       onOpenAccount={() => setRoute("account")}
     />
   );

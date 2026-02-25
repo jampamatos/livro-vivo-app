@@ -23,12 +23,14 @@ async function renderScreen({
   onOpenLibrary = jest.fn(),
   onOpenCaseLaw = jest.fn(),
   onOpenCommunity = jest.fn(),
+  onOpenCourse = jest.fn(),
   onOpenAccount = jest.fn(),
 }: {
   token?: string;
   onOpenLibrary?: jest.Mock;
   onOpenCaseLaw?: jest.Mock;
   onOpenCommunity?: jest.Mock;
+  onOpenCourse?: jest.Mock;
   onOpenAccount?: jest.Mock;
 } = {}) {
   let tree: renderer.ReactTestRenderer;
@@ -39,6 +41,7 @@ async function renderScreen({
         onOpenLibrary={onOpenLibrary}
         onOpenCaseLaw={onOpenCaseLaw}
         onOpenCommunity={onOpenCommunity}
+        onOpenCourse={onOpenCourse}
         onOpenAccount={onOpenAccount}
       />
     );
@@ -75,6 +78,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(false);
   });
 
   it("aplica gating para plano essencial", async () => {
@@ -139,12 +143,14 @@ describe("MainScreen", () => {
     const onOpenLibrary = jest.fn();
     const onOpenCaseLaw = jest.fn();
     const onOpenCommunity = jest.fn();
+    const onOpenCourse = jest.fn();
     const onOpenAccount = jest.fn();
 
     const tree = await renderScreen({
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
+      onOpenCourse,
       onOpenAccount,
     });
     await flushEffects();
@@ -160,5 +166,6 @@ describe("MainScreen", () => {
     expect(onOpenCommunity).toHaveBeenCalledTimes(1);
     expect(onOpenAccount).toHaveBeenCalledTimes(1);
     expect(onOpenCaseLaw).toHaveBeenCalledTimes(0);
+    expect(onOpenCourse).toHaveBeenCalledTimes(0);
   });
 });

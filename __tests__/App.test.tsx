@@ -60,11 +60,13 @@ jest.mock("../src/screens/MainScreen", () => {
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
+      onOpenCourse,
       onOpenAccount,
     }: {
       onOpenLibrary: () => void;
       onOpenCaseLaw: () => void;
       onOpenCommunity: () => void;
+      onOpenCourse: () => void;
       onOpenAccount: () => void;
     }) => (
       <View>
@@ -77,6 +79,9 @@ jest.mock("../src/screens/MainScreen", () => {
         </Pressable>
         <Pressable testID="main-open-community" onPress={onOpenCommunity}>
           <Text>Community</Text>
+        </Pressable>
+        <Pressable testID="main-open-course" onPress={onOpenCourse}>
+          <Text>Course</Text>
         </Pressable>
         <Pressable testID="main-open-account" onPress={onOpenAccount}>
           <Text>Account</Text>
@@ -123,6 +128,25 @@ jest.mock("../src/screens/LibraryScreen", () => {
   const ReactLocal = require("react");
   const { View, Text } = require("react-native");
   return { LibraryScreen: () => <View><Text>LibraryScreen</Text></View> };
+});
+
+jest.mock("../src/screens/CourseScreen", () => {
+  const ReactLocal = require("react");
+  const { View, Text, Pressable } = require("react-native");
+  return {
+    CourseScreen: ({
+      onBack,
+    }: {
+      onBack: () => void;
+    }) => (
+      <View>
+        <Text>CourseScreen</Text>
+        <Pressable testID="course-back" onPress={onBack}>
+          <Text>BackToMain</Text>
+        </Pressable>
+      </View>
+    ),
+  };
 });
 
 jest.mock("../src/screens/CommunityFeedScreen", () => {
@@ -379,6 +403,22 @@ describe("App", () => {
     await pressByTestId(tree, "community-created");
     expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
     expect(JSON.stringify(tree.toJSON())).toContain("post:Criado");
+  });
+
+  it("navega para curso e volta para main", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-course");
+    expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
+
+    await pressByTestId(tree, "course-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 });
 
