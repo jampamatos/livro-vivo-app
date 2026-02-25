@@ -8,19 +8,16 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - Persistência segura de sessão nativa em `expo-secure-store` (Keychain/Keystore).
 - Tela "Minha conta" exibindo os entitlements do usuário.
 - Biblioteca com lista de livros, versões e changelog.
-- Busca dentro do livro (API) com abertura direta na página do resultado.
-- Leitor de PDF embutido com navegação por páginas.
+- Busca chapter-first com abertura direta no trecho/capítulo.
+- Leitor chapter-first com rich text semântico e anotações por seleção.
 - Anotações por destaque (arraste, cor, nota opcional) salvas no backend.
 - Jurisprudência v0: tela de lista + busca por palavra-chave.
 - Comunidade: feed, post, comentários e denúncias.
-- Web: renderização via `react-pdf` com worker PDF.js local (sem CDN).
-- Mobile: `react-native-pdf` + cache local de PDFs (`expo-file-system`).
 
 ## Stack
 
 - Expo SDK 54, React Native 0.81, React 19
-- `react-native-pdf` (iOS/Android) e `react-pdf` (web)
-- `expo-file-system`, `expo-sharing`, `expo-intent-launcher`
+- `react-native-webview` (trechos específicos do app web/mobile)
 - `expo-secure-store`
 
 ## Requisitos
@@ -29,7 +26,7 @@ Aplicativo (Expo + React Native) do **Livro Vivo**.
 - npm ou pnpm
 - Backend local rodando (`livro-vivo-api`)
 - Android Studio e/ou Xcode (para builds nativas)
-- Dev build do Expo (Expo Go **não** funciona por causa dos módulos nativos de PDF)
+- Dev build do Expo (recomendado para validar integrações nativas)
 
 ## Instalação
 
@@ -157,14 +154,16 @@ python manage.py runserver 0.0.0.0:8000
 No **Expo Web**, o backend precisa permitir CORS para o origin do Expo (ex.: `http://localhost:8081`).
 
 Além disso, os endpoints protegidos precisam aceitar o header `Authorization`.
-Isso inclui o **download do PDF** e chamadas como `/books/:id/search/` e `/annotations/`.
+Isso inclui chamadas como `/books/:id/current-version/`, `/books/:id/search/` e `/annotations/`.
 
 ## Integração com a API (atual)
 
 - `GET /me/entitlements/`
 - `GET /books/`
 - `GET /books/:id/versions/`
-- `GET /books/:id/versions/:versionId/download-url`
+- `GET /books/:id/current-version/`
+- `GET /books/:id/current-version/chapters/`
+- `GET /books/:id/current-version/chapters/:slug/`
 - `GET /books/:id/search/?q=...`
 - `GET /annotations/?book_version=...`
 - `POST /annotations/`
@@ -217,12 +216,11 @@ Objetivo: habilitar leitura chapter-first sem quebrar o fluxo atual em produçã
 
   - `LoginScreen` — login/registro reais (JWT)
   - `AccountScreen` — mostra entitlements do usuário
-  - `LibraryScreen` — lista livros/versões, busca e abre no leitor
-  - `PdfReaderScreen.native` — leitor mobile (`react-native-pdf`)
-  - `PdfReaderScreen.web` — leitor web (`react-pdf`)
+  - `LibraryScreen` — lista livros/versões e abre a leitura
+  - `BookReaderScreen` — leitor chapter-first (rich text + a11y)
   - (Jurisprudência) — tela de lista + busca consumindo `GET /caselaw/`
   - (Comunidade) — `CommunityFeedScreen` e `CommunityPostScreen` (posts + comentários + denúncias)
-- `src/storage/` — cache local de PDF + abertura externa
+- `src/storage/` — cache local de capítulos e progresso de leitura
 - `src/utils/` — helpers visuais
 
 ## Testes
