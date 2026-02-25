@@ -185,4 +185,4 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 
 As pendencias pre-deploy (novos epics) estao em:
 
-- `docs/BACKLOG_EXECUTAVEL_2026-02-22.md`
+- `docs/BACKLOG_EXECUTAVEL_2026-02-25.md`
