@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   getMeProfile,
@@ -9,12 +9,23 @@ import {
   type SubscriptionStatus,
   type SubscriptionTier,
 } from "../api/entitlements";
+import {
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  type NotificationPreferences,
+} from "../api/notifications";
 
 type Props = {
   token: string;
   onBack: () => void;
   onLogout: () => void;
 };
+
+type PreferenceField =
+  | "notifications_enabled"
+  | "book_version_updates_enabled"
+  | "new_content_updates_enabled"
+  | "push_enabled";
 
 function formatTier(tier: SubscriptionTier | null | undefined) {
   if (!tier) return "Sem assinatura ativa";
@@ -58,6 +69,14 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
   const [profile, setProfile] = React.useState<MeProfileResponse | null>(null);
+  const [preferences, setPreferences] = React.useState<NotificationPreferences | null>(null);
+  const [updatingPreference, setUpdatingPreference] = React.useState<Record<PreferenceField, boolean>>({
+    notifications_enabled: false,
+    book_version_updates_enabled: false,
+    new_content_updates_enabled: false,
+    push_enabled: false,
+  });
+  const [preferencesError, setPreferencesError] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -68,14 +87,16 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
         setLoading(true);
         setError(null);
 
-        const [profileRes, entitlementsRes] = await Promise.all([
+        const [profileRes, entitlementsRes, preferencesRes] = await Promise.all([
           getMeProfile(token),
           getMyEntitlements(token),
+          getNotificationPreferences(token),
         ]);
 
         if (!alive) return;
         setProfile(profileRes);
         setEntitlements(entitlementsRes);
+        setPreferences(preferencesRes);
       } catch {
         if (!alive) return;
         setError("Não foi possível carregar os dados da sua conta.");
@@ -95,6 +116,38 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
   const displayEmail = (profile?.email || "").trim() || "-";
   const modules = getModuleLabels(entitlements?.effective_tier);
 
+  const togglePreference = React.useCallback(
+    async (field: PreferenceField) => {
+      if (!preferences) return;
+      if (updatingPreference[field]) return;
+
+      const current = Boolean(preferences[field]);
+      const next = !current;
+
+      setPreferencesError(null);
+      setUpdatingPreference((prev) => ({ ...prev, [field]: true }));
+      setPreferences((prev) => (prev ? { ...prev, [field]: next } : prev));
+
+      try {
+        const updated = await updateNotificationPreferences(token, { [field]: next });
+        setPreferences(updated);
+      } catch {
+        setPreferences((prev) => (prev ? { ...prev, [field]: current } : prev));
+        setPreferencesError("Não foi possível atualizar suas preferências de notificação.");
+      } finally {
+        setUpdatingPreference((prev) => ({ ...prev, [field]: false }));
+      }
+    },
+    [preferences, token, updatingPreference]
+  );
+
+  const isPreferenceDisabled = (field: PreferenceField) => {
+    if (updatingPreference[field]) return true;
+    if (!preferences) return true;
+    if (field !== "notifications_enabled" && !preferences.notifications_enabled) return true;
+    return false;
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -112,18 +165,19 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
         </Pressable>
       </View>
 
-      <Text style={styles.title}>Minha Conta</Text>
-      <Text style={styles.subtitle}>Seu plano, dados de perfil e módulos liberados.</Text>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.title}>Minha Conta</Text>
+        <Text style={styles.subtitle}>Seu plano, dados de perfil e módulos liberados.</Text>
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.muted}>Carregando dados da conta…</Text>
-        </View>
-      ) : error ? (
-        <Text style={styles.error}>{error}</Text>
-      ) : (
-        <View style={styles.content}>
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator />
+            <Text style={styles.muted}>Carregando dados da conta…</Text>
+          </View>
+        ) : error ? (
+          <Text style={styles.error}>{error}</Text>
+        ) : (
+          <View style={styles.content}>
           <View style={styles.box}>
             <View style={styles.profileRow}>
               <View style={styles.avatar}>
@@ -155,6 +209,94 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
           </View>
 
           <View style={styles.box}>
+            <Text style={styles.sectionTitle}>Notificações</Text>
+            <View style={styles.preferenceRows}>
+              <View style={styles.preferenceItem}>
+                <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceLabel}>Receber notificações</Text>
+                  <Text style={styles.preferenceHint}>Controle geral das notificações do app.</Text>
+                </View>
+                <Pressable
+                  testID="account-pref-notifications"
+                  style={[
+                    styles.preferenceToggle,
+                    preferences?.notifications_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
+                    isPreferenceDisabled("notifications_enabled") ? styles.disabledAction : null,
+                  ]}
+                  disabled={isPreferenceDisabled("notifications_enabled")}
+                  onPress={() => void togglePreference("notifications_enabled")}
+                >
+                  <Text style={styles.preferenceToggleText}>
+                    {preferences?.notifications_enabled ? "Ligado" : "Desligado"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.preferenceItem}>
+                <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceLabel}>Novas versões do livro</Text>
+                  <Text style={styles.preferenceHint}>Avisar quando houver publicação de nova versão.</Text>
+                </View>
+                <Pressable
+                  testID="account-pref-book-updates"
+                  style={[
+                    styles.preferenceToggle,
+                    preferences?.book_version_updates_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
+                    isPreferenceDisabled("book_version_updates_enabled") ? styles.disabledAction : null,
+                  ]}
+                  disabled={isPreferenceDisabled("book_version_updates_enabled")}
+                  onPress={() => void togglePreference("book_version_updates_enabled")}
+                >
+                  <Text style={styles.preferenceToggleText}>
+                    {preferences?.book_version_updates_enabled ? "Ligado" : "Desligado"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.preferenceItem}>
+                <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceLabel}>Novos conteúdos</Text>
+                  <Text style={styles.preferenceHint}>Base para avisos de curso e materiais futuros.</Text>
+                </View>
+                <Pressable
+                  testID="account-pref-new-content"
+                  style={[
+                    styles.preferenceToggle,
+                    preferences?.new_content_updates_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
+                    isPreferenceDisabled("new_content_updates_enabled") ? styles.disabledAction : null,
+                  ]}
+                  disabled={isPreferenceDisabled("new_content_updates_enabled")}
+                  onPress={() => void togglePreference("new_content_updates_enabled")}
+                >
+                  <Text style={styles.preferenceToggleText}>
+                    {preferences?.new_content_updates_enabled ? "Ligado" : "Desligado"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.preferenceItem}>
+                <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceLabel}>Push no dispositivo</Text>
+                  <Text style={styles.preferenceHint}>Pronto para integração futura com FCM/APNs.</Text>
+                </View>
+                <Pressable
+                  testID="account-pref-push"
+                  style={[
+                    styles.preferenceToggle,
+                    preferences?.push_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
+                    isPreferenceDisabled("push_enabled") ? styles.disabledAction : null,
+                  ]}
+                  disabled={isPreferenceDisabled("push_enabled")}
+                  onPress={() => void togglePreference("push_enabled")}
+                >
+                  <Text style={styles.preferenceToggleText}>{preferences?.push_enabled ? "Ligado" : "Desligado"}</Text>
+                </Pressable>
+              </View>
+            </View>
+            {preferencesError ? <Text style={styles.preferenceError}>{preferencesError}</Text> : null}
+          </View>
+
+          <View style={styles.box}>
             <Text style={styles.sectionTitle}>Ajustes da conta</Text>
             <View style={styles.actionsRow}>
               <Pressable style={[styles.secondaryAction, styles.disabledAction]} disabled>
@@ -168,14 +310,17 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
               Edição de perfil e mudança de senha serão habilitadas em um próximo byte.
             </Text>
           </View>
-        </View>
-      )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, paddingTop: 28 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 20 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
   headerBtn: {
     borderWidth: 1,
@@ -223,6 +368,41 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: "800", color: "#3f382e", marginBottom: 2 },
   planName: { fontSize: 18, fontWeight: "800", color: "#1a1610" },
   meta: { fontSize: 13, color: "#363126" },
+
+  preferenceRows: { marginTop: 2, gap: 8 },
+  preferenceItem: {
+    borderWidth: 1,
+    borderColor: "#ebe6db",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 9,
+    backgroundColor: "#fffcf6",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  preferenceTextWrap: { flex: 1, gap: 2 },
+  preferenceLabel: { fontSize: 13, fontWeight: "700", color: "#1f1a13" },
+  preferenceHint: { fontSize: 12, color: "#6b6558" },
+  preferenceToggle: {
+    minWidth: 82,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignItems: "center",
+  },
+  preferenceToggleOn: {
+    borderColor: "#226b3f",
+    backgroundColor: "#e9f7ef",
+  },
+  preferenceToggleOff: {
+    borderColor: "#9b9484",
+    backgroundColor: "#f2efe7",
+  },
+  preferenceToggleText: { fontWeight: "700", color: "#2a261e", fontSize: 12 },
+  preferenceError: { marginTop: 4, color: "#B00020", fontSize: 12 },
 
   actionsRow: { marginTop: 4, flexDirection: "row", gap: 8, flexWrap: "wrap" },
   secondaryAction: {
