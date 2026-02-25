@@ -3,14 +3,21 @@ import renderer, { act } from "react-test-renderer";
 
 import { AccountScreen } from "../src/screens/AccountScreen";
 import { getMeProfile, getMyEntitlements } from "../src/api/entitlements";
+import { getNotificationPreferences, updateNotificationPreferences } from "../src/api/notifications";
 
 jest.mock("../src/api/entitlements", () => ({
   getMeProfile: jest.fn(),
   getMyEntitlements: jest.fn(),
 }));
+jest.mock("../src/api/notifications", () => ({
+  getNotificationPreferences: jest.fn(),
+  updateNotificationPreferences: jest.fn(),
+}));
 
 const getMeProfileMock = getMeProfile as unknown as jest.Mock;
 const getMyEntitlementsMock = getMyEntitlements as unknown as jest.Mock;
+const getNotificationPreferencesMock = getNotificationPreferences as unknown as jest.Mock;
+const updateNotificationPreferencesMock = updateNotificationPreferences as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -32,6 +39,8 @@ describe("AccountScreen", () => {
   beforeEach(() => {
     getMeProfileMock.mockReset();
     getMyEntitlementsMock.mockReset();
+    getNotificationPreferencesMock.mockReset();
+    updateNotificationPreferencesMock.mockReset();
   });
 
   it("carrega perfil e assinatura profissional de forma amigável", async () => {
@@ -67,6 +76,13 @@ describe("AccountScreen", () => {
         },
       ],
     });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
 
     const tree = await renderScreen("token-ok");
     await flushEffects();
@@ -74,6 +90,7 @@ describe("AccountScreen", () => {
     const json = JSON.stringify(tree.toJSON());
     expect(getMeProfileMock).toHaveBeenCalledWith("token-ok");
     expect(getMyEntitlementsMock).toHaveBeenCalledWith("token-ok");
+    expect(getNotificationPreferencesMock).toHaveBeenCalledWith("token-ok");
     expect(json).toContain("Minha Conta");
     expect(json).toContain("Vitor Guglinski");
     expect(json).toContain("Advogado");
@@ -81,6 +98,8 @@ describe("AccountScreen", () => {
     expect(json).toContain("Profissional");
     expect(json).toContain("Founder");
     expect(json).toContain("Biblioteca • Comunidade • Jurisprudência • Banco de Peças • Curso");
+    expect(json).toContain("Notificações");
+    expect(json).toContain("Novas versões do livro");
     expect(json).toContain("Editar perfil");
     expect(json).toContain("Alterar senha");
     expect(json).not.toContain("Não foi possível carregar os dados da sua conta.");
@@ -106,6 +125,13 @@ describe("AccountScreen", () => {
       },
       entitlements: [],
     });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: false,
+      new_content_updates_enabled: true,
+      push_enabled: false,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
 
     const tree = await renderScreen("token-essential");
     await flushEffects();
@@ -122,6 +148,13 @@ describe("AccountScreen", () => {
       effective_tier: null,
       subscription: null,
       entitlements: [],
+    });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
     });
 
     const tree = await renderScreen("token-error");
@@ -142,6 +175,13 @@ describe("AccountScreen", () => {
       subscription: null,
       entitlements: [],
     });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
     const onBack = jest.fn();
     const onLogout = jest.fn();
 
@@ -154,5 +194,53 @@ describe("AccountScreen", () => {
 
     expect(onBack).toHaveBeenCalledTimes(1);
     expect(onLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("atualiza preferência de notificação ao tocar no toggle", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor",
+      profession: "Advogado",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "essential",
+      subscription: {
+        id: 2,
+        tier: "essential",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
+    updateNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: false,
+      new_content_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:01:00Z",
+    });
+
+    const tree = await renderScreen("token-toggle");
+    await flushEffects();
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-pref-book-updates" }).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(updateNotificationPreferencesMock).toHaveBeenCalledWith("token-toggle", {
+      book_version_updates_enabled: false,
+    });
   });
 });
