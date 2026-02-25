@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.livrovivoapp"
+      "bundleIdentifier": "com.livrovivo.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +27,7 @@
         "android.permission.DOWNLOAD_WITHOUT_NOTIFICATION",
         "android.permission.ACCESS_NETWORK_STATE"
       ],
-      "package": "com.anonymous.livrovivoapp"
+      "package": "com.livrovivo.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"

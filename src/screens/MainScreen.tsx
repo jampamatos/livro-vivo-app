@@ -51,6 +51,9 @@ function HubButton({
     <Pressable
       testID={testID}
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityLabel={badge ? `${label}. ${badge}` : label}
+      accessibilityHint={hint ?? undefined}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [

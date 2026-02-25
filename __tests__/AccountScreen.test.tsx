@@ -103,6 +103,11 @@ describe("AccountScreen", () => {
     expect(json).toContain("Editar perfil");
     expect(json).toContain("Alterar senha");
     expect(json).not.toContain("Não foi possível carregar os dados da sua conta.");
+    expect(tree.root.findByProps({ testID: "account-pref-notifications" }).props.accessibilityRole).toBe("switch");
+    expect(tree.root.findByProps({ testID: "account-pref-notifications" }).props.accessibilityState).toEqual({
+      checked: true,
+      disabled: false,
+    });
   });
 
   it("mostra plano essencial com módulos correspondentes", async () => {
