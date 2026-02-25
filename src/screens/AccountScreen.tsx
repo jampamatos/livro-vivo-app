@@ -151,13 +151,20 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Pressable testID="account-back" accessibilityRole="button" style={styles.headerBtn} onPress={onBack}>
+        <Pressable
+          testID="account-back"
+          accessibilityRole="button"
+          accessibilityLabel="Voltar para menu principal"
+          style={styles.headerBtn}
+          onPress={onBack}
+        >
           <Text style={styles.headerBtnText}>Voltar</Text>
         </Pressable>
 
         <Pressable
           testID="account-logout"
           accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
           style={[styles.headerBtn, styles.dangerBtn]}
           onPress={onLogout}
         >
@@ -218,6 +225,12 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
                 </View>
                 <Pressable
                   testID="account-pref-notifications"
+                  accessibilityRole="switch"
+                  accessibilityLabel="Receber notificações"
+                  accessibilityState={{
+                    checked: Boolean(preferences?.notifications_enabled),
+                    disabled: isPreferenceDisabled("notifications_enabled"),
+                  }}
                   style={[
                     styles.preferenceToggle,
                     preferences?.notifications_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
@@ -239,6 +252,12 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
                 </View>
                 <Pressable
                   testID="account-pref-book-updates"
+                  accessibilityRole="switch"
+                  accessibilityLabel="Novas versões do livro"
+                  accessibilityState={{
+                    checked: Boolean(preferences?.book_version_updates_enabled),
+                    disabled: isPreferenceDisabled("book_version_updates_enabled"),
+                  }}
                   style={[
                     styles.preferenceToggle,
                     preferences?.book_version_updates_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
@@ -260,6 +279,12 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
                 </View>
                 <Pressable
                   testID="account-pref-new-content"
+                  accessibilityRole="switch"
+                  accessibilityLabel="Novos conteúdos"
+                  accessibilityState={{
+                    checked: Boolean(preferences?.new_content_updates_enabled),
+                    disabled: isPreferenceDisabled("new_content_updates_enabled"),
+                  }}
                   style={[
                     styles.preferenceToggle,
                     preferences?.new_content_updates_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,
@@ -281,6 +306,12 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
                 </View>
                 <Pressable
                   testID="account-pref-push"
+                  accessibilityRole="switch"
+                  accessibilityLabel="Push no dispositivo"
+                  accessibilityState={{
+                    checked: Boolean(preferences?.push_enabled),
+                    disabled: isPreferenceDisabled("push_enabled"),
+                  }}
                   style={[
                     styles.preferenceToggle,
                     preferences?.push_enabled ? styles.preferenceToggleOn : styles.preferenceToggleOff,

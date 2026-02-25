@@ -9,7 +9,7 @@ on:
 
 jobs:
   sanity:
-    name: Typecheck + Tests + Web Export
+    name: Typecheck + Tests + Release Config + Web Export
     runs-on: ubuntu-latest
 
     steps:
@@ -30,6 +30,15 @@ jobs:
 
       - name: Run tests
         run: npm test -- --runInBand --ci
+
+      - name: Validate release config baseline
+        run: npm run validate:release-config
+
+      - name: Validate release config for beta
+        env:
+          RELEASE_BUILD: "true"
+          EXPO_PUBLIC_API_BASE_URL: https://api.example.com
+        run: npm run validate:release-config
 
       - name: Build web export sanity
         env:
