@@ -60,12 +60,14 @@ jest.mock("../src/screens/MainScreen", () => {
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
+      onOpenTemplatesBank,
       onOpenCourse,
       onOpenAccount,
     }: {
       onOpenLibrary: () => void;
       onOpenCaseLaw: () => void;
       onOpenCommunity: () => void;
+      onOpenTemplatesBank: () => void;
       onOpenCourse: () => void;
       onOpenAccount: () => void;
     }) => (
@@ -79,6 +81,9 @@ jest.mock("../src/screens/MainScreen", () => {
         </Pressable>
         <Pressable testID="main-open-community" onPress={onOpenCommunity}>
           <Text>Community</Text>
+        </Pressable>
+        <Pressable testID="main-open-templates-bank" onPress={onOpenTemplatesBank}>
+          <Text>TemplatesBank</Text>
         </Pressable>
         <Pressable testID="main-open-course" onPress={onOpenCourse}>
           <Text>Course</Text>
@@ -142,6 +147,25 @@ jest.mock("../src/screens/CourseScreen", () => {
       <View>
         <Text>CourseScreen</Text>
         <Pressable testID="course-back" onPress={onBack}>
+          <Text>BackToMain</Text>
+        </Pressable>
+      </View>
+    ),
+  };
+});
+
+jest.mock("../src/screens/TemplatesBankScreen", () => {
+  const ReactLocal = require("react");
+  const { View, Text, Pressable } = require("react-native");
+  return {
+    TemplatesBankScreen: ({
+      onBack,
+    }: {
+      onBack: () => void;
+    }) => (
+      <View>
+        <Text>TemplatesBankScreen</Text>
+        <Pressable testID="templates-back" onPress={onBack}>
           <Text>BackToMain</Text>
         </Pressable>
       </View>
@@ -418,6 +442,22 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
 
     await pressByTestId(tree, "course-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
+  it("navega para banco de peças e volta para main", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-templates-bank");
+    expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
+
+    await pressByTestId(tree, "templates-back");
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 });

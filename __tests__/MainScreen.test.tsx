@@ -23,6 +23,7 @@ async function renderScreen({
   onOpenLibrary = jest.fn(),
   onOpenCaseLaw = jest.fn(),
   onOpenCommunity = jest.fn(),
+  onOpenTemplatesBank = jest.fn(),
   onOpenCourse = jest.fn(),
   onOpenAccount = jest.fn(),
 }: {
@@ -30,6 +31,7 @@ async function renderScreen({
   onOpenLibrary?: jest.Mock;
   onOpenCaseLaw?: jest.Mock;
   onOpenCommunity?: jest.Mock;
+  onOpenTemplatesBank?: jest.Mock;
   onOpenCourse?: jest.Mock;
   onOpenAccount?: jest.Mock;
 } = {}) {
@@ -41,6 +43,7 @@ async function renderScreen({
         onOpenLibrary={onOpenLibrary}
         onOpenCaseLaw={onOpenCaseLaw}
         onOpenCommunity={onOpenCommunity}
+        onOpenTemplatesBank={onOpenTemplatesBank}
         onOpenCourse={onOpenCourse}
         onOpenAccount={onOpenAccount}
       />
@@ -78,6 +81,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-pieces" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(false);
   });
 
@@ -143,6 +147,7 @@ describe("MainScreen", () => {
     const onOpenLibrary = jest.fn();
     const onOpenCaseLaw = jest.fn();
     const onOpenCommunity = jest.fn();
+    const onOpenTemplatesBank = jest.fn();
     const onOpenCourse = jest.fn();
     const onOpenAccount = jest.fn();
 
@@ -150,6 +155,7 @@ describe("MainScreen", () => {
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
+      onOpenTemplatesBank,
       onOpenCourse,
       onOpenAccount,
     });
@@ -166,6 +172,7 @@ describe("MainScreen", () => {
     expect(onOpenCommunity).toHaveBeenCalledTimes(1);
     expect(onOpenAccount).toHaveBeenCalledTimes(1);
     expect(onOpenCaseLaw).toHaveBeenCalledTimes(0);
+    expect(onOpenTemplatesBank).toHaveBeenCalledTimes(0);
     expect(onOpenCourse).toHaveBeenCalledTimes(0);
   });
 });
