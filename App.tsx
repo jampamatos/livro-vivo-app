@@ -10,6 +10,7 @@ import { CourseScreen } from "./src/screens/CourseScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { MainScreen } from "./src/screens/MainScreen";
+import { TemplatesBankScreen } from "./src/screens/TemplatesBankScreen";
 
 import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tokenStorage";
 import { setSessionListener } from "./src/auth/sessionBus";
@@ -26,7 +27,8 @@ type Route =
   | "communityNewPost"
   | "communityPost"
   | "course"
-  | "library";
+  | "library"
+  | "templatesBank";
 
 
 export default function App() {
@@ -98,6 +100,7 @@ export default function App() {
         onOpenLibrary={() => setRoute("library")}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
+        onOpenTemplatesBank={() => setRoute("templatesBank")}
         onOpenCourse={() => setRoute("course")}
         onOpenAccount={() => setRoute("account")}
       />
@@ -118,6 +121,10 @@ export default function App() {
 
   if (route === "course") {
     return <CourseScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+  }
+
+  if (route === "templatesBank") {
+    return <TemplatesBankScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
   }
 
   if (route === "community") {
@@ -172,6 +179,7 @@ export default function App() {
       onOpenLibrary={() => setRoute("library")}
       onOpenCaseLaw={() => setRoute("caselaw")}
       onOpenCommunity={() => setRoute("community")}
+      onOpenTemplatesBank={() => setRoute("templatesBank")}
       onOpenCourse={() => setRoute("course")}
       onOpenAccount={() => setRoute("account")}
     />

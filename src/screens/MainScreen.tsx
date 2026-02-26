@@ -8,6 +8,7 @@ type Props = {
   onOpenLibrary: () => void;
   onOpenCaseLaw: () => void;
   onOpenCommunity: () => void;
+  onOpenTemplatesBank: () => void;
   onOpenCourse: () => void;
   onOpenAccount: () => void;
 };
@@ -75,6 +76,7 @@ export function MainScreen({
   onOpenLibrary,
   onOpenCaseLaw,
   onOpenCommunity,
+  onOpenTemplatesBank,
   onOpenCourse,
   onOpenAccount,
 }: Props) {
@@ -105,7 +107,7 @@ export function MainScreen({
   const libraryAccess = resolveAccess("subscription", tier, loading);
   const caselawAccess = resolveAccess("professional", tier, loading);
   const communityAccess = resolveAccess("subscription", tier, loading);
-  const piecesAccess = resolveAccess("professional", tier, loading, "Em breve");
+  const piecesAccess = resolveAccess("professional", tier, loading);
   const courseAccess = resolveAccess("professional", tier, loading);
 
   return (
@@ -149,9 +151,10 @@ export function MainScreen({
         <HubButton
           label="Banco de Peças"
           testID="main-pieces"
+          onPress={onOpenTemplatesBank}
           disabled={piecesAccess.disabled}
           badge={piecesAccess.badge}
-          hint="Recurso previsto para o plano Profissional."
+          hint="Disponível no plano Profissional."
         />
         <HubButton
           label="Curso"
