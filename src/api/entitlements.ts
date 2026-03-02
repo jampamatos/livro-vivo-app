@@ -38,6 +38,13 @@ export type EntitlementsResponse = {
   entitlements: EntitlementItem[];
   effective_tier: SubscriptionTier | null;
   subscription: SubscriptionSnapshot | null;
+  moderation: {
+    is_banned: boolean;
+    ban_scope: "community_only" | "app_wide" | null;
+    community_access: boolean;
+    app_access: boolean;
+    warnings_issued: number;
+  };
 };
 
 export function getMeProfile(token: string) {

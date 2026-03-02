@@ -1,5 +1,7 @@
 import { apiFetch } from "./http";
 
+export type ModerationState = "active" | "under_review" | "removed";
+
 export type CommunityCategory = {
     id: number;
     name: string;
@@ -16,6 +18,9 @@ export type CommunityPost = {
     category: CommunityCategory | null;
     title: string;
     body: string;
+    moderation_state?: ModerationState;
+    moderated_at?: string | null;
+    moderation_note?: string;
     last_activity?: string;
     created_at: string;
     updated_at: string;
@@ -27,6 +32,9 @@ export type CommunityComment = {
     author: number;
     author_display: string;
     body: string;
+    moderation_state?: ModerationState;
+    moderated_at?: string | null;
+    moderation_note?: string;
     created_at: string;
     updated_at: string;
 };

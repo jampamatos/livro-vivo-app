@@ -103,12 +103,21 @@ export function MainScreen({
   }, [fetchAccess]);
 
   const tier = entitlements?.effective_tier ?? null;
+  const moderation = entitlements?.moderation;
+  const appWideBanLabel = moderation && !moderation.app_access ? "Conta suspensa" : undefined;
+  const communityBanLabel =
+    moderation && !moderation.community_access ? "Acesso à comunidade suspenso" : undefined;
 
-  const libraryAccess = resolveAccess("subscription", tier, loading);
-  const caselawAccess = resolveAccess("professional", tier, loading);
-  const communityAccess = resolveAccess("subscription", tier, loading);
-  const piecesAccess = resolveAccess("professional", tier, loading);
-  const courseAccess = resolveAccess("professional", tier, loading);
+  const libraryAccess = resolveAccess("subscription", tier, loading, appWideBanLabel);
+  const caselawAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
+  const communityAccess = resolveAccess(
+    "subscription",
+    tier,
+    loading,
+    appWideBanLabel ?? communityBanLabel
+  );
+  const piecesAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
+  const courseAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
 
   return (
     <View style={styles.container}>
