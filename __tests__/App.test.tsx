@@ -6,6 +6,7 @@ import App from "../App";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
 import { setSessionListener } from "../src/auth/sessionBus";
 import { logout } from "../src/api/auth";
+import { useNotificationCenter } from "../src/notifications/useNotificationCenter";
 import type { BookChapter } from "../src/api/books";
 import type { AuthSession } from "../src/auth/authSession";
 import { BookReaderScreen } from "../src/screens/BookReaderScreen";
@@ -23,6 +24,10 @@ jest.mock("../src/auth/sessionBus", () => ({
 
 jest.mock("../src/api/auth", () => ({
   logout: jest.fn(),
+}));
+
+jest.mock("../src/notifications/useNotificationCenter", () => ({
+  useNotificationCenter: jest.fn(),
 }));
 
 jest.mock("../src/screens/LoginScreen", () => {
@@ -258,6 +263,7 @@ const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
 const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
 const setSessionListenerMock = setSessionListener as unknown as jest.Mock;
 const logoutMock = logout as unknown as jest.Mock;
+const useNotificationCenterMock = useNotificationCenter as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -292,6 +298,12 @@ describe("App", () => {
     setAuthSessionMock.mockResolvedValue(undefined);
     clearAuthSessionMock.mockResolvedValue(undefined);
     logoutMock.mockResolvedValue(undefined);
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: null,
+      dismissCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice: jest.fn().mockResolvedValue(undefined),
+    });
   });
 
   it("mostra loading durante bootstrap e depois Login quando não há sessão", async () => {
@@ -379,6 +391,28 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
   });
 
+  it("remove registro do dispositivo ao fazer logout", async () => {
+    const unregisterCurrentDevice = jest.fn().mockResolvedValue(undefined);
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: null,
+      dismissCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice,
+    });
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-account");
+    await pressByTestId(tree, "account-logout");
+
+    expect(unregisterCurrentDevice).toHaveBeenCalledTimes(1);
+  });
+
   it("reage ao sessionBus quando a sessão é invalidada", async () => {
     let listener: ((session: AuthSession | null) => void) | null = null;
     setSessionListenerMock.mockImplementation((fn: ((session: AuthSession | null) => void) | null) => {
@@ -459,6 +493,29 @@ describe("App", () => {
 
     await pressByTestId(tree, "templates-back");
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
+  it("renderiza banner de notificação quando há item pendente", async () => {
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: {
+        title: "Novo conteúdo",
+        body: "Uma aula nova foi publicada.",
+      },
+      dismissCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice: jest.fn().mockResolvedValue(undefined),
+    });
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Nova notificação");
+    expect(JSON.stringify(tree.toJSON())).toContain("Novo conteúdo");
+    expect(JSON.stringify(tree.toJSON())).toContain("Uma aula nova foi publicada.");
   });
 });
 

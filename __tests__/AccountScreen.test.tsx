@@ -27,10 +27,22 @@ async function flushEffects(cycles = 2) {
   }
 }
 
-async function renderScreen(token: string, onBack = jest.fn(), onLogout = jest.fn()) {
+async function renderScreen(
+  token: string,
+  onBack = jest.fn(),
+  onLogout = jest.fn(),
+  pushStatusMessage: string | null = null
+) {
   let tree: renderer.ReactTestRenderer;
   await act(async () => {
-    tree = renderer.create(<AccountScreen token={token} onBack={onBack} onLogout={onLogout} />);
+    tree = renderer.create(
+      <AccountScreen
+        token={token}
+        onBack={onBack}
+        onLogout={onLogout}
+        pushStatusMessage={pushStatusMessage}
+      />
+    );
   });
   return tree!;
 }
@@ -80,11 +92,12 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: true,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
       push_enabled: true,
       updated_at: "2026-02-25T00:00:00Z",
     });
 
-    const tree = await renderScreen("token-ok");
+    const tree = await renderScreen("token-ok", jest.fn(), jest.fn(), "Push nativo conectado ao dispositivo.");
     await flushEffects();
 
     const json = JSON.stringify(tree.toJSON());
@@ -100,6 +113,9 @@ describe("AccountScreen", () => {
     expect(json).toContain("Biblioteca • Comunidade • Jurisprudência • Banco de Peças • Curso");
     expect(json).toContain("Notificações");
     expect(json).toContain("Novas versões do livro");
+    expect(json).toContain("Interações na comunidade");
+    expect(json).toContain("Última atualização");
+    expect(json).toContain("Push nativo conectado ao dispositivo.");
     expect(json).toContain("Editar perfil");
     expect(json).toContain("Alterar senha");
     expect(json).not.toContain("Não foi possível carregar os dados da sua conta.");
@@ -134,6 +150,7 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: false,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: false,
       push_enabled: false,
       updated_at: "2026-02-25T00:00:00Z",
     });
@@ -158,6 +175,7 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: true,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
       push_enabled: true,
       updated_at: "2026-02-25T00:00:00Z",
     });
@@ -184,6 +202,7 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: true,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
       push_enabled: true,
       updated_at: "2026-02-25T00:00:00Z",
     });
@@ -225,6 +244,7 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: true,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
       push_enabled: true,
       updated_at: "2026-02-25T00:00:00Z",
     });
@@ -232,6 +252,7 @@ describe("AccountScreen", () => {
       notifications_enabled: true,
       book_version_updates_enabled: false,
       new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
       push_enabled: true,
       updated_at: "2026-02-25T00:01:00Z",
     });
@@ -246,6 +267,62 @@ describe("AccountScreen", () => {
 
     expect(updateNotificationPreferencesMock).toHaveBeenCalledWith("token-toggle", {
       book_version_updates_enabled: false,
+    });
+  });
+
+  it("atualiza preferência de interações da comunidade", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor",
+      profession: "Advogado",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 2,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
+    updateNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      community_interaction_updates_enabled: false,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:02:00Z",
+    });
+
+    const tree = await renderScreen("token-community-toggle");
+    await flushEffects();
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-pref-community-interactions" }).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(updateNotificationPreferencesMock).toHaveBeenCalledWith("token-community-toggle", {
+      community_interaction_updates_enabled: false,
+    });
+    expect(
+      tree.root.findByProps({ testID: "account-pref-community-interactions" }).props.accessibilityState
+    ).toEqual({
+      checked: false,
+      disabled: false,
     });
   });
 });

@@ -155,7 +155,12 @@ export function MainScreen({
           disabled={communityAccess.disabled}
           badge={communityAccess.badge}
         />
-        <HubButton label="Minha Conta" testID="main-account" onPress={onOpenAccount} />
+        <HubButton
+          label="Minha Conta"
+          testID="main-account"
+          onPress={onOpenAccount}
+          hint="Plano, perfil e notificações."
+        />
 
         <HubButton
           label="Banco de Peças"
