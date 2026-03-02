@@ -10,6 +10,7 @@ import {
 import {
   CommunityCategory,
   CommunityPost,
+  ModerationState,
   listCommunityCategories,
   listCommunityPosts,
 } from "../api/community";
@@ -17,6 +18,12 @@ import {
 function formatDate(iso: string) {
   // simples e estável no RN/web
   return iso?.replace("T", " ").slice(0, 19) ?? "";
+}
+
+function moderationLabel(state?: ModerationState) {
+  if (state === "removed") return "REMOVIDO";
+  if (state === "under_review") return "EM ANALISE";
+  return null;
 }
 
 type Props = {
@@ -112,7 +119,25 @@ export function CommunityFeedScreen({
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <Pressable onPress={() => onOpenPost(item)} style={styles.card}>
+            <Pressable
+              onPress={() => onOpenPost(item)}
+              style={[
+                styles.card,
+                item.moderation_state === "removed" && styles.cardRemoved,
+                item.moderation_state === "under_review" && styles.cardUnderReview,
+              ]}
+            >
+              {moderationLabel(item.moderation_state) ? (
+                <Text
+                  style={[
+                    styles.statusBadge,
+                    item.moderation_state === "removed" && styles.statusBadgeRemoved,
+                    item.moderation_state === "under_review" && styles.statusBadgeUnderReview,
+                  ]}
+                >
+                  {moderationLabel(item.moderation_state)}
+                </Text>
+              ) : null}
               <Text style={styles.cardTitle}>{item.title}</Text>
               <Text style={styles.meta}>
                 por {item.author_display} • {formatDate(item.created_at)}
@@ -122,8 +147,14 @@ export function CommunityFeedScreen({
                   última atividade • {formatDate(item.last_activity)}
                 </Text>
               ) : null}
-              <Text style={styles.bodyPreview} numberOfLines={3}>
-                {item.body}
+              <Text
+                style={[
+                  styles.bodyPreview,
+                  item.moderation_state === "removed" && styles.removedText,
+                ]}
+                numberOfLines={3}
+              >
+                {item.moderation_state === "removed" ? "[Conteudo removido pela moderacao]" : item.body}
               </Text>
             </Pressable>
           )}
@@ -157,9 +188,22 @@ const styles = StyleSheet.create({
 
   list: { gap: 10, paddingBottom: 20 },
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },
+  cardRemoved: { borderColor: "#c44545", backgroundColor: "#fff4f4" },
+  cardUnderReview: { borderColor: "#b17b15", backgroundColor: "#fff9ef" },
   cardTitle: { fontSize: 16, fontWeight: "700" },
+  statusBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  statusBadgeRemoved: { backgroundColor: "#f3d6d6", color: "#7f1d1d" },
+  statusBadgeUnderReview: { backgroundColor: "#f6e2bd", color: "#6d4b00" },
   meta: { fontSize: 12, opacity: 0.7 },
   metaMuted: { fontSize: 12, opacity: 0.55 },
   bodyPreview: { fontSize: 13, opacity: 0.9 },
+  removedText: { color: "#7f1d1d", fontStyle: "italic" },
   muted: { opacity: 0.7 },
 });

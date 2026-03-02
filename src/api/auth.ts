@@ -1,8 +1,14 @@
 import { apiFetch } from "./http";
 import type { AuthSession } from "../auth/authSession";
 
+export type ModerationNotice = {
+    level: "info" | "warning" | "danger";
+    message: string;
+    created_at?: string | null;
+};
+
 type LoginRegisterResponse = 
-    | { access: string; refresh?: string }
+    | { access: string; refresh?: string; moderation_notice?: ModerationNotice }
     | { token: string}
     | { key: string};
 
@@ -24,12 +30,29 @@ function normalizeAuthResponse(res: LoginRegisterResponse): AuthSession {
     throw new Error("Resposta inesperada do endpoint de autenticação.");
 }
 
-export async function login(email: string, password: string): Promise<AuthSession> {
+function normalizeModerationNotice(res: LoginRegisterResponse): ModerationNotice | null {
+    if (!("moderation_notice" in res)) return null;
+    const notice = res.moderation_notice;
+    if (!notice || typeof notice.message !== "string" || !notice.message.trim()) {
+        return null;
+    }
+    return notice;
+}
+
+export type AuthResponse = {
+    session: AuthSession;
+    moderationNotice: ModerationNotice | null;
+};
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
     const res = await apiFetch<LoginRegisterResponse>("/auth/login/", {
         method: "POST",
         body: { email, password },
     });
-    return normalizeAuthResponse(res);
+    return {
+        session: normalizeAuthResponse(res),
+        moderationNotice: normalizeModerationNotice(res),
+    };
 }
 
 export async function register(payload: {
@@ -37,12 +60,15 @@ export async function register(payload: {
     password: string;
     name?: string;
     profession?: string;
-}): Promise<AuthSession> {
+}): Promise<AuthResponse> {
     const res = await apiFetch<LoginRegisterResponse>("/auth/register/", {
         method: "POST",
         body: payload,
     });
-    return normalizeAuthResponse(res);
+    return {
+        session: normalizeAuthResponse(res),
+        moderationNotice: normalizeModerationNotice(res),
+    };
 }
 
 export async function refresh(refreshToken: string): Promise<{ accessToken: string }> {

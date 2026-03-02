@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -54,7 +55,16 @@ export function LoginScreen({ onAuthSuccess }: Props) {
               profession: profession.trim() || undefined,
             });
 
-      await onAuthSuccess(session);
+      if (session.moderationNotice?.message) {
+        const title = session.moderationNotice.level === "danger" ? "Aviso importante" : "Aviso de moderação";
+        if (Platform.OS === "web" && typeof globalThis.alert === "function") {
+          globalThis.alert(`${title}\n\n${session.moderationNotice.message}`);
+        } else {
+          Alert.alert(title, session.moderationNotice.message);
+        }
+      }
+
+      await onAuthSuccess(session.session);
     } catch (err) {
       if (err instanceof ApiError) {
         // tenta extrair mensagens comuns do DRF/JWT

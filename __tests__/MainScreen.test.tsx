@@ -70,6 +70,13 @@ describe("MainScreen", () => {
         is_legacy_fallback: false,
       },
       entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
     });
 
     const tree = await renderScreen();
@@ -98,6 +105,13 @@ describe("MainScreen", () => {
         is_legacy_fallback: false,
       },
       entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
     });
 
     const tree = await renderScreen();
@@ -117,6 +131,13 @@ describe("MainScreen", () => {
       effective_tier: null,
       subscription: null,
       entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
     });
 
     const tree = await renderScreen();
@@ -142,6 +163,13 @@ describe("MainScreen", () => {
         is_legacy_fallback: false,
       },
       entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
     });
 
     const onOpenLibrary = jest.fn();
@@ -174,5 +202,70 @@ describe("MainScreen", () => {
     expect(onOpenCaseLaw).toHaveBeenCalledTimes(0);
     expect(onOpenTemplatesBank).toHaveBeenCalledTimes(0);
     expect(onOpenCourse).toHaveBeenCalledTimes(0);
+  });
+
+  it("bloqueia só a comunidade quando o banimento é community_only", async () => {
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 4,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+      moderation: {
+        is_banned: true,
+        ban_scope: "community_only",
+        community_access: false,
+        app_access: true,
+        warnings_issued: 2,
+      },
+    });
+
+    const tree = await renderScreen();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Acesso à comunidade suspenso");
+    expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
+  });
+
+  it("bloqueia todos os módulos protegidos quando o banimento é app_wide", async () => {
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 5,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+      moderation: {
+        is_banned: true,
+        ban_scope: "app_wide",
+        community_access: false,
+        app_access: false,
+        warnings_issued: 3,
+      },
+    });
+
+    const tree = await renderScreen();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Conta suspensa");
+    expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-pieces" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-account" }).props.disabled).toBe(undefined);
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import {
   CommunityComment,
+  ModerationState,
   CommunityPost,
   createCommunityComment,
   createCommunityReport,
@@ -22,6 +23,12 @@ import {
 
 function formatDate(iso: string) {
   return iso?.replace("T", " ").slice(0, 19) ?? "";
+}
+
+function moderationLabel(state?: ModerationState) {
+  if (state === "removed") return "REMOVIDO";
+  if (state === "under_review") return "EM ANALISE";
+  return null;
 }
 
 type Props = {
@@ -143,11 +150,30 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.postCard}>
+          {moderationLabel(post.moderation_state) ? (
+            <Text
+              style={[
+                styles.statusBadge,
+                post.moderation_state === "removed" && styles.statusBadgeRemoved,
+                post.moderation_state === "under_review" && styles.statusBadgeUnderReview,
+              ]}
+            >
+              {moderationLabel(post.moderation_state)}
+            </Text>
+          ) : null}
           <Text style={styles.postTitle}>{post.title}</Text>
           <Text style={styles.meta}>
             por {post.author_display} • {formatDate(post.created_at)}
           </Text>
-          <Text style={styles.postBody}>{post.body}</Text>
+          <Text
+            style={[
+              styles.postBody,
+              post.moderation_state === "removed" && styles.removedText,
+              post.moderation_state === "under_review" && styles.reviewText,
+            ]}
+          >
+            {post.moderation_state === "removed" ? "[Conteudo removido pela moderacao]" : post.body}
+          </Text>
           <Pressable onPress={reportPost} style={styles.reportBtn}>
             <Text style={styles.reportText}>Denunciar Post</Text>
           </Pressable>
@@ -166,11 +192,37 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
             ) : (
               <View style={styles.list}>
                 {comments.map((item) => (
-                  <View key={String(item.id)} style={styles.commentCard}>
+                  <View
+                    key={String(item.id)}
+                    style={[
+                      styles.commentCard,
+                      item.moderation_state === "removed" && styles.commentCardRemoved,
+                      item.moderation_state === "under_review" && styles.commentCardUnderReview,
+                    ]}
+                  >
+                    {moderationLabel(item.moderation_state) ? (
+                      <Text
+                        style={[
+                          styles.statusBadge,
+                          item.moderation_state === "removed" && styles.statusBadgeRemoved,
+                          item.moderation_state === "under_review" && styles.statusBadgeUnderReview,
+                        ]}
+                      >
+                        {moderationLabel(item.moderation_state)}
+                      </Text>
+                    ) : null}
                     <Text style={styles.commentMeta}>
                       {item.author_display} • {formatDate(item.created_at)}
                     </Text>
-                    <Text style={styles.commentBody}>{item.body}</Text>
+                    <Text
+                      style={[
+                        styles.commentBody,
+                        item.moderation_state === "removed" && styles.removedText,
+                        item.moderation_state === "under_review" && styles.reviewText,
+                      ]}
+                    >
+                      {item.moderation_state === "removed" ? "[Comentario removido pela moderacao]" : item.body}
+                    </Text>
                     <Pressable onPress={() => reportComment(item.id)} style={styles.reportMiniBtn}>
                       <Text style={styles.reportMiniText}>Denunciar</Text>
                     </Pressable>
@@ -256,6 +308,18 @@ const styles = StyleSheet.create({
   postTitle: { fontSize: 16, fontWeight: "800" },
   meta: { fontSize: 12, opacity: 0.7 },
   postBody: { fontSize: 14 },
+  statusBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  statusBadgeRemoved: { backgroundColor: "#f3d6d6", color: "#7f1d1d" },
+  statusBadgeUnderReview: { backgroundColor: "#f6e2bd", color: "#6d4b00" },
+  removedText: { color: "#7f1d1d", fontStyle: "italic" },
+  reviewText: { color: "#6d4b00", fontStyle: "italic" },
 
   sectionTitle: { fontSize: 14, fontWeight: "700" },
 
@@ -267,6 +331,8 @@ const styles = StyleSheet.create({
 
   list: { gap: 10 },
   commentCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 },
+  commentCardRemoved: { borderColor: "#c44545", backgroundColor: "#fff4f4" },
+  commentCardUnderReview: { borderColor: "#b17b15", backgroundColor: "#fff9ef" },
   commentMeta: { fontSize: 12, opacity: 0.7 },
   commentBody: { fontSize: 13 },
   reportBtn: {
