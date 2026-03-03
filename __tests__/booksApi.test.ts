@@ -130,6 +130,45 @@ describe("api/books", () => {
     expect(saveCurrentVersionChapterMock).toHaveBeenCalledTimes(1);
   });
 
+  it("normaliza entidades HTML em capítulos vindos da API", async () => {
+    apiFetchMock.mockResolvedValueOnce({
+      book_id: 1,
+      book_title: "Livro &ccedil;entral",
+      book_version_id: 10,
+      version: "2026.03",
+      previous_slug: null,
+      next_slug: null,
+      chapter: {
+        id: 1,
+        book_version: 10,
+        order: 1,
+        title: "Cap&iacute;tulo &ccedil;entral",
+        slug: "intro-1",
+        content_rich: "<p>Notifica&ccedil;&atilde;o</p>",
+        content_plain: "Notifica&ccedil;&atilde;o",
+        created_at: "",
+        updated_at: "",
+      },
+    });
+
+    const res = await getCurrentVersionChapterBySlug("t123", 1, "intro-1");
+
+    expect(res.book_title).toBe("Livro çentral");
+    expect(res.chapter.title).toBe("Capítulo çentral");
+    expect(res.chapter.content_plain).toBe("Notificação");
+    expect(res.chapter.content_rich).toBe("<p>Notifica&ccedil;&atilde;o</p>");
+    expect(saveCurrentVersionChapterMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        book_title: "Livro çentral",
+        chapter: expect.objectContaining({
+          title: "Capítulo çentral",
+          content_plain: "Notificação",
+        }),
+      })
+    );
+  });
+
   it("usa cache no getCurrentBookVersion quando a API falha", async () => {
     apiFetchMock.mockRejectedValueOnce(new Error("offline"));
     getCachedCurrentBookVersionMock.mockResolvedValueOnce({
@@ -159,7 +198,7 @@ describe("api/books", () => {
     apiFetchMock.mockRejectedValueOnce(new Error("offline"));
     getCachedCurrentVersionChapterBySlugMock.mockResolvedValueOnce({
       book_id: 1,
-      book_title: "Livro",
+      book_title: "Livro &ccedil;entral",
       book_version_id: 10,
       version: "2",
       previous_slug: null,
@@ -168,10 +207,10 @@ describe("api/books", () => {
         id: 1,
         book_version: 10,
         order: 1,
-        title: "Cap",
+        title: "Cap&iacute;tulo",
         slug: "intro-1",
         content_rich: "<p>x</p>",
-        content_plain: "x",
+        content_plain: "Conte&uacute;do",
         created_at: "",
         updated_at: "",
       },
@@ -179,6 +218,9 @@ describe("api/books", () => {
 
     const res = await getCurrentVersionChapterBySlug("t123", 1, "intro-1");
     expect(res.cache_source).toBe("cache");
+    expect(res.book_title).toBe("Livro çentral");
+    expect(res.chapter.title).toBe("Capítulo");
+    expect(res.chapter.content_plain).toBe("Conteúdo");
   });
 
   it("invalida cache quando detecta versão nova", async () => {

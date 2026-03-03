@@ -2,14 +2,16 @@ import React from "react";
 
 import {
   acknowledgeNotification,
-  getNotifications,
+  consumeLatestInAppNotification,
   registerPushDevice,
   unregisterPushDevice,
   type NotificationItem,
 } from "../api/notifications";
 import {
-  addForegroundNotificationListener,
+  addNotificationResponseListener,
+  getLastNotificationResponsePayloadAsync,
   registerForNativePushAsync,
+  type ForegroundNotificationPayload,
   type PushRegistrationResult,
 } from "./push";
 
@@ -21,11 +23,9 @@ type BannerNotification = {
   createdAt: string | null;
 };
 
-const POLL_INTERVAL_MS = 30000;
-
 function buildBannerFromDispatch(item: NotificationItem): BannerNotification {
   return {
-    id: `dispatch:${item.dispatch_id}`,
+    id: buildNotificationId(item.dispatch_id, item.title, item.body),
     dispatchId: item.dispatch_id,
     title: item.title || "Livro Vivo",
     body: item.body || "",
@@ -33,22 +33,49 @@ function buildBannerFromDispatch(item: NotificationItem): BannerNotification {
   };
 }
 
-export function useNotificationCenter(token: string | null) {
-  const [queue, setQueue] = React.useState<BannerNotification[]>([]);
+function buildNotificationId(dispatchId: number | null, title: string, body: string) {
+  if (dispatchId) return `dispatch:${dispatchId}`;
+  return `message:${title.trim()}::${body.trim()}`;
+}
+
+export function useNotificationCenter(token: string | null, onOpenNotification?: () => void) {
+  const [currentBanner, setCurrentBanner] = React.useState<BannerNotification | null>(null);
   const [pushRegistration, setPushRegistration] = React.useState<PushRegistrationResult | null>(null);
-  const seenBannerIdsRef = React.useRef<Set<string>>(new Set());
+  const handledOpenIdsRef = React.useRef<Set<string>>(new Set());
   const registeredTokenRef = React.useRef<string | null>(null);
 
-  const enqueueBanner = React.useCallback((notification: BannerNotification) => {
-    if (!notification.title.trim() && !notification.body.trim()) return;
-    if (seenBannerIdsRef.current.has(notification.id)) return;
-    seenBannerIdsRef.current.add(notification.id);
-    setQueue((current) => [...current, notification]);
+  const dismissCurrentBanner = React.useCallback(() => {
+    setCurrentBanner(null);
   }, []);
 
-  const dismissCurrentBanner = React.useCallback(() => {
-    setQueue((current) => current.slice(1));
-  }, []);
+  const acknowledgeDispatch = React.useCallback(
+    async (dispatchId: number | null) => {
+      if (!token || !dispatchId) return;
+      try {
+        await acknowledgeNotification(token, dispatchId);
+      } catch {
+        // best-effort para não quebrar navegação/banners
+      }
+    },
+    [token]
+  );
+
+  const openByNotification = React.useCallback(
+    (payload: Pick<BannerNotification, "dispatchId" | "title" | "body"> | ForegroundNotificationPayload) => {
+      const notificationId = buildNotificationId(payload.dispatchId, payload.title, payload.body);
+      if (handledOpenIdsRef.current.has(notificationId)) return;
+      handledOpenIdsRef.current.add(notificationId);
+      setCurrentBanner(null);
+      void acknowledgeDispatch(payload.dispatchId);
+      onOpenNotification?.();
+    },
+    [acknowledgeDispatch, onOpenNotification]
+  );
+
+  const openCurrentBanner = React.useCallback(() => {
+    if (!currentBanner) return;
+    openByNotification(currentBanner);
+  }, [currentBanner, openByNotification]);
 
   const unregisterCurrentDevice = React.useCallback(async () => {
     if (!token || !registeredTokenRef.current) return;
@@ -62,40 +89,15 @@ export function useNotificationCenter(token: string | null) {
   }, [token]);
 
   React.useEffect(() => {
-    if (!queue.length) return;
-    const timer = setTimeout(() => {
-      dismissCurrentBanner();
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [dismissCurrentBanner, queue]);
-
-  React.useEffect(() => {
     if (!token) {
-      setQueue([]);
+      setCurrentBanner(null);
       setPushRegistration(null);
-      seenBannerIdsRef.current.clear();
+      handledOpenIdsRef.current.clear();
       registeredTokenRef.current = null;
       return;
     }
 
     let alive = true;
-
-    const pollPendingNotifications = async () => {
-      try {
-        const items = await getNotifications(token, { status: "pending", limit: 10 });
-        if (!alive) return;
-
-        items.forEach((item) => {
-          const banner = buildBannerFromDispatch(item);
-          enqueueBanner(banner);
-          void acknowledgeNotification(token, item.dispatch_id).catch(() => {
-            // best-effort para não reabrir banner em loop
-          });
-        });
-      } catch {
-        // best-effort silencioso
-      }
-    };
 
     const setupPushRegistration = async () => {
       const result = await registerForNativePushAsync();
@@ -115,33 +117,42 @@ export function useNotificationCenter(token: string | null) {
       }
     };
 
+    const bootstrapLatestBanner = async () => {
+      try {
+        const payload = await getLastNotificationResponsePayloadAsync();
+        if (!alive) return;
+        if (payload) {
+          openByNotification(payload);
+          return;
+        }
+
+        const latestInAppNotification = await consumeLatestInAppNotification(token);
+        if (!alive || !latestInAppNotification) return;
+
+        const banner = buildBannerFromDispatch(latestInAppNotification);
+        if (!banner.title.trim() && !banner.body.trim()) return;
+        setCurrentBanner(banner);
+      } catch {
+        // best-effort silencioso
+      }
+    };
+
     void setupPushRegistration();
-    void pollPendingNotifications();
-
-    const intervalId = setInterval(() => {
-      void pollPendingNotifications();
-    }, POLL_INTERVAL_MS);
-
-    const notificationSubscription = addForegroundNotificationListener((payload) => {
-      enqueueBanner({
-        id: payload.dispatchId ? `push:${payload.dispatchId}` : `push:${Date.now()}`,
-        dispatchId: payload.dispatchId,
-        title: payload.title || "Livro Vivo",
-        body: payload.body || "",
-        createdAt: new Date().toISOString(),
-      });
+    void bootstrapLatestBanner();
+    const responseSubscription = addNotificationResponseListener((payload) => {
+      openByNotification(payload);
     });
 
     return () => {
       alive = false;
-      clearInterval(intervalId);
-      notificationSubscription.remove();
+      responseSubscription.remove();
     };
-  }, [enqueueBanner, token]);
+  }, [openByNotification, token]);
 
   return {
-    currentBanner: queue[0] ?? null,
+    currentBanner,
     dismissCurrentBanner,
+    openCurrentBanner,
     pushRegistration,
     unregisterCurrentDevice,
   };

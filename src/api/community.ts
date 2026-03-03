@@ -18,6 +18,7 @@ export type CommunityPost = {
     category: CommunityCategory | null;
     title: string;
     body: string;
+    is_following?: boolean;
     moderation_state?: ModerationState;
     moderated_at?: string | null;
     moderation_note?: string;
@@ -59,6 +60,10 @@ export function listCommunityPosts(token: string) {
     return apiFetch<CommunityPost[]>("/community/posts/", { token });
 }
 
+export function getCommunityPost(token: string, postId: number) {
+    return apiFetch<CommunityPost>(`/community/posts/${postId}/`, { token });
+}
+
 // POST /community/posts/
 export function createCommunityPost(
     token: string,
@@ -94,4 +99,18 @@ export function createCommunityReport(
     method: "POST",
     body: payload,
   });
+}
+
+export function followCommunityPost(token: string, postId: number) {
+    return apiFetch<CommunityPost>(`/community/posts/${postId}/follow/`, {
+        token,
+        method: "POST",
+    });
+}
+
+export function unfollowCommunityPost(token: string, postId: number) {
+    return apiFetch<CommunityPost>(`/community/posts/${postId}/unfollow/`, {
+        token,
+        method: "POST",
+    });
 }

@@ -383,7 +383,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, paddingTop: 28 },
+  container: { flex: 1, padding: 16, paddingTop: 28, backgroundColor: "#f7f4ee" },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 20 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },

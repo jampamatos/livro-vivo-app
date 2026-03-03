@@ -1,5 +1,13 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  BackHandler,
+  Platform,
+  StatusBar as NativeStatusBar,
+  StyleSheet,
+  View,
+} from "react-native";
+import { StatusBar } from "expo-status-bar";
 
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { CaseLawScreen } from "./src/screens/CaseLawScreen";
@@ -39,7 +47,37 @@ export default function App() {
 
   const [route, setRoute] = React.useState<Route>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
-  const notificationCenter = useNotificationCenter(session?.accessToken ?? null);
+  const openMainFromNotification = React.useCallback(() => {
+    setSelectedPost(null);
+    setRoute("main");
+  }, []);
+  const notificationCenter = useNotificationCenter(session?.accessToken ?? null, openMainFromNotification);
+  const androidStatusBarInset = Platform.OS === "android" ? Math.max(0, NativeStatusBar.currentHeight ?? 0) : 0;
+  const androidBottomInset = Platform.OS === "android" ? 28 : 0;
+
+  const navigateBack = React.useCallback(() => {
+    switch (route) {
+      case "account":
+      case "caselaw":
+      case "community":
+      case "course":
+      case "library":
+      case "templatesBank":
+        setSelectedPost(null);
+        setRoute("main");
+        return true;
+      case "communityNewPost":
+      case "communityPost":
+        setRoute("community");
+        return true;
+      case "main":
+        return true;
+      default:
+        setSelectedPost(null);
+        setRoute("main");
+        return true;
+    }
+  }, [route]);
 
   React.useEffect(() => {
     (async () => {
@@ -60,6 +98,18 @@ export default function App() {
     });
     return () => setSessionListener(null);
   }, []);
+
+  React.useEffect(() => {
+    if (Platform.OS !== "android") return undefined;
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (loading) return true;
+      if (!session) return true;
+      return navigateBack();
+    });
+
+    return () => subscription.remove();
+  }, [loading, navigateBack, session]);
 
   const handleAuthSuccess = async (newSession: AuthSession) => {
     await setAuthSession(newSession);
@@ -122,24 +172,24 @@ export default function App() {
     content = (
       <AccountScreen
         token={token}
-        onBack={() => setRoute("main")}
+        onBack={navigateBack}
         onLogout={handleLogout}
         pushStatusMessage={pushStatusMessage}
       />
     );
   } else if (route === "caselaw") {
-    content = <CaseLawScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+    content = <CaseLawScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
   } else if (route === "library") {
-    content = <LibraryScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+    content = <LibraryScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
   } else if (route === "course") {
-    content = <CourseScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+    content = <CourseScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
   } else if (route === "templatesBank") {
-    content = <TemplatesBankScreen token={token} onBack={() => setRoute("main")} onLogout={handleLogout} />;
+    content = <TemplatesBankScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
   } else if (route === "community") {
     content = (
       <CommunityFeedScreen
         token={token}
-        onBack={() => setRoute("main")}
+        onBack={navigateBack}
         onLogout={handleLogout}
         onOpenPost={(post) => {
           setSelectedPost(post);
@@ -152,7 +202,7 @@ export default function App() {
     content = (
       <CommunityNewPostScreen
         token={token}
-        onBack={() => setRoute("community")}
+        onBack={navigateBack}
         onLogout={handleLogout}
         onCreated={(post) => {
           setSelectedPost(post);
@@ -170,7 +220,7 @@ export default function App() {
       <CommunityPostScreen
         token={token}
         post={selectedPost}
-        onBack={() => setRoute("community")}
+        onBack={navigateBack}
         onLogout={handleLogout}
       />
     );
@@ -189,12 +239,20 @@ export default function App() {
   }
 
   return (
-    <View style={styles.appRoot}>
+    <View
+      style={[
+        styles.appRoot,
+        androidStatusBarInset > 0 ? { paddingTop: androidStatusBarInset } : null,
+        androidBottomInset > 0 ? { paddingBottom: androidBottomInset } : null,
+      ]}
+    >
+      <StatusBar style="dark" backgroundColor="#f7f4ee" />
       {content}
       {notificationCenter.currentBanner ? (
         <InAppNotificationBanner
           title={notificationCenter.currentBanner.title}
           body={notificationCenter.currentBanner.body}
+          onPress={notificationCenter.openCurrentBanner}
           onDismiss={notificationCenter.dismissCurrentBanner}
         />
       ) : null}
@@ -203,6 +261,13 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  appRoot: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 16 },
+  appRoot: { flex: 1, backgroundColor: "#f7f4ee" },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    padding: 16,
+    backgroundColor: "#f7f4ee",
+  },
 });

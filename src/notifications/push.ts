@@ -32,13 +32,35 @@ type NotificationSubscriptionLike = {
 
 let handlerConfigured = false;
 
+function buildNotificationPayload(content: {
+  title: string | null | undefined;
+  body: string | null | undefined;
+  data?: Record<string, unknown> | null;
+}): ForegroundNotificationPayload {
+  const data = (content.data ?? {}) as Record<string, unknown>;
+  const rawDispatchId = data.dispatch_id;
+  const dispatchId =
+    typeof rawDispatchId === "number"
+      ? rawDispatchId
+      : typeof rawDispatchId === "string" && rawDispatchId.trim()
+        ? Number(rawDispatchId)
+        : null;
+
+  return {
+    dispatchId: Number.isFinite(dispatchId) ? dispatchId : null,
+    title: content.title ?? "Livro Vivo",
+    body: content.body ?? "",
+    data,
+  };
+}
+
 function ensureNotificationHandler() {
   if (handlerConfigured) return;
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowBanner: false,
-      shouldShowList: false,
-      shouldPlaySound: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
       shouldSetBadge: false,
     }),
   });
@@ -46,9 +68,14 @@ function ensureNotificationHandler() {
 }
 
 function resolveProjectId(): string | null {
+  const envProjectId =
+    typeof process.env.EXPO_PUBLIC_EAS_PROJECT_ID === "string"
+      ? process.env.EXPO_PUBLIC_EAS_PROJECT_ID.trim()
+      : "";
   const easProjectId =
     Constants.easConfig?.projectId ??
     ((Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ?? null);
+  if (envProjectId) return envProjectId;
   return typeof easProjectId === "string" && easProjectId.trim() ? easProjectId.trim() : null;
 }
 
@@ -135,21 +162,33 @@ export function addForegroundNotificationListener(
   }
 
   return Notifications.addNotificationReceivedListener((notification) => {
-    const content = notification.request.content;
-    const data = (content.data ?? {}) as Record<string, unknown>;
-    const rawDispatchId = data.dispatch_id;
-    const dispatchId =
-      typeof rawDispatchId === "number"
-        ? rawDispatchId
-        : typeof rawDispatchId === "string" && rawDispatchId.trim()
-          ? Number(rawDispatchId)
-          : null;
-
-    onNotification({
-      dispatchId: Number.isFinite(dispatchId) ? dispatchId : null,
-      title: content.title ?? "Livro Vivo",
-      body: content.body ?? "",
-      data,
-    });
+    onNotification(buildNotificationPayload(notification.request.content));
   });
+}
+
+export function addNotificationResponseListener(
+  onNotificationOpen: (payload: ForegroundNotificationPayload) => void
+): NotificationSubscriptionLike {
+  ensureNotificationHandler();
+
+  if (Platform.OS === "web") {
+    return { remove() {} };
+  }
+
+  return Notifications.addNotificationResponseReceivedListener((response) => {
+    onNotificationOpen(buildNotificationPayload(response.notification.request.content));
+  });
+}
+
+export async function getLastNotificationResponsePayloadAsync(): Promise<ForegroundNotificationPayload | null> {
+  ensureNotificationHandler();
+
+  if (Platform.OS === "web") {
+    return null;
+  }
+
+  const response = await Notifications.getLastNotificationResponseAsync();
+  if (!response) return null;
+
+  return buildNotificationPayload(response.notification.request.content);
 }

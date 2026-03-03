@@ -22,6 +22,7 @@ type ApiFetchOptions = {
   token?: string | null;
   body?: unknown;
   headers?: Record<string, string>;
+  allowNoContent?: boolean;
 };
 
 export function buildAuthHeader(token: string) : string {
@@ -146,6 +147,10 @@ export async function apiFetch<T>(
         throw new ApiError(`HTTP ${retryRes.status} em ${path}`, retryRes.status, retryParsed);
       }
 
+      if (retryRes.status === 204 && options.allowNoContent) {
+        return null as T;
+      }
+
       return retryParsed as T;
     }
   }
@@ -157,6 +162,10 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     throw new ApiError(`HTTP ${res.status} em ${path}`, res.status, parsed);
+  }
+
+  if (res.status === 204 && options.allowNoContent) {
+    return null as T;
   }
 
   return parsed as T;

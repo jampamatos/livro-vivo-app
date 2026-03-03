@@ -1,5 +1,6 @@
 import {
   acknowledgeNotification,
+  consumeLatestInAppNotification,
   getNotificationPreferences,
   getNotifications,
   registerPushDevice,
@@ -75,6 +76,19 @@ describe("api/notifications", () => {
       method: "POST",
       token: "token-123",
       body: {},
+    });
+  });
+
+  it("consome apenas o último banner in-app pendente", async () => {
+    apiFetchMock.mockResolvedValueOnce(null);
+
+    await consumeLatestInAppNotification("token-123");
+
+    expect(apiFetchMock).toHaveBeenCalledWith("/me/notifications/in-app/consume-latest/", {
+      method: "POST",
+      token: "token-123",
+      body: {},
+      allowNoContent: true,
     });
   });
 

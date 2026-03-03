@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "143297761961",
+    "project_id": "jampamatos-livro-vivo",
+    "storage_bucket": "jampamatos-livro-vivo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:143297761961:android:1a2032076dab8f9e064fb8",
+        "android_client_info": {
+          "package_name": "com.livrovivo.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAVzotupXm2lYD5Qf32G4aqUm00eTWvw2M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -12,6 +12,9 @@ const appName = appJson?.expo?.name ?? "";
 const appSlug = appJson?.expo?.slug ?? "";
 const iosBundleIdentifier = appJson?.expo?.ios?.bundleIdentifier ?? "";
 const androidPackage = appJson?.expo?.android?.package ?? "";
+const configuredProjectId =
+  appJson?.expo?.extra?.eas?.projectId ??
+  "";
 
 const errors = [];
 
@@ -45,6 +48,9 @@ if (androidPackage && !bundleIdRegex.test(androidPackage)) {
 
 if (enforceReleaseChecks) {
   const apiBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").trim();
+  const easProjectId =
+    (process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "").trim() ||
+    (typeof configuredProjectId === "string" ? configuredProjectId.trim() : "");
   if (!apiBaseUrl) {
     errors.push("EXPO_PUBLIC_API_BASE_URL is required for release builds.");
   } else {
@@ -59,6 +65,12 @@ if (enforceReleaseChecks) {
         "EXPO_PUBLIC_API_BASE_URL cannot point to localhost in release builds."
       );
     }
+  }
+
+  if (!easProjectId) {
+    errors.push(
+      "Expo EAS projectId is required for release builds (EXPO_PUBLIC_EAS_PROJECT_ID or expo.extra.eas.projectId)."
+    );
   }
 }
 

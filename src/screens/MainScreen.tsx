@@ -184,7 +184,7 @@ export function MainScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingTop: 32 },
+  container: { flex: 1, padding: 20, paddingTop: 32, backgroundColor: "#f7f4ee" },
   title: { fontSize: 28, fontWeight: "700", color: "#16130f" },
   subtitle: { marginTop: 6, marginBottom: 14, fontSize: 14, color: "#5f5950" },
 

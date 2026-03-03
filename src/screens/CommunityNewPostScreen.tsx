@@ -17,6 +17,8 @@ import {
   listCommunityCategories,
 } from "../api/community";
 
+const FORM_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
+
 type Props = {
   token: string;
   onBack: () => void;
@@ -144,7 +146,7 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
+  container: { flex: 1, padding: 16, gap: 12, backgroundColor: "#f7f4ee" },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 18, fontWeight: "700" },
 
@@ -155,7 +157,7 @@ const styles = StyleSheet.create({
   error: { color: "crimson" },
   subtitle: { fontSize: 13, opacity: 0.8 },
 
-  form: { gap: 10 },
+  form: { gap: 10, paddingBottom: FORM_BOTTOM_GUTTER },
   input: { borderWidth: 1, borderRadius: 12, padding: 10, minHeight: 44 },
   bodyInput: { minHeight: 140, textAlignVertical: "top" },
   submitBtn: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: "center" },

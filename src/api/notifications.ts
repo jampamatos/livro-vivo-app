@@ -102,6 +102,15 @@ export function acknowledgeNotification(token: string, dispatchId: number) {
   });
 }
 
+export function consumeLatestInAppNotification(token: string) {
+  return apiFetch<NotificationItem | null>("/me/notifications/in-app/consume-latest/", {
+    method: "POST",
+    token,
+    body: {},
+    allowNoContent: true,
+  });
+}
+
 export function getPushDevices(token: string) {
   return apiFetch<PushDevice[]>("/me/push-devices/", { token });
 }

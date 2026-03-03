@@ -169,6 +169,18 @@ describe("apiFetch", () => {
     expect(data).toBe("hello");
   });
 
+  it("retorna null quando a API responde 204 e allowNoContent está ativo", async () => {
+    mockFetchOnce({
+      ok: true,
+      status: 204,
+      contentType: "",
+      textData: "",
+    });
+
+    const data = await apiFetch<null>("/notifications/in-app", { method: "POST", allowNoContent: true });
+    expect(data).toBeNull();
+  });
+
   it("lança ApiError com status e body quando não ok", async () => {
     mockFetchOnce({
       ok: false,
