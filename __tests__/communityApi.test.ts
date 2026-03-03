@@ -2,9 +2,12 @@ import {
   createCommunityComment,
   createCommunityPost,
   createCommunityReport,
+  followCommunityPost,
+  getCommunityPost,
   listCommunityCategories,
   listCommunityComments,
   listCommunityPosts,
+  unfollowCommunityPost,
 } from "../src/api/community";
 import { apiFetch } from "../src/api/http";
 
@@ -62,6 +65,30 @@ describe("api/community", () => {
       token: "t123",
       method: "POST",
       body: { post_id: 1, reason: "spam" },
+    });
+  });
+
+  it("getCommunityPost chama /community/posts/:id/ com token", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9 });
+    await getCommunityPost("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/", { token: "t123" });
+  });
+
+  it("followCommunityPost faz POST em /community/posts/:id/follow/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9, is_following: true });
+    await followCommunityPost("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/follow/", {
+      token: "t123",
+      method: "POST",
+    });
+  });
+
+  it("unfollowCommunityPost faz POST em /community/posts/:id/unfollow/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9, is_following: false });
+    await unfollowCommunityPost("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/unfollow/", {
+      token: "t123",
+      method: "POST",
     });
   });
 });

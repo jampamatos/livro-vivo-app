@@ -12,6 +12,7 @@ import {
 import {
   getNotificationPreferences,
   updateNotificationPreferences,
+  type NotificationPreferenceField,
   type NotificationPreferences,
 } from "../api/notifications";
 
@@ -19,13 +20,8 @@ type Props = {
   token: string;
   onBack: () => void;
   onLogout: () => void;
+  pushStatusMessage?: string | null;
 };
-
-type PreferenceField =
-  | "notifications_enabled"
-  | "book_version_updates_enabled"
-  | "new_content_updates_enabled"
-  | "push_enabled";
 
 function formatTier(tier: SubscriptionTier | null | undefined) {
   if (!tier) return "Sem assinatura ativa";
@@ -65,15 +61,16 @@ function getModuleLabels(tier: SubscriptionTier | null | undefined) {
   return [];
 }
 
-export function AccountScreen({ token, onBack, onLogout }: Props) {
+export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
   const [profile, setProfile] = React.useState<MeProfileResponse | null>(null);
   const [preferences, setPreferences] = React.useState<NotificationPreferences | null>(null);
-  const [updatingPreference, setUpdatingPreference] = React.useState<Record<PreferenceField, boolean>>({
+  const [updatingPreference, setUpdatingPreference] = React.useState<Record<NotificationPreferenceField, boolean>>({
     notifications_enabled: false,
     book_version_updates_enabled: false,
     new_content_updates_enabled: false,
+    community_interaction_updates_enabled: false,
     push_enabled: false,
   });
   const [preferencesError, setPreferencesError] = React.useState<string | null>(null);
@@ -117,7 +114,7 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
   const modules = getModuleLabels(entitlements?.effective_tier);
 
   const togglePreference = React.useCallback(
-    async (field: PreferenceField) => {
+    async (field: NotificationPreferenceField) => {
       if (!preferences) return;
       if (updatingPreference[field]) return;
 
@@ -141,7 +138,7 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
     [preferences, token, updatingPreference]
   );
 
-  const isPreferenceDisabled = (field: PreferenceField) => {
+  const isPreferenceDisabled = (field: NotificationPreferenceField) => {
     if (updatingPreference[field]) return true;
     if (!preferences) return true;
     if (field !== "notifications_enabled" && !preferences.notifications_enabled) return true;
@@ -217,6 +214,13 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
 
           <View style={styles.box}>
             <Text style={styles.sectionTitle}>Notificações</Text>
+            <Text style={styles.sectionHint}>
+              Escolha quais categorias o backend pode preparar para envio. O push real no aparelho entra em uma
+              etapa futura.
+            </Text>
+            {preferences?.updated_at ? (
+              <Text style={styles.preferenceMeta}>Última atualização: {formatDateTime(preferences.updated_at)}</Text>
+            ) : null}
             <View style={styles.preferenceRows}>
               <View style={styles.preferenceItem}>
                 <View style={styles.preferenceTextWrap}>
@@ -275,7 +279,7 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
               <View style={styles.preferenceItem}>
                 <View style={styles.preferenceTextWrap}>
                   <Text style={styles.preferenceLabel}>Novos conteúdos</Text>
-                  <Text style={styles.preferenceHint}>Base para avisos de curso e materiais futuros.</Text>
+                  <Text style={styles.preferenceHint}>Avisar sobre novos conteúdos de curso e jurisprudência.</Text>
                 </View>
                 <Pressable
                   testID="account-pref-new-content"
@@ -301,8 +305,38 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
 
               <View style={styles.preferenceItem}>
                 <View style={styles.preferenceTextWrap}>
+                  <Text style={styles.preferenceLabel}>Interações na comunidade</Text>
+                  <Text style={styles.preferenceHint}>Avisar quando houver comentário novo em post seu.</Text>
+                </View>
+                <Pressable
+                  testID="account-pref-community-interactions"
+                  accessibilityRole="switch"
+                  accessibilityLabel="Interações na comunidade"
+                  accessibilityState={{
+                    checked: Boolean(preferences?.community_interaction_updates_enabled),
+                    disabled: isPreferenceDisabled("community_interaction_updates_enabled"),
+                  }}
+                  style={[
+                    styles.preferenceToggle,
+                    preferences?.community_interaction_updates_enabled
+                      ? styles.preferenceToggleOn
+                      : styles.preferenceToggleOff,
+                    isPreferenceDisabled("community_interaction_updates_enabled") ? styles.disabledAction : null,
+                  ]}
+                  disabled={isPreferenceDisabled("community_interaction_updates_enabled")}
+                  onPress={() => void togglePreference("community_interaction_updates_enabled")}
+                >
+                  <Text style={styles.preferenceToggleText}>
+                    {preferences?.community_interaction_updates_enabled ? "Ligado" : "Desligado"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.preferenceItem}>
+                <View style={styles.preferenceTextWrap}>
                   <Text style={styles.preferenceLabel}>Push no dispositivo</Text>
                   <Text style={styles.preferenceHint}>Pronto para integração futura com FCM/APNs.</Text>
+                  {pushStatusMessage ? <Text style={styles.preferenceRuntimeHint}>{pushStatusMessage}</Text> : null}
                 </View>
                 <Pressable
                   testID="account-pref-push"
@@ -349,7 +383,7 @@ export function AccountScreen({ token, onBack, onLogout }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, paddingTop: 28 },
+  container: { flex: 1, padding: 16, paddingTop: 28, backgroundColor: "#f7f4ee" },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 20 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
@@ -397,10 +431,12 @@ const styles = StyleSheet.create({
   profileMeta: { fontSize: 13, color: "#4f483d" },
 
   sectionTitle: { fontSize: 13, fontWeight: "800", color: "#3f382e", marginBottom: 2 },
+  sectionHint: { fontSize: 12, color: "#6b6558" },
   planName: { fontSize: 18, fontWeight: "800", color: "#1a1610" },
   meta: { fontSize: 13, color: "#363126" },
 
   preferenceRows: { marginTop: 2, gap: 8 },
+  preferenceMeta: { marginTop: 4, fontSize: 12, color: "#6b6558" },
   preferenceItem: {
     borderWidth: 1,
     borderColor: "#ebe6db",
@@ -416,6 +452,7 @@ const styles = StyleSheet.create({
   preferenceTextWrap: { flex: 1, gap: 2 },
   preferenceLabel: { fontSize: 13, fontWeight: "700", color: "#1f1a13" },
   preferenceHint: { fontSize: 12, color: "#6b6558" },
+  preferenceRuntimeHint: { fontSize: 12, color: "#4d3e22", fontWeight: "600" },
   preferenceToggle: {
     minWidth: 82,
     borderWidth: 1,

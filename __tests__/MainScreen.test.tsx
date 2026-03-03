@@ -85,6 +85,7 @@ describe("MainScreen", () => {
     const json = JSON.stringify(tree.toJSON());
     expect(json).not.toContain("Plano atual");
     expect(json).toContain("Jurisprudência");
+    expect(json).toContain("Plano, perfil e notificações.");
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(false);

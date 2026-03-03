@@ -44,14 +44,84 @@ const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "u", "br"]);
 const DROP_TAGS = new Set(["script", "style", "iframe", "object", "embed"]);
 const VOID_TAGS = new Set(["br", "hr", "img", "input", "meta", "link"]);
 
-function decodeHtmlEntities(value: string): string {
-  const named = value
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  ccedil: "ç",
+  Ccedil: "Ç",
+  aacute: "á",
+  Aacute: "Á",
+  eacute: "é",
+  Eacute: "É",
+  iacute: "í",
+  Iacute: "Í",
+  oacute: "ó",
+  Oacute: "Ó",
+  uacute: "ú",
+  Uacute: "Ú",
+  atilde: "ã",
+  Atilde: "Ã",
+  otilde: "õ",
+  Otilde: "Õ",
+  acirc: "â",
+  Acirc: "Â",
+  ecirc: "ê",
+  Ecirc: "Ê",
+  icirc: "î",
+  Icirc: "Î",
+  ocirc: "ô",
+  Ocirc: "Ô",
+  ucirc: "û",
+  Ucirc: "Û",
+  agrave: "à",
+  Agrave: "À",
+  egrave: "è",
+  Egrave: "È",
+  igrave: "ì",
+  Igrave: "Ì",
+  ograve: "ò",
+  Ograve: "Ò",
+  ugrave: "ù",
+  Ugrave: "Ù",
+  auml: "ä",
+  Auml: "Ä",
+  euml: "ë",
+  Euml: "Ë",
+  iuml: "ï",
+  Iuml: "Ï",
+  ouml: "ö",
+  Ouml: "Ö",
+  uuml: "ü",
+  Uuml: "Ü",
+  laquo: "«",
+  raquo: "»",
+  ldquo: "“",
+  rdquo: "”",
+  lsquo: "‘",
+  rsquo: "’",
+  ndash: "–",
+  mdash: "—",
+  hellip: "...",
+  middot: "·",
+  bull: "•",
+  ordm: "º",
+  ordf: "ª",
+  copy: "©",
+  reg: "®",
+  trade: "™",
+  deg: "°",
+};
+
+export function decodeHtmlEntities(value: string): string {
+  const named = value.replace(/&([a-zA-Z][a-zA-Z0-9]+);/g, (match, entity) => {
+    return Object.prototype.hasOwnProperty.call(NAMED_HTML_ENTITIES, entity)
+      ? NAMED_HTML_ENTITIES[entity]
+      : match;
+  });
 
   return named
     .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number.parseInt(code, 10)))

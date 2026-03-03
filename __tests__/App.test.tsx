@@ -1,11 +1,12 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { ActivityIndicator, Linking } from "react-native";
+import { ActivityIndicator, BackHandler, Linking, Platform } from "react-native";
 
 import App from "../App";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
 import { setSessionListener } from "../src/auth/sessionBus";
 import { logout } from "../src/api/auth";
+import { useNotificationCenter } from "../src/notifications/useNotificationCenter";
 import type { BookChapter } from "../src/api/books";
 import type { AuthSession } from "../src/auth/authSession";
 import { BookReaderScreen } from "../src/screens/BookReaderScreen";
@@ -23,6 +24,10 @@ jest.mock("../src/auth/sessionBus", () => ({
 
 jest.mock("../src/api/auth", () => ({
   logout: jest.fn(),
+}));
+
+jest.mock("../src/notifications/useNotificationCenter", () => ({
+  useNotificationCenter: jest.fn(),
 }));
 
 jest.mock("../src/screens/LoginScreen", () => {
@@ -258,6 +263,8 @@ const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
 const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
 const setSessionListenerMock = setSessionListener as unknown as jest.Mock;
 const logoutMock = logout as unknown as jest.Mock;
+const useNotificationCenterMock = useNotificationCenter as unknown as jest.Mock;
+const addBackHandlerListenerMock = jest.spyOn(BackHandler, "addEventListener");
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -282,16 +289,49 @@ async function pressByTestId(tree: renderer.ReactTestRenderer, testID: string) {
 }
 
 describe("App", () => {
+  const originalPlatform = Platform.OS;
+  let hardwareBackHandler: (() => boolean | null | undefined) | null = null;
+
   beforeEach(() => {
     getAuthSessionMock.mockReset();
     setAuthSessionMock.mockReset();
     clearAuthSessionMock.mockReset();
     setSessionListenerMock.mockReset();
     logoutMock.mockReset();
+    addBackHandlerListenerMock.mockReset();
 
     setAuthSessionMock.mockResolvedValue(undefined);
     clearAuthSessionMock.mockResolvedValue(undefined);
     logoutMock.mockResolvedValue(undefined);
+    hardwareBackHandler = null;
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+    addBackHandlerListenerMock.mockImplementation(
+      (
+        _eventName: "hardwareBackPress",
+        handler: () => boolean | null | undefined
+      ) => {
+      hardwareBackHandler = handler;
+      return { remove: jest.fn() };
+      }
+    );
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: null,
+      dismissCurrentBanner: jest.fn(),
+      openCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice: jest.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  afterAll(() => {
+    addBackHandlerListenerMock.mockRestore();
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: originalPlatform,
+    });
   });
 
   it("mostra loading durante bootstrap e depois Login quando não há sessão", async () => {
@@ -379,6 +419,29 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
   });
 
+  it("remove registro do dispositivo ao fazer logout", async () => {
+    const unregisterCurrentDevice = jest.fn().mockResolvedValue(undefined);
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: null,
+      dismissCurrentBanner: jest.fn(),
+      openCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice,
+    });
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: "stored-refresh",
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-account");
+    await pressByTestId(tree, "account-logout");
+
+    expect(unregisterCurrentDevice).toHaveBeenCalledTimes(1);
+  });
+
   it("reage ao sessionBus quando a sessão é invalidada", async () => {
     let listener: ((session: AuthSession | null) => void) | null = null;
     setSessionListenerMock.mockImplementation((fn: ((session: AuthSession | null) => void) | null) => {
@@ -429,6 +492,37 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("post:Criado");
   });
 
+  it("usa o botão físico do Android para voltar uma tela sem fechar o app", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-community");
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityFeedScreen");
+
+    await pressByTestId(tree, "community-open-post");
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityFeedScreen");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
   it("navega para curso e volta para main", async () => {
     getAuthSessionMock.mockResolvedValueOnce({
       accessToken: "stored-token",
@@ -458,6 +552,62 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
 
     await pressByTestId(tree, "templates-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
+  it("renderiza banner de notificação quando há item pendente", async () => {
+    useNotificationCenterMock.mockReturnValue({
+      currentBanner: {
+        title: "Novo conteúdo",
+        body: "Uma aula nova foi publicada.",
+      },
+      dismissCurrentBanner: jest.fn(),
+      openCurrentBanner: jest.fn(),
+      pushRegistration: null,
+      unregisterCurrentDevice: jest.fn().mockResolvedValue(undefined),
+    });
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Nova notificação");
+    expect(JSON.stringify(tree.toJSON())).toContain("Novo conteúdo");
+    expect(JSON.stringify(tree.toJSON())).toContain("Uma aula nova foi publicada.");
+  });
+
+  it("volta para a Main ao tocar no banner de notificação", async () => {
+    const openCurrentBanner = jest.fn();
+    useNotificationCenterMock.mockImplementation((_token, onOpenNotification) => ({
+      currentBanner: {
+        title: "Novo conteúdo",
+        body: "Uma aula nova foi publicada.",
+      },
+      dismissCurrentBanner: jest.fn(),
+      openCurrentBanner: () => {
+        openCurrentBanner();
+        onOpenNotification?.();
+      },
+      pushRegistration: null,
+      unregisterCurrentDevice: jest.fn().mockResolvedValue(undefined),
+    }));
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-account");
+    expect(JSON.stringify(tree.toJSON())).toContain("AccountScreen");
+
+    await pressByTestId(tree, "in-app-notification-open");
+
+    expect(openCurrentBanner).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 });
@@ -535,6 +685,42 @@ describe("reader rich text + a11y baseline", () => {
     expect(links.length).toBeGreaterThan(0);
     expect(lists.length).toBeGreaterThan(0);
     expect(listItems.length).toBeGreaterThanOrEqual(2);
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("decodifica entidades HTML nomeadas no reader", () => {
+    const encodedChapter: BookChapter = {
+      ...baseChapter,
+      content_rich:
+        "<h2>Teste de Notifica&ccedil;&atilde;o</h2><p>Cap&iacute;tulo com a&ccedil;&atilde;o, cora&ccedil;&atilde;o e se&ccedil;&atilde;o.</p>",
+      content_plain: "Teste de Notificação Capítulo com ação, coração e seção.",
+    };
+
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={encodedChapter}
+          loading={false}
+          error={null}
+          focus={null}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const output = JSON.stringify(tree!.toJSON());
+    expect(output).toContain("Teste de Notificação");
+    expect(output).toContain("Capítulo com ação, coração e seção.");
+    expect(output).not.toContain("&ccedil;");
+    expect(output).not.toContain("&atilde;");
+    expect(output).not.toContain("&iacute;");
+
     act(() => {
       tree!.unmount();
     });

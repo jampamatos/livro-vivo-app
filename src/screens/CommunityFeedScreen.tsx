@@ -2,6 +2,7 @@ import React from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,6 +15,8 @@ import {
   listCommunityCategories,
   listCommunityPosts,
 } from "../api/community";
+
+const LIST_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
 
 function formatDate(iso: string) {
   // simples e estável no RN/web
@@ -142,6 +145,9 @@ export function CommunityFeedScreen({
               <Text style={styles.meta}>
                 por {item.author_display} • {formatDate(item.created_at)}
               </Text>
+              {item.is_following ? (
+                <Text style={styles.followingHint}>Seguindo notificações deste post</Text>
+              ) : null}
               {item.last_activity ? (
                 <Text style={styles.metaMuted}>
                   última atividade • {formatDate(item.last_activity)}
@@ -170,7 +176,7 @@ export function CommunityFeedScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
+  container: { flex: 1, padding: 16, gap: 12, backgroundColor: "#f7f4ee" },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 18, fontWeight: "700" },
   subtitle: { fontSize: 14, opacity: 0.8 },
@@ -186,7 +192,7 @@ const styles = StyleSheet.create({
   retryBtn: { paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 8 },
   retryText: { fontWeight: "600" },
 
-  list: { gap: 10, paddingBottom: 20 },
+  list: { gap: 10, paddingBottom: LIST_BOTTOM_GUTTER },
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },
   cardRemoved: { borderColor: "#c44545", backgroundColor: "#fff4f4" },
   cardUnderReview: { borderColor: "#b17b15", backgroundColor: "#fff9ef" },
@@ -202,6 +208,7 @@ const styles = StyleSheet.create({
   statusBadgeRemoved: { backgroundColor: "#f3d6d6", color: "#7f1d1d" },
   statusBadgeUnderReview: { backgroundColor: "#f6e2bd", color: "#6d4b00" },
   meta: { fontSize: 12, opacity: 0.7 },
+  followingHint: { fontSize: 12, color: "#1f5c35", fontWeight: "700" },
   metaMuted: { fontSize: 12, opacity: 0.55 },
   bodyPreview: { fontSize: 13, opacity: 0.9 },
   removedText: { color: "#7f1d1d", fontStyle: "italic" },
