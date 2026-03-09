@@ -1,9 +1,11 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
+import { Alert } from "react-native";
 
 import { AccountScreen } from "../src/screens/AccountScreen";
 import { getMeProfile, getMyEntitlements } from "../src/api/entitlements";
 import { getNotificationPreferences, updateNotificationPreferences } from "../src/api/notifications";
+import { buildDataExportSummary, getMyDataExport, requestMyDataErasure } from "../src/api/privacy";
 
 jest.mock("../src/api/entitlements", () => ({
   getMeProfile: jest.fn(),
@@ -13,11 +15,27 @@ jest.mock("../src/api/notifications", () => ({
   getNotificationPreferences: jest.fn(),
   updateNotificationPreferences: jest.fn(),
 }));
+jest.mock("../src/api/privacy", () => ({
+  getMyDataExport: jest.fn(),
+  requestMyDataErasure: jest.fn(),
+  buildDataExportSummary: jest.fn((payload: any) => ({
+    subscriptions: payload?.subscriptions?.length ?? 0,
+    entitlements: payload?.entitlements?.length ?? 0,
+    annotations: payload?.annotations?.length ?? 0,
+    community_posts: payload?.activity?.community_posts?.length ?? 0,
+    community_comments: payload?.activity?.community_comments?.length ?? 0,
+    community_reports: payload?.activity?.community_reports?.length ?? 0,
+  })),
+}));
 
 const getMeProfileMock = getMeProfile as unknown as jest.Mock;
 const getMyEntitlementsMock = getMyEntitlements as unknown as jest.Mock;
 const getNotificationPreferencesMock = getNotificationPreferences as unknown as jest.Mock;
 const updateNotificationPreferencesMock = updateNotificationPreferences as unknown as jest.Mock;
+const getMyDataExportMock = getMyDataExport as unknown as jest.Mock;
+const requestMyDataErasureMock = requestMyDataErasure as unknown as jest.Mock;
+const buildDataExportSummaryMock = buildDataExportSummary as unknown as jest.Mock;
+const alertSpy = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -53,6 +71,14 @@ describe("AccountScreen", () => {
     getMyEntitlementsMock.mockReset();
     getNotificationPreferencesMock.mockReset();
     updateNotificationPreferencesMock.mockReset();
+    getMyDataExportMock.mockReset();
+    requestMyDataErasureMock.mockReset();
+    buildDataExportSummaryMock.mockClear();
+    alertSpy.mockClear();
+  });
+
+  afterAll(() => {
+    alertSpy.mockRestore();
   });
 
   it("carrega perfil e assinatura profissional de forma amigável", async () => {
@@ -324,5 +350,125 @@ describe("AccountScreen", () => {
       checked: false,
       disabled: false,
     });
+  });
+
+  it("executa exportação de dados e exibe resumo no app", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor",
+      profession: "Advogado",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 1,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
+    getMyDataExportMock.mockResolvedValueOnce({
+      generated_at: "2026-03-05T12:00:00Z",
+      profile: { id: 1 },
+      subscription: null,
+      subscriptions: [{ id: 1 }],
+      entitlements: [{ id: 1 }, { id: 2 }],
+      annotations: [{ id: 3 }],
+      activity: {
+        community_posts: [{ id: 1 }],
+        community_comments: [{ id: 1 }],
+        community_reports: [{ id: 1 }],
+      },
+      notification_preferences: { notifications_enabled: true },
+      retention_policy: { community: "Retenção mínima de moderação." },
+    });
+
+    const tree = await renderScreen("token-export");
+    await flushEffects();
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-data-export" }).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(getMyDataExportMock).toHaveBeenCalledWith("token-export");
+    const json = JSON.stringify(tree.toJSON());
+    expect(json).toContain("Resumo da exportação");
+    expect(json).toContain("Assinaturas:");
+    expect(json).toContain("Entitlements:");
+    expect(json).toContain("Exportação concluída");
+    expect(tree.root.findByProps({ testID: "account-data-export-share" }).props.disabled).toBe(false);
+  });
+
+  it("solicita exclusão com confirmação e faz logout ao concluir", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "vitor@example.com",
+      name: "Vitor",
+      profession: "Advogado",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "essential",
+      subscription: {
+        id: 1,
+        tier: "essential",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+    getNotificationPreferencesMock.mockResolvedValueOnce({
+      notifications_enabled: true,
+      book_version_updates_enabled: true,
+      new_content_updates_enabled: true,
+      community_interaction_updates_enabled: true,
+      push_enabled: true,
+      updated_at: "2026-02-25T00:00:00Z",
+    });
+    requestMyDataErasureMock.mockResolvedValueOnce({
+      request_id: 41,
+      status: "completed",
+      processed_at: "2026-03-05T12:30:00Z",
+      retention_policy: "Regra de retenção",
+    });
+
+    const onLogout = jest.fn().mockResolvedValue(undefined);
+    const tree = await renderScreen("token-delete", jest.fn(), onLogout);
+    await flushEffects();
+
+    expect(tree.root.findByProps({ testID: "account-data-delete-submit" }).props.disabled).toBe(true);
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-data-delete-confirmation" }).props.onChangeText("DELETE");
+      tree.root.findByProps({ testID: "account-data-delete-reason" }).props.onChangeText("Solicitação LGPD");
+      await Promise.resolve();
+    });
+
+    expect(tree.root.findByProps({ testID: "account-data-delete-submit" }).props.disabled).toBe(false);
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-data-delete-submit" }).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(requestMyDataErasureMock).toHaveBeenCalledWith("token-delete", "Solicitação LGPD");
+    expect(onLogout).toHaveBeenCalledTimes(1);
+    expect(alertSpy).toHaveBeenCalled();
   });
 });

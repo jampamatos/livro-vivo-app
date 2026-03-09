@@ -1,5 +1,15 @@
 import React from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import {
   getMeProfile,
@@ -15,11 +25,19 @@ import {
   type NotificationPreferenceField,
   type NotificationPreferences,
 } from "../api/notifications";
+import {
+  buildDataExportSummary,
+  getMyDataExport,
+  requestMyDataErasure,
+  type DataExportResponse,
+  type DataExportSummary,
+} from "../api/privacy";
+import { ApiError } from "../api/http";
 
 type Props = {
   token: string;
   onBack: () => void;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   pushStatusMessage?: string | null;
 };
 
@@ -61,6 +79,15 @@ function getModuleLabels(tier: SubscriptionTier | null | undefined) {
   return [];
 }
 
+function getApiErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof ApiError)) return fallback;
+  const body = error.body as { detail?: unknown } | null;
+  if (body && typeof body.detail === "string" && body.detail.trim()) {
+    return body.detail;
+  }
+  return fallback;
+}
+
 export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
@@ -75,6 +102,13 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
   });
   const [preferencesError, setPreferencesError] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [privacyMessage, setPrivacyMessage] = React.useState<string | null>(null);
+  const [exportingData, setExportingData] = React.useState(false);
+  const [exportPayload, setExportPayload] = React.useState<DataExportResponse | null>(null);
+  const [exportSummary, setExportSummary] = React.useState<DataExportSummary | null>(null);
+  const [deletingData, setDeletingData] = React.useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = React.useState("");
+  const [deleteReason, setDeleteReason] = React.useState("");
 
   React.useEffect(() => {
     let alive = true;
@@ -144,6 +178,64 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
     if (field !== "notifications_enabled" && !preferences.notifications_enabled) return true;
     return false;
   };
+
+  const handleExportData = React.useCallback(async () => {
+    if (exportingData) return;
+    setPrivacyMessage(null);
+    setExportingData(true);
+    try {
+      const payload = await getMyDataExport(token);
+      setExportPayload(payload);
+      setExportSummary(buildDataExportSummary(payload));
+      setPrivacyMessage("Exportação concluída. O pacote de dados foi gerado com sucesso.");
+    } catch (err) {
+      setPrivacyMessage(getApiErrorMessage(err, "Não foi possível exportar seus dados agora."));
+    } finally {
+      setExportingData(false);
+    }
+  }, [exportingData, token]);
+
+  const handleShareExport = React.useCallback(async () => {
+    if (!exportPayload) return;
+    try {
+      await Share.share({
+        title: "Exportação de dados - Livro Vivo",
+        message: JSON.stringify(exportPayload, null, 2),
+      });
+    } catch {
+      setPrivacyMessage("Não foi possível compartilhar o JSON da exportação.");
+    }
+  }, [exportPayload]);
+
+  const handleRequestErasure = React.useCallback(async () => {
+    if (deletingData) return;
+    if (deleteConfirmation.trim().toUpperCase() !== "DELETE") {
+      setPrivacyMessage('Confirmação inválida. Digite "DELETE" para continuar.');
+      return;
+    }
+
+    setPrivacyMessage(null);
+    setDeletingData(true);
+    try {
+      await requestMyDataErasure(token, deleteReason);
+      Alert.alert(
+        "Solicitação concluída",
+        "Sua conta foi anonimizada. Você será desconectado do app agora."
+      );
+      setPrivacyMessage("Solicitação de exclusão concluída com sucesso.");
+      setDeleteConfirmation("");
+      setDeleteReason("");
+      setDeletingData(false);
+      await Promise.resolve(onLogout());
+      return;
+    } catch (err) {
+      setPrivacyMessage(getApiErrorMessage(err, "Não foi possível solicitar a exclusão agora."));
+    }
+
+    setDeletingData(false);
+  }, [deleteConfirmation, deleteReason, deletingData, onLogout, token]);
+
+  const canSubmitErasure = deleteConfirmation.trim().toUpperCase() === "DELETE" && !deletingData;
 
   return (
     <View style={styles.container}>
@@ -362,6 +454,92 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={styles.box}>
+            <Text style={styles.sectionTitle}>Privacidade (LGPD)</Text>
+            <Text style={styles.sectionHint}>
+              Você pode exportar seus dados em JSON ou solicitar exclusão com anonimização da conta.
+            </Text>
+            <View style={styles.privacyActions}>
+              <Pressable
+                testID="account-data-export"
+                accessibilityRole="button"
+                style={[styles.secondaryAction, exportingData ? styles.disabledAction : null]}
+                disabled={exportingData}
+                onPress={() => void handleExportData()}
+              >
+                <Text style={styles.secondaryActionText}>
+                  {exportingData ? "Exportando dados..." : "Exportar meus dados"}
+                </Text>
+              </Pressable>
+              <Pressable
+                testID="account-data-export-share"
+                accessibilityRole="button"
+                style={[styles.secondaryAction, !exportPayload ? styles.disabledAction : null]}
+                disabled={!exportPayload}
+                onPress={() => void handleShareExport()}
+              >
+                <Text style={styles.secondaryActionText}>Compartilhar JSON exportado</Text>
+              </Pressable>
+            </View>
+
+            {exportSummary ? (
+              <View style={styles.privacySummaryBox}>
+                <Text style={styles.privacySummaryTitle}>Resumo da exportação</Text>
+                <Text style={styles.meta}>Assinaturas: {exportSummary.subscriptions}</Text>
+                <Text style={styles.meta}>Entitlements: {exportSummary.entitlements}</Text>
+                <Text style={styles.meta}>Anotações: {exportSummary.annotations}</Text>
+                <Text style={styles.meta}>Posts comunidade: {exportSummary.community_posts}</Text>
+                <Text style={styles.meta}>Comentários comunidade: {exportSummary.community_comments}</Text>
+                <Text style={styles.meta}>Reports comunidade: {exportSummary.community_reports}</Text>
+                <Text style={styles.preferenceMeta}>Gerado em: {formatDateTime(exportPayload?.generated_at)}</Text>
+                <Text style={styles.preferenceMeta}>
+                  Retenção: {exportPayload?.retention_policy?.community ?? "-"}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.privacyDangerZone}>
+              <Text style={styles.privacyDangerTitle}>Solicitar exclusão da conta</Text>
+              <Text style={styles.sectionHint}>
+                Digite DELETE para confirmar. A conta será anonimizada e o app fará logout automático.
+              </Text>
+              <TextInput
+                testID="account-data-delete-confirmation"
+                value={deleteConfirmation}
+                onChangeText={setDeleteConfirmation}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder='Digite "DELETE"'
+                style={styles.privacyInput}
+              />
+              <TextInput
+                testID="account-data-delete-reason"
+                value={deleteReason}
+                onChangeText={setDeleteReason}
+                autoCapitalize="sentences"
+                placeholder="Motivo (opcional)"
+                style={[styles.privacyInput, styles.privacyInputMultiline]}
+                multiline
+              />
+              <Pressable
+                testID="account-data-delete-submit"
+                accessibilityRole="button"
+                style={[
+                  styles.privacyDangerAction,
+                  !canSubmitErasure ? styles.disabledAction : null,
+                ]}
+                disabled={!canSubmitErasure}
+                onPress={() => void handleRequestErasure()}
+              >
+                <Text style={styles.privacyDangerActionText}>
+                  {deletingData ? "Processando exclusão..." : "Solicitar exclusão e sair"}
+                </Text>
+              </Pressable>
+            </View>
+
+            {privacyMessage ? <Text style={styles.privacyMessage}>{privacyMessage}</Text> : null}
+          </View>
+
+          <View style={styles.box}>
             <Text style={styles.sectionTitle}>Ajustes da conta</Text>
             <View style={styles.actionsRow}>
               <Pressable style={[styles.secondaryAction, styles.disabledAction]} disabled>
@@ -471,6 +649,52 @@ const styles = StyleSheet.create({
   },
   preferenceToggleText: { fontWeight: "700", color: "#2a261e", fontSize: 12 },
   preferenceError: { marginTop: 4, color: "#B00020", fontSize: 12 },
+
+  privacyActions: { marginTop: 8, gap: 8 },
+  privacySummaryBox: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#e2dccf",
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "#fbf8f2",
+  },
+  privacySummaryTitle: { fontSize: 12, fontWeight: "800", color: "#3f382e", marginBottom: 4 },
+  privacyDangerZone: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: "#f2d0cc",
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "#fff8f7",
+    gap: 8,
+  },
+  privacyDangerTitle: { fontSize: 12, fontWeight: "800", color: "#7a1b13" },
+  privacyInput: {
+    borderWidth: 1,
+    borderColor: "#d6d1c7",
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: "#fff",
+    color: "#1f1a13",
+    fontSize: 13,
+  },
+  privacyInputMultiline: {
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+  privacyDangerAction: {
+    borderWidth: 1,
+    borderColor: "#d04a3a",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+    alignItems: "center",
+  },
+  privacyDangerActionText: { color: "#a81d12", fontWeight: "800" },
+  privacyMessage: { marginTop: 8, fontSize: 12, color: "#5b5449" },
 
   actionsRow: { marginTop: 4, flexDirection: "row", gap: 8, flexWrap: "wrap" },
   secondaryAction: {
