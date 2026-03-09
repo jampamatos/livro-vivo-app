@@ -1150,15 +1150,31 @@ export function LibraryScreen({ token, onBack, onLogout, initialOpenRequest = nu
         <Text style={styles.subtitle}>Leitura e busca por capítulos</Text>
 
         <View style={styles.row}>
-          <Pressable style={styles.button} onPress={loadBooks}>
+          <Pressable
+            style={styles.button}
+            onPress={loadBooks}
+            accessibilityRole="button"
+            accessibilityLabel="Recarregar biblioteca"
+            accessibilityHint="Atualiza a lista de livros disponíveis"
+          >
             <Text style={styles.buttonText}>Recarregar</Text>
           </Pressable>
 
-          <Pressable style={[styles.button, styles.buttonSecondary]} onPress={onBack}>
+          <Pressable
+            style={[styles.button, styles.buttonSecondary]}
+            onPress={onBack}
+            accessibilityRole="button"
+            accessibilityLabel="Voltar para menu principal"
+          >
             <Text style={styles.buttonText}>Voltar</Text>
           </Pressable>
 
-          <Pressable style={[styles.button, styles.buttonDanger]} onPress={onLogout}>
+          <Pressable
+            style={[styles.button, styles.buttonDanger]}
+            onPress={onLogout}
+            accessibilityRole="button"
+            accessibilityLabel="Sair da conta"
+          >
             <Text style={styles.buttonText}>Sair</Text>
           </Pressable>
         </View>
@@ -1183,7 +1199,13 @@ export function LibraryScreen({ token, onBack, onLogout, initialOpenRequest = nu
               {books.map((book) => {
                 return (
                   <View key={book.id} style={styles.card}>
-                    <Pressable onPress={() => toggleBook(book.id)} style={styles.cardHeader}>
+                    <Pressable
+                      onPress={() => toggleBook(book.id)}
+                      style={styles.cardHeader}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Abrir livro ${book.title}`}
+                      accessibilityHint="Entra no leitor desse livro"
+                    >
                       <View style={styles.cardHeaderText}>
                         <Text style={styles.bookTitle}>{book.title}</Text>
                         <Text style={styles.bookMeta}>

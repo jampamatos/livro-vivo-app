@@ -462,6 +462,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
               <Pressable
                 testID="account-data-export"
                 accessibilityRole="button"
+                accessibilityLabel="Exportar meus dados"
                 style={[styles.secondaryAction, exportingData ? styles.disabledAction : null]}
                 disabled={exportingData}
                 onPress={() => void handleExportData()}
@@ -473,6 +474,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
               <Pressable
                 testID="account-data-export-share"
                 accessibilityRole="button"
+                accessibilityLabel="Compartilhar JSON exportado"
                 style={[styles.secondaryAction, !exportPayload ? styles.disabledAction : null]}
                 disabled={!exportPayload}
                 onPress={() => void handleShareExport()}
@@ -504,6 +506,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
               </Text>
               <TextInput
                 testID="account-data-delete-confirmation"
+                accessibilityLabel="Confirmação de exclusão"
                 value={deleteConfirmation}
                 onChangeText={setDeleteConfirmation}
                 autoCapitalize="characters"
@@ -513,6 +516,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
               />
               <TextInput
                 testID="account-data-delete-reason"
+                accessibilityLabel="Motivo da exclusão"
                 value={deleteReason}
                 onChangeText={setDeleteReason}
                 autoCapitalize="sentences"
@@ -523,6 +527,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
               <Pressable
                 testID="account-data-delete-submit"
                 accessibilityRole="button"
+                accessibilityLabel="Solicitar exclusão da conta"
                 style={[
                   styles.privacyDangerAction,
                   !canSubmitErasure ? styles.disabledAction : null,

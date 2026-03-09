@@ -239,10 +239,22 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Pressable testID="course-back" style={styles.headerBtn} onPress={onBack}>
+        <Pressable
+          testID="course-back"
+          style={styles.headerBtn}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar para menu principal"
+        >
           <Text style={styles.headerBtnText}>Voltar</Text>
         </Pressable>
-        <Pressable testID="course-logout" style={[styles.headerBtn, styles.logoutBtn]} onPress={onLogout}>
+        <Pressable
+          testID="course-logout"
+          style={[styles.headerBtn, styles.logoutBtn]}
+          onPress={onLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
+        >
           <Text style={[styles.headerBtnText, styles.logoutBtnText]}>Sair</Text>
         </Pressable>
       </View>
@@ -258,7 +270,12 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
       ) : error ? (
         <View style={styles.center}>
           <Text style={styles.error}>{error}</Text>
-          <Pressable style={styles.retryBtn} onPress={() => void fetchCourseData()}>
+          <Pressable
+            style={styles.retryBtn}
+            onPress={() => void fetchCourseData()}
+            accessibilityRole="button"
+            accessibilityLabel="Tentar carregar curso novamente"
+          >
             <Text style={styles.retryBtnText}>Tentar novamente</Text>
           </Pressable>
         </View>
@@ -291,6 +308,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                         onPress={() => {
                           void openExternalUrl(live.meeting_url);
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Abrir live ${live.title}`}
                       >
                         <Text style={styles.actionBtnText}>Abrir live</Text>
                       </Pressable>
@@ -301,6 +320,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                         onPress={() => {
                           void openExternalUrl(live.recording_url);
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Abrir gravação ${live.title}`}
                       >
                         <Text style={styles.actionBtnText}>Abrir gravação</Text>
                       </Pressable>
@@ -323,6 +344,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                   onPress={() => {
                     void openPostDetail(post);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir post do curso ${post.title}`}
                 >
                   <Text style={styles.postTitle}>{post.title}</Text>
                   <Text style={styles.postMeta}>
@@ -343,7 +366,12 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Detalhe do post</Text>
-            <Pressable testID="course-detail-close" onPress={closeDetail}>
+            <Pressable
+              testID="course-detail-close"
+              onPress={closeDetail}
+              accessibilityRole="button"
+              accessibilityLabel="Fechar detalhe do post"
+            >
               <Text style={styles.closeText}>Fechar</Text>
             </Pressable>
           </View>
@@ -381,6 +409,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                           onPress={() => {
                             void openExternalUrl(asset.file_url);
                           }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Abrir material ${asset.title}`}
                         >
                           <Text style={styles.actionBtnText}>Abrir material</Text>
                         </Pressable>
@@ -413,6 +443,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                             onPress={() => {
                               void openExternalUrl(live.meeting_url);
                             }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Abrir live ${live.title}`}
                           >
                             <Text style={styles.actionBtnText}>Abrir live</Text>
                           </Pressable>
@@ -423,6 +455,8 @@ export function CourseScreen({ token, onBack, onLogout }: Props) {
                             onPress={() => {
                               void openExternalUrl(live.recording_url);
                             }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Abrir gravação ${live.title}`}
                           >
                             <Text style={styles.actionBtnText}>Abrir gravação</Text>
                           </Pressable>

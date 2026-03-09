@@ -712,7 +712,9 @@ export function BookReaderScreen({
     >
       {showHeader ? (
         <View style={styles.chapterHeader}>
-          <Text style={styles.sectionTitle}>{chapter ? chapter.title : "Capítulo"}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            {chapter ? chapter.title : "Capítulo"}
+          </Text>
           {loading ? <Text style={styles.loading}>Carregando...</Text> : null}
         </View>
       ) : null}

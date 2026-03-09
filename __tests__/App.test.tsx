@@ -685,6 +685,50 @@ describe("App", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
+  it("mantém fluxo crítico de navegação entre rotas principais", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-library");
+    expect(JSON.stringify(tree.toJSON())).toContain("LibraryScreen");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-caselaw");
+    expect(JSON.stringify(tree.toJSON())).toContain("CaseLawScreen");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-course");
+    expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
+    await pressByTestId(tree, "course-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-templates-bank");
+    expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
+    await pressByTestId(tree, "templates-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-community");
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityFeedScreen");
+    await pressByTestId(tree, "community-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-account");
+    expect(JSON.stringify(tree.toJSON())).toContain("AccountScreen");
+    await pressByTestId(tree, "account-back");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
   it("renderiza banner de notificação quando há item pendente", async () => {
     useNotificationCenterMock.mockReturnValue({
       currentBanner: {

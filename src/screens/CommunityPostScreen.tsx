@@ -165,11 +165,21 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
-        <Pressable onPress={onBack} style={styles.topBtn}>
+        <Pressable
+          onPress={onBack}
+          style={styles.topBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar para feed da comunidade"
+        >
           <Text style={styles.topBtnText}>Voltar</Text>
         </Pressable>
         <Text style={styles.title}>Post</Text>
-        <Pressable onPress={onLogout} style={styles.topBtn}>
+        <Pressable
+          onPress={onLogout}
+          style={styles.topBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
+        >
           <Text style={styles.topBtnText}>Sair</Text>
         </Pressable>
       </View>
@@ -215,6 +225,9 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
               testID="community-post-follow-toggle"
               onPress={() => void handleToggleFollow()}
               disabled={followUpdating}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: Boolean(currentPost.is_following), disabled: followUpdating }}
+              accessibilityLabel="Seguir notificações deste post"
               style={[
                 styles.followBtn,
                 currentPost.is_following && styles.followBtnActive,
@@ -235,7 +248,12 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
               </Text>
             </Pressable>
           </View>
-          <Pressable onPress={reportPost} style={styles.reportBtn}>
+          <Pressable
+            onPress={reportPost}
+            style={styles.reportBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Denunciar post"
+          >
             <Text style={styles.reportText}>Denunciar Post</Text>
           </Pressable>
         </View>
@@ -284,7 +302,12 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                     >
                       {item.moderation_state === "removed" ? "[Comentario removido pela moderacao]" : item.body}
                     </Text>
-                    <Pressable onPress={() => reportComment(item.id)} style={styles.reportMiniBtn}>
+                    <Pressable
+                      onPress={() => reportComment(item.id)}
+                      style={styles.reportMiniBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Denunciar comentário de ${item.author_display}`}
+                    >
                       <Text style={styles.reportMiniText}>Denunciar</Text>
                     </Pressable>
                   </View>
@@ -305,6 +328,8 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
           <Pressable
             onPress={handleSend}
             disabled={sending || !text.trim()}
+            accessibilityRole="button"
+            accessibilityLabel="Enviar comentário"
             style={[styles.sendBtn, (sending || !text.trim()) && styles.sendBtnDisabled]}
           >
             <Text style={styles.sendText}>{sending ? "Enviando…" : "Enviar"}</Text>
@@ -336,12 +361,19 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                 multiline
               />
               <View style={styles.modalActions}>
-                <Pressable onPress={closeReport} style={styles.modalBtn}>
+                <Pressable
+                  onPress={closeReport}
+                  style={styles.modalBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancelar denúncia"
+                >
                   <Text style={styles.modalBtnText}>Cancelar</Text>
                 </Pressable>
                 <Pressable
                   onPress={submitReport}
                   disabled={reporting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Enviar denúncia"
                   style={[styles.modalBtn, styles.modalBtnPrimary, reporting && styles.modalBtnDisabled]}
                 >
                   <Text style={styles.modalBtnTextPrimary}>
