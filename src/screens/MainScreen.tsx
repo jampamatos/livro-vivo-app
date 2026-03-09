@@ -124,7 +124,9 @@ export function MainScreen({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Livro Vivo</Text>
+      <Text style={styles.title} accessibilityRole="header">
+        Livro Vivo
+      </Text>
       <Text style={styles.subtitle}>Escolha um módulo</Text>
 
       {loading ? (

@@ -85,6 +85,13 @@ describe("CommunityPostScreen", () => {
     expect(listCommunityCommentsMock).toHaveBeenCalledWith("token-ok", 7);
     expect(json).toContain("Você está seguindo este post");
     expect(json).toContain("Deixar de seguir");
+    expect(tree!.root.findByProps({ accessibilityLabel: "Voltar para feed da comunidade" }).props.accessibilityRole).toBe(
+      "button"
+    );
+    expect(tree!.root.findByProps({ accessibilityLabel: "Sair da conta" }).props.accessibilityRole).toBe("button");
+    expect(tree!.root.findByProps({ accessibilityLabel: "Seguir notificações deste post" }).props.accessibilityRole).toBe(
+      "switch"
+    );
   });
 
   it("permite seguir e deixar de seguir o post pelo detalhe", async () => {

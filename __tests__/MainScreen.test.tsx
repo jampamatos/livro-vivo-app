@@ -281,4 +281,37 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-account" }).props.disabled).toBe(undefined);
   });
+
+  it("mantém baseline de acessibilidade dos botões do hub principal", async () => {
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 6,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
+    });
+
+    const tree = await renderScreen();
+    await flushEffects();
+
+    expect(tree.root.findByProps({ accessibilityLabel: "Busca Global" }).props.accessibilityRole).toBe("button");
+    expect(tree.root.findByProps({ accessibilityLabel: "Biblioteca" }).props.accessibilityRole).toBe("button");
+    expect(tree.root.findByProps({ accessibilityLabel: "Jurisprudência" }).props.accessibilityRole).toBe("button");
+    expect(tree.root.findByProps({ accessibilityLabel: "Comunidade" }).props.accessibilityRole).toBe("button");
+    expect(tree.root.findByProps({ accessibilityLabel: "Minha Conta" }).props.accessibilityRole).toBe("button");
+    expect(tree.root.findByProps({ accessibilityRole: "header" }).props.children).toBe("Livro Vivo");
+  });
 });

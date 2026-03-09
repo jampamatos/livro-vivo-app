@@ -301,7 +301,13 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
   );
 
   const renderItem = ({ item }: { item: CaseLaw }) => (
-    <Pressable style={styles.card} onPress={() => setSelected(item)}>
+    <Pressable
+      style={styles.card}
+      onPress={() => setSelected(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir jurisprudência ${item.court} ${item.case_number}`}
+      accessibilityHint="Abre o detalhe da ementa e ações de cópia e abertura do acórdão"
+    >
       <View style={styles.rowBetween}>
         <Text style={styles.title}>
           {item.court} • {item.case_number}
@@ -328,19 +334,30 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable style={styles.headerBtn} onPress={onBack}>
+        <Pressable
+          style={styles.headerBtn}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar para menu principal"
+        >
           <Text style={styles.headerBtnText}>Voltar</Text>
         </Pressable>
 
         <Text style={styles.headerTitle}>Jurisprudência</Text>
 
-        <Pressable style={styles.headerBtn} onPress={onLogout}>
+        <Pressable
+          style={styles.headerBtn}
+          onPress={onLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
+        >
           <Text style={styles.headerBtnText}>Sair</Text>
         </Pressable>
       </View>
 
       <View style={styles.searchBox}>
         <TextInput
+          accessibilityLabel="Busca por jurisprudência"
           value={q}
           onChangeText={setQ}
           placeholder="Buscar (ex: bagagem, overbooking, dano moral...)"
@@ -349,6 +366,7 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
           autoCorrect={false}
         />
         <TextInput
+          accessibilityLabel="Filtro por tribunal"
           value={court}
           onChangeText={setCourt}
           placeholder="Tribunal (opcional: STJ, TJMG...)"
@@ -366,7 +384,12 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
       ) : error ? (
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryBtn} onPress={onRefresh}>
+          <Pressable
+            style={styles.retryBtn}
+            onPress={onRefresh}
+            accessibilityRole="button"
+            accessibilityLabel="Tentar carregar jurisprudência novamente"
+          >
             <Text style={styles.retryText}>Tentar de novo</Text>
           </Pressable>
         </View>
@@ -403,7 +426,11 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
               <Text style={styles.modalTitle}>
                 {selected?.court} • {selected?.case_number}
               </Text>
-              <Pressable onPress={closeModal}>
+              <Pressable
+                onPress={closeModal}
+                accessibilityRole="button"
+                accessibilityLabel="Fechar detalhe da jurisprudência"
+              >
                 <Text style={styles.modalClose}>✕</Text>
               </Pressable>
             </View>
@@ -439,6 +466,8 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
                 style={[styles.copyBtn, !getEmentaPlain(selected) ? styles.actionBtnDisabled : null]}
                 onPress={onCopyEmenta}
                 disabled={!getEmentaPlain(selected)}
+                accessibilityRole="button"
+                accessibilityLabel="Copiar ementa"
               >
                 <Text style={styles.copyBtnText}>Copiar ementa</Text>
               </Pressable>
@@ -451,6 +480,8 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
                   }
                 }}
                 disabled={!selected?.url}
+                accessibilityRole="button"
+                accessibilityLabel="Abrir acórdão"
               >
                 <Text style={styles.openBtnText}>Abrir acórdão</Text>
               </Pressable>

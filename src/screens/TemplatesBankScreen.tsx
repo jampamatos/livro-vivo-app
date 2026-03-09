@@ -159,10 +159,22 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <Pressable testID="templates-back" style={styles.headerBtn} onPress={onBack}>
+        <Pressable
+          testID="templates-back"
+          style={styles.headerBtn}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar para menu principal"
+        >
           <Text style={styles.headerBtnText}>Voltar</Text>
         </Pressable>
-        <Pressable testID="templates-logout" style={[styles.headerBtn, styles.logoutBtn]} onPress={onLogout}>
+        <Pressable
+          testID="templates-logout"
+          style={[styles.headerBtn, styles.logoutBtn]}
+          onPress={onLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Sair da conta"
+        >
           <Text style={[styles.headerBtnText, styles.logoutBtnText]}>Sair</Text>
         </Pressable>
       </View>
@@ -178,7 +190,13 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
       ) : error ? (
         <View style={styles.center}>
           <Text style={styles.error}>{error}</Text>
-          <Pressable testID="templates-retry" style={styles.retryBtn} onPress={() => void fetchTemplates()}>
+          <Pressable
+            testID="templates-retry"
+            style={styles.retryBtn}
+            onPress={() => void fetchTemplates()}
+            accessibilityRole="button"
+            accessibilityLabel="Tentar carregar banco de peças novamente"
+          >
             <Text style={styles.retryBtnText}>Tentar novamente</Text>
           </Pressable>
         </View>
@@ -197,6 +215,8 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
                 onPress={() => {
                   void openTemplateDetail(piece);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Abrir detalhe da peça ${piece.title}`}
               >
                 <Text style={styles.cardTitle}>{piece.title}</Text>
                 <Text style={styles.cardMeta}>
@@ -222,6 +242,8 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
                       event.stopPropagation?.();
                       void startDownload(piece);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Baixar peça ${piece.title}`}
                   >
                     <Text style={styles.actionBtnText}>{downloadingId === piece.id ? "Baixando…" : "Baixar"}</Text>
                   </Pressable>
@@ -236,7 +258,12 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Detalhe da peça</Text>
-            <Pressable testID="templates-detail-close" onPress={closeDetail}>
+            <Pressable
+              testID="templates-detail-close"
+              onPress={closeDetail}
+              accessibilityRole="button"
+              accessibilityLabel="Fechar detalhe da peça"
+            >
               <Text style={styles.closeText}>Fechar</Text>
             </Pressable>
           </View>
@@ -293,6 +320,8 @@ export function TemplatesBankScreen({ token, onBack, onLogout }: Props) {
                 onPress={() => {
                   void startDownload(selectedTemplate);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Baixar peça ${selectedTemplate.title}`}
               >
                 <Text style={styles.actionBtnText}>
                   {downloadingId === selectedTemplate.id ? "Baixando…" : "Baixar peça"}

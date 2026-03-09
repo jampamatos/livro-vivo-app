@@ -150,6 +150,15 @@ describe("AccountScreen", () => {
       checked: true,
       disabled: false,
     });
+    expect(tree.root.findByProps({ testID: "account-data-export" }).props.accessibilityLabel).toBe(
+      "Exportar meus dados"
+    );
+    expect(tree.root.findByProps({ testID: "account-data-export-share" }).props.accessibilityLabel).toBe(
+      "Compartilhar JSON exportado"
+    );
+    expect(tree.root.findByProps({ testID: "account-data-delete-submit" }).props.accessibilityLabel).toBe(
+      "Solicitar exclusão da conta"
+    );
   });
 
   it("mostra plano essencial com módulos correspondentes", async () => {

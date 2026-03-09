@@ -89,7 +89,9 @@ export function LoginScreen({ onAuthSuccess }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          {title}
+        </Text>
 
         <Text style={styles.subtitle}>
           {mode === "login"
@@ -99,6 +101,8 @@ export function LoginScreen({ onAuthSuccess }: Props) {
 
         <Text style={styles.label}>E-mail</Text>
         <TextInput
+          testID="login-email-input"
+          accessibilityLabel="E-mail"
           value={email}
           onChangeText={setEmail}
           placeholder="seuemail@exemplo.com"
@@ -110,6 +114,8 @@ export function LoginScreen({ onAuthSuccess }: Props) {
 
         <Text style={styles.label}>Senha</Text>
         <TextInput
+          testID="login-password-input"
+          accessibilityLabel="Senha"
           value={password}
           onChangeText={setPassword}
           placeholder="••••••••"
@@ -123,6 +129,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
           <>
             <Text style={styles.label}>Nome (opcional)</Text>
             <TextInput
+              accessibilityLabel="Nome opcional"
               value={name}
               onChangeText={setName}
               placeholder="Seu nome"
@@ -132,6 +139,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
 
             <Text style={styles.label}>Profissão (opcional)</Text>
             <TextInput
+              accessibilityLabel="Profissão opcional"
               value={profession}
               onChangeText={setProfession}
               placeholder="Ex: Advogado(a)"
@@ -141,17 +149,35 @@ export function LoginScreen({ onAuthSuccess }: Props) {
           </>
         ) : null}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <Text style={styles.error} accessibilityRole="alert">
+            {error}
+          </Text>
+        ) : null}
 
-        <Pressable style={[styles.button, busy && styles.buttonDisabled]} onPress={handleSubmit} disabled={busy}>
+        <Pressable
+          testID="login-submit-real"
+          style={[styles.button, busy && styles.buttonDisabled]}
+          onPress={handleSubmit}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={mode === "login" ? "Enviar formulário de login" : "Enviar formulário de cadastro"}
+          accessibilityHint={mode === "login" ? "Autentica sua conta" : "Cria sua conta e autentica em seguida"}
+        >
           <Text style={styles.buttonText}>{busy ? "Aguarde..." : title}</Text>
         </Pressable>
 
         <Pressable
+          testID="login-toggle-mode"
           onPress={() => {
             setError(null);
             setMode((m) => (m === "login" ? "register" : "login"));
           }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            mode === "login" ? "Ir para tela de cadastro" : "Ir para tela de login"
+          }
+          accessibilityHint="Alterna entre os modos de autenticação"
         >
           <Text style={styles.link}>
             {mode === "login" ? "Não tem conta? Criar agora" : "Já tem conta? Entrar"}
