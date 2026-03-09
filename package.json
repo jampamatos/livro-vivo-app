@@ -4,9 +4,10 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo run:android --all-arch",
-    "android:emulator": "ORG_GRADLE_PROJECT_reactNativeArchitectures=x86_64 expo run:android",
-    "android:device": "ORG_GRADLE_PROJECT_reactNativeArchitectures=armeabi-v7a,arm64-v8a expo run:android -d",
+    "android": "npm run android:clean-install",
+    "android:emulator": "ORG_GRADLE_PROJECT_reactNativeArchitectures=x86_64 npm run android:clean-install",
+    "android:device": "ORG_GRADLE_PROJECT_reactNativeArchitectures=armeabi-v7a,arm64-v8a npm run android:clean-install -- -d",
+    "android:clean-install": "node scripts/android-clean-install.mjs",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web",
