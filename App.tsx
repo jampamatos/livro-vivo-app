@@ -17,6 +17,7 @@ import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
 import { CourseScreen } from "./src/screens/CourseScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
+import { MainSearchScreen } from "./src/screens/MainSearchScreen";
 import { MainScreen } from "./src/screens/MainScreen";
 import { TemplatesBankScreen } from "./src/screens/TemplatesBankScreen";
 
@@ -28,9 +29,11 @@ import { useNotificationCenter } from "./src/notifications/useNotificationCenter
 
 import type { AuthSession } from "./src/auth/authSession";
 import type { CommunityPost } from "./src/api/community";
+import type { GlobalSearchResult } from "./src/api/search";
 
 type Route = 
   | "main"
+  | "mainSearch"
   | "account"
   | "caselaw"
   | "community"
@@ -40,6 +43,15 @@ type Route =
   | "library"
   | "templatesBank";
 
+type LibraryOpenRequest = {
+  bookId: number;
+  chapterId?: number;
+  chapterSlug?: string;
+  query?: string;
+  matchStart?: number;
+  matchEnd?: number;
+};
+
 
 export default function App() {
   const [loading, setLoading] = React.useState(true);
@@ -47,8 +59,10 @@ export default function App() {
 
   const [route, setRoute] = React.useState<Route>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
+  const [libraryOpenRequest, setLibraryOpenRequest] = React.useState<LibraryOpenRequest | null>(null);
   const openMainFromNotification = React.useCallback(() => {
     setSelectedPost(null);
+    setLibraryOpenRequest(null);
     setRoute("main");
   }, []);
   const notificationCenter = useNotificationCenter(session?.accessToken ?? null, openMainFromNotification);
@@ -58,12 +72,14 @@ export default function App() {
   const navigateBack = React.useCallback(() => {
     switch (route) {
       case "account":
+      case "mainSearch":
       case "caselaw":
       case "community":
       case "course":
       case "library":
       case "templatesBank":
         setSelectedPost(null);
+        setLibraryOpenRequest(null);
         setRoute("main");
         return true;
       case "communityNewPost":
@@ -74,6 +90,7 @@ export default function App() {
         return true;
       default:
         setSelectedPost(null);
+        setLibraryOpenRequest(null);
         setRoute("main");
         return true;
     }
@@ -114,6 +131,7 @@ export default function App() {
   const handleAuthSuccess = async (newSession: AuthSession) => {
     await setAuthSession(newSession);
     setSession(newSession);
+    setLibraryOpenRequest(null);
     setRoute("main");
   };
 
@@ -128,10 +146,88 @@ export default function App() {
     } finally {
       await clearAuthSession();
       setSelectedPost(null);
+      setLibraryOpenRequest(null);
       setSession(null);
       setRoute("account");
     }
   };
+
+  const handleOpenGlobalSearchResult = React.useCallback((result: GlobalSearchResult) => {
+    const routeTarget = result?.target?.route;
+    const params = (result?.target?.params ?? {}) as Record<string, unknown>;
+
+    if (routeTarget === "community_post") {
+      const postId = Number(params.post_id);
+      if (Number.isFinite(postId) && postId > 0) {
+        const nowIso = new Date().toISOString();
+        setSelectedPost({
+          id: postId,
+          author: 0,
+          author_display: "Comunidade",
+          category: null,
+          title: result.title || "Post da comunidade",
+          body: result.snippet || "",
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+        setLibraryOpenRequest(null);
+        setRoute("communityPost");
+        return;
+      }
+      setLibraryOpenRequest(null);
+      setRoute("community");
+      return;
+    }
+
+    if (routeTarget === "caselaw") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setRoute("caselaw");
+      return;
+    }
+
+    if (routeTarget === "library") {
+      const bookId = Number(params.book_id);
+      const chapterId = Number(params.chapter_id);
+      const matchStart = Number(params.match_start);
+      const matchEnd = Number(params.match_end);
+
+      setLibraryOpenRequest({
+        bookId: Number.isFinite(bookId) ? bookId : 0,
+        chapterId: Number.isFinite(chapterId) ? chapterId : undefined,
+        chapterSlug: typeof params.chapter_slug === "string" ? params.chapter_slug : undefined,
+        query: typeof params.q === "string" ? params.q : undefined,
+        matchStart: Number.isFinite(matchStart) ? matchStart : undefined,
+        matchEnd: Number.isFinite(matchEnd) ? matchEnd : undefined,
+      });
+      setSelectedPost(null);
+      setRoute("library");
+      return;
+    }
+
+    if (result.source === "community") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setRoute("community");
+      return;
+    }
+    if (result.source === "caselaw") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setRoute("caselaw");
+      return;
+    }
+    if (result.source === "library") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setRoute("library");
+      return;
+    }
+
+    setSelectedPost(null);
+    setLibraryOpenRequest(null);
+    setRoute("main");
+  }, []);
 
   if (loading) {
     return (
@@ -158,7 +254,11 @@ export default function App() {
     content = (
       <MainScreen
         token={token}
-        onOpenLibrary={() => setRoute("library")}
+        onOpenSearch={() => setRoute("mainSearch")}
+        onOpenLibrary={() => {
+          setLibraryOpenRequest(null);
+          setRoute("library");
+        }}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
         onOpenTemplatesBank={() => setRoute("templatesBank")}
@@ -179,8 +279,24 @@ export default function App() {
     );
   } else if (route === "caselaw") {
     content = <CaseLawScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
+  } else if (route === "mainSearch") {
+    content = (
+      <MainSearchScreen
+        token={token}
+        onBack={navigateBack}
+        onLogout={handleLogout}
+        onOpenResult={handleOpenGlobalSearchResult}
+      />
+    );
   } else if (route === "library") {
-    content = <LibraryScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
+    content = (
+      <LibraryScreen
+        token={token}
+        onBack={navigateBack}
+        onLogout={handleLogout}
+        initialOpenRequest={libraryOpenRequest}
+      />
+    );
   } else if (route === "course") {
     content = <CourseScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
   } else if (route === "templatesBank") {
@@ -228,7 +344,11 @@ export default function App() {
     content = (
       <MainScreen
         token={token}
-        onOpenLibrary={() => setRoute("library")}
+        onOpenSearch={() => setRoute("mainSearch")}
+        onOpenLibrary={() => {
+          setLibraryOpenRequest(null);
+          setRoute("library");
+        }}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
         onOpenTemplatesBank={() => setRoute("templatesBank")}

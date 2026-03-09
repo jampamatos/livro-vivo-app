@@ -20,6 +20,7 @@ async function flushEffects(cycles = 2) {
 
 async function renderScreen({
   token = "token-ok",
+  onOpenSearch = jest.fn(),
   onOpenLibrary = jest.fn(),
   onOpenCaseLaw = jest.fn(),
   onOpenCommunity = jest.fn(),
@@ -28,6 +29,7 @@ async function renderScreen({
   onOpenAccount = jest.fn(),
 }: {
   token?: string;
+  onOpenSearch?: jest.Mock;
   onOpenLibrary?: jest.Mock;
   onOpenCaseLaw?: jest.Mock;
   onOpenCommunity?: jest.Mock;
@@ -40,6 +42,7 @@ async function renderScreen({
     tree = renderer.create(
       <MainScreen
         token={token}
+        onOpenSearch={onOpenSearch}
         onOpenLibrary={onOpenLibrary}
         onOpenCaseLaw={onOpenCaseLaw}
         onOpenCommunity={onOpenCommunity}
@@ -89,6 +92,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-search" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-pieces" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(false);
   });
@@ -122,6 +126,7 @@ describe("MainScreen", () => {
     expect(json).toContain("Plano Profissional");
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-search" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-pieces" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(true);
@@ -148,6 +153,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-search" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-account" }).props.disabled).toBe(undefined);
   });
 
@@ -174,6 +180,7 @@ describe("MainScreen", () => {
     });
 
     const onOpenLibrary = jest.fn();
+    const onOpenSearch = jest.fn();
     const onOpenCaseLaw = jest.fn();
     const onOpenCommunity = jest.fn();
     const onOpenTemplatesBank = jest.fn();
@@ -181,6 +188,7 @@ describe("MainScreen", () => {
     const onOpenAccount = jest.fn();
 
     const tree = await renderScreen({
+      onOpenSearch,
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
@@ -191,12 +199,14 @@ describe("MainScreen", () => {
     await flushEffects();
 
     await act(async () => {
+      tree.root.findByProps({ testID: "main-search" }).props.onPress();
       tree.root.findByProps({ testID: "main-library" }).props.onPress();
       tree.root.findByProps({ testID: "main-community" }).props.onPress();
       tree.root.findByProps({ testID: "main-account" }).props.onPress();
     });
 
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(true);
+    expect(onOpenSearch).toHaveBeenCalledTimes(1);
     expect(onOpenLibrary).toHaveBeenCalledTimes(1);
     expect(onOpenCommunity).toHaveBeenCalledTimes(1);
     expect(onOpenAccount).toHaveBeenCalledTimes(1);
@@ -233,6 +243,7 @@ describe("MainScreen", () => {
     expect(JSON.stringify(tree.toJSON())).toContain("Acesso à comunidade suspenso");
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(false);
+    expect(tree.root.findByProps({ testID: "main-search" }).props.disabled).toBe(false);
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(false);
   });
 
@@ -265,6 +276,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ testID: "main-library" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-caselaw" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-community" }).props.disabled).toBe(true);
+    expect(tree.root.findByProps({ testID: "main-search" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-pieces" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(true);
     expect(tree.root.findByProps({ testID: "main-account" }).props.disabled).toBe(undefined);
