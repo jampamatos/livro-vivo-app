@@ -42,6 +42,7 @@ type Props = {
   token: string;
   onBack: () => void;
   onLogout: () => Promise<void> | void;
+  initialOpenRequest?: LibraryOpenRequest | null;
 };
 
 type OpenBookState = {
@@ -63,6 +64,15 @@ type ReaderFocus = {
   matchEnd: number;
 };
 
+type LibraryOpenRequest = {
+  bookId: number;
+  chapterId?: number;
+  chapterSlug?: string;
+  query?: string;
+  matchStart?: number;
+  matchEnd?: number;
+};
+
 type AnnotationDraft = ReaderAnnotationDraft;
 
 type ChapterLoadParams = {
@@ -73,7 +83,7 @@ type ChapterLoadParams = {
   restoreOffset?: number;
 };
 
-export function LibraryScreen({ token, onBack, onLogout }: Props) {
+export function LibraryScreen({ token, onBack, onLogout, initialOpenRequest = null }: Props) {
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
 
   const [loadingBooks, setLoadingBooks] = React.useState(true);
@@ -121,6 +131,7 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     chapterSlug: string;
     scrollOffset: number;
   } | null>(null);
+  const handledInitialOpenKeyRef = React.useRef<string | null>(null);
 
   const webRootStyle = React.useMemo(() => {
     return Platform.OS === "web" ? { height: windowHeight } : null;
@@ -252,40 +263,8 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
     [formatApiError, scheduleReadingProgressSave, token]
   );
 
-  const toggleBook = React.useCallback(
-    async (bookId: number) => {
-      if (openBook?.bookId === bookId) {
-        setOpenBook(null);
-        setOpenBookError(null);
-        setActiveChapter(null);
-        setReaderFocus(null);
-        setReaderInitialOffset(0);
-        setReaderMode(false);
-        setReaderSearchOpen(false);
-        setReaderSummaryOpen(false);
-        setAnnotationMode(false);
-        setReaderFontScale(1);
-        setAnnotations([]);
-        setAnnotationsSyncError(null);
-        setAnnotationsLoading(false);
-        setAnnotationDraft(null);
-        setPendingNativeDraft(null);
-        setAnnotationDraftNote("");
-        setAnnotationDraftColor("yellow");
-        setAnnotationSaving(false);
-        setAnnotationDetailId(null);
-        setAnnotationDeleting(false);
-        setChapterError(null);
-        resetSearch();
-        if (saveProgressTimerRef.current) {
-          clearTimeout(saveProgressTimerRef.current);
-          saveProgressTimerRef.current = null;
-        }
-        void flushReadingProgress();
-        return;
-      }
-
-      setOpenBookLoading(true);
+  const resetReaderState = React.useCallback(
+    (resetBookSearch: boolean) => {
       setOpenBookError(null);
       setChapterError(null);
       setActiveChapter(null);
@@ -306,13 +285,28 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
       setAnnotationSaving(false);
       setAnnotationDetailId(null);
       setAnnotationDeleting(false);
-      resetSearch();
+      if (resetBookSearch) {
+        resetSearch();
+      }
+    },
+    [resetSearch]
+  );
+
+  const openBookWithRequest = React.useCallback(
+    async (request: LibraryOpenRequest) => {
+      const bookId = Number(request.bookId);
+      if (!Number.isFinite(bookId) || bookId <= 0) {
+        return;
+      }
+
+      setOpenBookLoading(true);
+      resetReaderState(true);
 
       if (saveProgressTimerRef.current) {
         clearTimeout(saveProgressTimerRef.current);
         saveProgressTimerRef.current = null;
       }
-      void flushReadingProgress();
+      await flushReadingProgress();
 
       try {
         const [versionResponse, chaptersResponse] = await Promise.all([
@@ -327,26 +321,92 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
           chapters,
         });
 
-        if (chapters.length > 0) {
+        if (chapters.length === 0) {
+          return;
+        }
+
+        const requestedSlug = (request.chapterSlug || "").trim();
+        const hasRequestedSlug = requestedSlug
+          ? chapters.some((chapter) => chapter.slug === requestedSlug)
+          : false;
+
+        let chapterSlug: string;
+        let restoreOffset = 0;
+        let focus: ReaderFocus | null = null;
+        const normalizedQuery = (request.query || "").trim();
+
+        if (hasRequestedSlug) {
+          chapterSlug = requestedSlug;
+          if (normalizedQuery) {
+            setQuery(normalizedQuery);
+            setSubmittedQuery(normalizedQuery);
+            setHasSearched(true);
+
+            const rawMatchStart = Number(request.matchStart);
+            const rawMatchEnd = Number(request.matchEnd);
+            if (Number.isFinite(rawMatchStart) && Number.isFinite(rawMatchEnd)) {
+              const safeStart = Math.max(0, Math.floor(rawMatchStart));
+              const safeEnd = Math.max(safeStart, Math.floor(rawMatchEnd));
+              focus = {
+                query: normalizedQuery,
+                matchStart: safeStart,
+                matchEnd: safeEnd,
+              };
+            } else {
+              setSearchLoading(true);
+              setSearchError(null);
+              try {
+                const response = await searchBook(token, bookId, normalizedQuery, {
+                  limit: 20,
+                  offset: 0,
+                  bookVersionId: versionResponse.version.id,
+                });
+                setSearchResults(response.results ?? []);
+                setSearchCount(typeof response.count === "number" ? response.count : null);
+
+                const chapterHit = (response.results ?? []).find((item) => {
+                  if (item.chapter_slug === requestedSlug) return true;
+                  if (typeof request.chapterId === "number") {
+                    return item.chapter_id === request.chapterId;
+                  }
+                  return false;
+                });
+                if (chapterHit) {
+                  focus = {
+                    query: normalizedQuery,
+                    matchStart: chapterHit.match_start,
+                    matchEnd: chapterHit.match_end,
+                  };
+                }
+              } catch (error) {
+                setSearchResults([]);
+                setSearchCount(null);
+                setSearchError(formatApiError(error, "Erro ao buscar no capítulo"));
+              } finally {
+                setSearchLoading(false);
+              }
+            }
+          }
+        } else {
           const restored = await getReadingProgress(bookId, versionResponse.version.id);
-          const chapterFromProgress =
+          chapterSlug =
             restored && chapters.some((chapter) => chapter.slug === restored.chapterSlug)
               ? restored.chapterSlug
               : chapters[0].slug;
-          const restoreOffset =
-            restored && restored.chapterSlug === chapterFromProgress
+          restoreOffset =
+            restored && restored.chapterSlug === chapterSlug
               ? restored.scrollOffset
               : 0;
-
-          await loadChapter({
-            bookId,
-            versionId: versionResponse.version.id,
-            chapterSlug: chapterFromProgress,
-            focus: null,
-            restoreOffset,
-          });
-          setReaderMode(true);
         }
+
+        await loadChapter({
+          bookId,
+          versionId: versionResponse.version.id,
+          chapterSlug,
+          focus,
+          restoreOffset,
+        });
+        setReaderMode(true);
       } catch (error) {
         setOpenBook(null);
         setReaderMode(false);
@@ -355,8 +415,41 @@ export function LibraryScreen({ token, onBack, onLogout }: Props) {
         setOpenBookLoading(false);
       }
     },
-    [flushReadingProgress, formatApiError, loadChapter, openBook?.bookId, resetSearch, token]
+    [flushReadingProgress, formatApiError, loadChapter, resetReaderState, token]
   );
+
+  const toggleBook = React.useCallback(
+    async (bookId: number) => {
+      if (openBook?.bookId === bookId) {
+        setOpenBook(null);
+        resetReaderState(true);
+        if (saveProgressTimerRef.current) {
+          clearTimeout(saveProgressTimerRef.current);
+          saveProgressTimerRef.current = null;
+        }
+        void flushReadingProgress();
+        return;
+      }
+
+      await openBookWithRequest({ bookId });
+    },
+    [flushReadingProgress, openBook?.bookId, openBookWithRequest, resetReaderState]
+  );
+
+  React.useEffect(() => {
+    if (!initialOpenRequest || !initialOpenRequest.bookId) {
+      handledInitialOpenKeyRef.current = null;
+      return;
+    }
+
+    const requestKey = JSON.stringify(initialOpenRequest);
+    if (handledInitialOpenKeyRef.current === requestKey) {
+      return;
+    }
+
+    handledInitialOpenKeyRef.current = requestKey;
+    void openBookWithRequest(initialOpenRequest);
+  }, [initialOpenRequest, openBookWithRequest]);
 
   const runSearch = React.useCallback(async () => {
     if (!openBook) return;

@@ -5,6 +5,7 @@ import { getMyEntitlements, type EntitlementsResponse, type SubscriptionTier } f
 
 type Props = {
   token: string;
+  onOpenSearch: () => void;
   onOpenLibrary: () => void;
   onOpenCaseLaw: () => void;
   onOpenCommunity: () => void;
@@ -73,6 +74,7 @@ function HubButton({
 
 export function MainScreen({
   token,
+  onOpenSearch,
   onOpenLibrary,
   onOpenCaseLaw,
   onOpenCommunity,
@@ -116,6 +118,7 @@ export function MainScreen({
     loading,
     appWideBanLabel ?? communityBanLabel
   );
+  const searchAccess = resolveAccess("subscription", tier, loading, appWideBanLabel);
   const piecesAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
   const courseAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
 
@@ -133,6 +136,14 @@ export function MainScreen({
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.grid}>
+        <HubButton
+          label="Busca Global"
+          testID="main-search"
+          onPress={onOpenSearch}
+          disabled={searchAccess.disabled}
+          badge={searchAccess.badge}
+          hint="Livro, jurisprudência e comunidade."
+        />
         <HubButton
           label="Biblioteca"
           testID="main-library"

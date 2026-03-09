@@ -62,6 +62,7 @@ jest.mock("../src/screens/MainScreen", () => {
   const { View, Text, Pressable } = require("react-native");
   return {
     MainScreen: ({
+      onOpenSearch,
       onOpenLibrary,
       onOpenCaseLaw,
       onOpenCommunity,
@@ -69,6 +70,7 @@ jest.mock("../src/screens/MainScreen", () => {
       onOpenCourse,
       onOpenAccount,
     }: {
+      onOpenSearch: () => void;
       onOpenLibrary: () => void;
       onOpenCaseLaw: () => void;
       onOpenCommunity: () => void;
@@ -78,6 +80,9 @@ jest.mock("../src/screens/MainScreen", () => {
     }) => (
       <View>
         <Text>MainScreen</Text>
+        <Pressable testID="main-open-search" onPress={onOpenSearch}>
+          <Text>Search</Text>
+        </Pressable>
         <Pressable testID="main-open-library" onPress={onOpenLibrary}>
           <Text>Library</Text>
         </Pressable>
@@ -95,6 +100,84 @@ jest.mock("../src/screens/MainScreen", () => {
         </Pressable>
         <Pressable testID="main-open-account" onPress={onOpenAccount}>
           <Text>Account</Text>
+        </Pressable>
+      </View>
+    ),
+  };
+});
+
+jest.mock("../src/screens/MainSearchScreen", () => {
+  const ReactLocal = require("react");
+  const { View, Text, Pressable } = require("react-native");
+  return {
+    MainSearchScreen: ({
+      onBack,
+      onLogout,
+      onOpenResult,
+    }: {
+      onBack: () => void;
+      onLogout: () => void;
+      onOpenResult: (result: any) => void;
+    }) => (
+      <View>
+        <Text>MainSearchScreen</Text>
+        <Pressable testID="search-back" onPress={onBack}>
+          <Text>Back</Text>
+        </Pressable>
+        <Pressable testID="search-logout" onPress={onLogout}>
+          <Text>Logout</Text>
+        </Pressable>
+        <Pressable
+          testID="search-open-library-result"
+          onPress={() =>
+            onOpenResult({
+              type: "library_chapter",
+              source: "library",
+              title: "Capítulo de busca",
+              snippet: "Trecho",
+              target: {
+                route: "library",
+                params: {
+                  book_id: 1,
+                  chapter_id: 11,
+                  chapter_slug: "capitulo-da-busca",
+                  q: "bagagem",
+                  match_start: 24,
+                  match_end: 31,
+                },
+              },
+            })
+          }
+        >
+          <Text>OpenLibraryResult</Text>
+        </Pressable>
+        <Pressable
+          testID="search-open-caselaw-result"
+          onPress={() =>
+            onOpenResult({
+              type: "caselaw",
+              source: "caselaw",
+              title: "REsp 123",
+              snippet: "Ementa",
+              target: { route: "caselaw", params: { caselaw_id: 55 } },
+            })
+          }
+        >
+          <Text>OpenCaseLawResult</Text>
+        </Pressable>
+        <Pressable
+          testID="search-open-community-result"
+          onPress={() =>
+            onOpenResult({
+              type: "community_post",
+              source: "community",
+              title: "Post da busca",
+              snippet: "Conteúdo",
+              target: { route: "community_post", params: { post_id: 77 } },
+            })
+          }
+        >
+          <Text>OpenCommunityResult</Text>
         </Pressable>
       </View>
     ),
@@ -137,7 +220,14 @@ jest.mock("../src/screens/CaseLawScreen", () => {
 jest.mock("../src/screens/LibraryScreen", () => {
   const ReactLocal = require("react");
   const { View, Text } = require("react-native");
-  return { LibraryScreen: () => <View><Text>LibraryScreen</Text></View> };
+  return {
+    LibraryScreen: ({ initialOpenRequest }: { initialOpenRequest?: unknown }) => (
+      <View>
+        <Text>LibraryScreen</Text>
+        <Text>{`library-request:${JSON.stringify(initialOpenRequest ?? null)}`}</Text>
+      </View>
+    ),
+  };
 });
 
 jest.mock("../src/screens/CourseScreen", () => {
@@ -490,6 +580,46 @@ describe("App", () => {
     await pressByTestId(tree, "community-created");
     expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
     expect(JSON.stringify(tree.toJSON())).toContain("post:Criado");
+  });
+
+  it("navega para busca global e roteia cada tipo de resultado", async () => {
+    getAuthSessionMock.mockResolvedValueOnce({
+      accessToken: "stored-token",
+      refreshToken: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    await pressByTestId(tree, "main-open-search");
+    expect(JSON.stringify(tree.toJSON())).toContain("MainSearchScreen");
+
+    await pressByTestId(tree, "search-open-library-result");
+    expect(JSON.stringify(tree.toJSON())).toContain("LibraryScreen");
+    expect(JSON.stringify(tree.toJSON())).toContain('library-request:{\\"bookId\\":1');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"chapterSlug\\":\\"capitulo-da-busca\\"');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"query\\":\\"bagagem\\"');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"matchStart\\":24');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"matchEnd\\":31');
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-search");
+    await pressByTestId(tree, "search-open-caselaw-result");
+    expect(JSON.stringify(tree.toJSON())).toContain("CaseLawScreen");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-search");
+    await pressByTestId(tree, "search-open-community-result");
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
+    expect(JSON.stringify(tree.toJSON())).toContain("post:Post da busca");
   });
 
   it("usa o botão físico do Android para voltar uma tela sem fechar o app", async () => {
