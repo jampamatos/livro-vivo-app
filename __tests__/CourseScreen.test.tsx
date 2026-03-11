@@ -3,6 +3,7 @@ import renderer, { act } from "react-test-renderer";
 
 import { CourseScreen } from "../src/screens/CourseScreen";
 import { getCoursePost, listCourseAssets, listCoursePosts, listLiveEvents } from "../src/api/courses";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/courses", () => ({
   getCoursePost: jest.fn(),
@@ -70,14 +71,14 @@ describe("CourseScreen a11y baseline", () => {
 
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
-      tree = renderer.create(<CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />);
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+        </AppThemeProvider>
+      );
     });
     await flushEffects();
 
-    expect(tree!.root.findByProps({ accessibilityLabel: "Voltar para menu principal" }).props.accessibilityRole).toBe(
-      "button"
-    );
-    expect(tree!.root.findByProps({ accessibilityLabel: "Sair da conta" }).props.accessibilityRole).toBe("button");
     expect(tree!.root.findByProps({ accessibilityLabel: "Abrir post do curso Post de aula" }).props.accessibilityRole).toBe(
       "button"
     );

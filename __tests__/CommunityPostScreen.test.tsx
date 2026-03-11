@@ -11,6 +11,7 @@ import {
   listCommunityComments,
   unfollowCommunityPost,
 } from "../src/api/community";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/community", () => ({
   createCommunityComment: jest.fn(),
@@ -70,12 +71,14 @@ describe("CommunityPostScreen", () => {
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(
-        <CommunityPostScreen
-          token="token-ok"
-          post={buildPost()}
-          onBack={jest.fn()}
-          onLogout={jest.fn()}
-        />
+        <AppThemeProvider>
+          <CommunityPostScreen
+            token="token-ok"
+            post={buildPost()}
+            onBack={jest.fn()}
+            onLogout={jest.fn()}
+          />
+        </AppThemeProvider>
       );
     });
     await flushEffects();
@@ -103,12 +106,14 @@ describe("CommunityPostScreen", () => {
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(
-        <CommunityPostScreen
-          token="token-ok"
-          post={buildPost()}
-          onBack={jest.fn()}
-          onLogout={jest.fn()}
-        />
+        <AppThemeProvider>
+          <CommunityPostScreen
+            token="token-ok"
+            post={buildPost()}
+            onBack={jest.fn()}
+            onLogout={jest.fn()}
+          />
+        </AppThemeProvider>
       );
     });
     await flushEffects();

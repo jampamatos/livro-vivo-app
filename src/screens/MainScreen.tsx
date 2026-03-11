@@ -2,6 +2,7 @@ import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { getMyEntitlements, type EntitlementsResponse, type SubscriptionTier } from "../api/entitlements";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 type Props = {
   token: string;
@@ -42,6 +43,7 @@ function HubButton({
   badge,
   hint,
   testID,
+  colors,
 }: {
   label: string;
   onPress?: () => void;
@@ -49,6 +51,13 @@ function HubButton({
   badge?: string | null;
   hint?: string | null;
   testID?: string;
+  colors: {
+    border: string;
+    surface: string;
+    surfaceMuted: string;
+    text: string;
+    textMuted: string;
+  };
 }) {
   return (
     <Pressable
@@ -61,13 +70,14 @@ function HubButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        { borderColor: colors.border, backgroundColor: colors.surface },
         disabled && styles.buttonDisabled,
-        pressed && !disabled && styles.buttonPressed,
+        pressed && !disabled && [styles.buttonPressed, { backgroundColor: colors.surfaceMuted }],
       ]}
     >
-      <Text style={styles.buttonText}>{label}</Text>
-      {badge ? <Text style={styles.badge}>{badge}</Text> : null}
-      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      <Text style={[styles.buttonText, { color: colors.text }]}>{label}</Text>
+      {badge ? <Text style={[styles.badge, { color: colors.textMuted }]}>{badge}</Text> : null}
+      {hint ? <Text style={[styles.hint, { color: colors.textMuted }]}>{hint}</Text> : null}
     </Pressable>
   );
 }
@@ -82,6 +92,7 @@ export function MainScreen({
   onOpenCourse,
   onOpenAccount,
 }: Props) {
+  const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
@@ -123,19 +134,19 @@ export function MainScreen({
   const courseAccess = resolveAccess("professional", tier, loading, appWideBanLabel);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title} accessibilityRole="header">
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
+      <Text style={[styles.title, { color: theme.colors.text }]} accessibilityRole="header">
         Livro Vivo
       </Text>
-      <Text style={styles.subtitle}>Escolha um módulo</Text>
+      <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Escolha um módulo</Text>
 
       {loading ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator />
-          <Text style={styles.loadingText}>Verificando permissões…</Text>
+          <Text style={[styles.loadingText, { color: theme.colors.textMuted }]}>Verificando permissões…</Text>
         </View>
       ) : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
 
       <View style={styles.grid}>
         <HubButton
@@ -145,6 +156,7 @@ export function MainScreen({
           disabled={searchAccess.disabled}
           badge={searchAccess.badge}
           hint="Livro, jurisprudência e comunidade."
+          colors={theme.colors}
         />
         <HubButton
           label="Biblioteca"
@@ -152,6 +164,7 @@ export function MainScreen({
           onPress={onOpenLibrary}
           disabled={libraryAccess.disabled}
           badge={libraryAccess.badge}
+          colors={theme.colors}
         />
         <HubButton
           label="Jurisprudência"
@@ -160,6 +173,7 @@ export function MainScreen({
           disabled={caselawAccess.disabled}
           badge={caselawAccess.badge}
           hint="Disponível no plano Profissional."
+          colors={theme.colors}
         />
         <HubButton
           label="Comunidade"
@@ -167,12 +181,14 @@ export function MainScreen({
           onPress={onOpenCommunity}
           disabled={communityAccess.disabled}
           badge={communityAccess.badge}
+          colors={theme.colors}
         />
         <HubButton
           label="Minha Conta"
           testID="main-account"
           onPress={onOpenAccount}
           hint="Plano, perfil e notificações."
+          colors={theme.colors}
         />
 
         <HubButton
@@ -182,6 +198,7 @@ export function MainScreen({
           disabled={piecesAccess.disabled}
           badge={piecesAccess.badge}
           hint="Disponível no plano Profissional."
+          colors={theme.colors}
         />
         <HubButton
           label="Curso"
@@ -190,6 +207,7 @@ export function MainScreen({
           disabled={courseAccess.disabled}
           badge={courseAccess.badge}
           hint="Disponível no plano Profissional."
+          colors={theme.colors}
         />
       </View>
     </View>
@@ -197,25 +215,23 @@ export function MainScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, paddingTop: 32, backgroundColor: "#f7f4ee" },
-  title: { fontSize: 28, fontWeight: "700", color: "#16130f" },
-  subtitle: { marginTop: 6, marginBottom: 14, fontSize: 14, color: "#5f5950" },
+  container: { flex: 1, padding: 20, paddingTop: 32 },
+  title: { fontSize: 28, fontWeight: "700", fontFamily: "Georgia" },
+  subtitle: { marginTop: 6, marginBottom: 14, fontSize: 14 },
 
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  loadingText: { fontSize: 12, color: "#666051" },
-  error: { marginBottom: 10, color: "#B00020" },
+  loadingText: { fontSize: 12 },
+  error: { marginBottom: 10 },
 
   grid: { gap: 12 },
   button: {
     borderWidth: 1,
-    borderColor: "#DDD",
     borderRadius: 12,
     padding: 14,
-    backgroundColor: "#FFF",
   },
-  buttonPressed: { transform: [{ scale: 0.99 }], opacity: 0.95 },
+  buttonPressed: { transform: [{ scale: 0.99 }] },
   buttonDisabled: { opacity: 0.58 },
-  buttonText: { fontSize: 16, fontWeight: "600", color: "#17130f" },
-  badge: { marginTop: 6, fontSize: 12, color: "#5a5246", fontWeight: "700" },
-  hint: { marginTop: 4, fontSize: 11, color: "#7a7264" },
+  buttonText: { fontSize: 16, fontWeight: "600" },
+  badge: { marginTop: 6, fontSize: 12, fontWeight: "700" },
+  hint: { marginTop: 4, fontSize: 11 },
 });

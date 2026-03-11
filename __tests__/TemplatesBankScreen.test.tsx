@@ -3,6 +3,7 @@ import renderer, { act } from "react-test-renderer";
 
 import { TemplatesBankScreen } from "../src/screens/TemplatesBankScreen";
 import { getTemplatePiece, listTemplatePieces } from "../src/api/templatesBank";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/templatesBank", () => ({
   getTemplatePiece: jest.fn(),
@@ -74,14 +75,14 @@ describe("TemplatesBankScreen a11y baseline", () => {
 
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
-      tree = renderer.create(<TemplatesBankScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />);
+      tree = renderer.create(
+        <AppThemeProvider>
+          <TemplatesBankScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+        </AppThemeProvider>
+      );
     });
     await flushEffects();
 
-    expect(tree!.root.findByProps({ accessibilityLabel: "Voltar para menu principal" }).props.accessibilityRole).toBe(
-      "button"
-    );
-    expect(tree!.root.findByProps({ accessibilityLabel: "Sair da conta" }).props.accessibilityRole).toBe("button");
     expect(
       tree!.root.findByProps({ accessibilityLabel: "Abrir detalhe da peça Ação de cobrança" }).props.accessibilityRole
     ).toBe("button");

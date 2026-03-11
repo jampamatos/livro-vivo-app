@@ -3,6 +3,7 @@ import renderer, { act } from "react-test-renderer";
 
 import { MainScreen } from "../src/screens/MainScreen";
 import { getMyEntitlements } from "../src/api/entitlements";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/entitlements", () => ({
   getMyEntitlements: jest.fn(),
@@ -40,16 +41,18 @@ async function renderScreen({
   let tree: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
-      <MainScreen
-        token={token}
-        onOpenSearch={onOpenSearch}
-        onOpenLibrary={onOpenLibrary}
-        onOpenCaseLaw={onOpenCaseLaw}
-        onOpenCommunity={onOpenCommunity}
-        onOpenTemplatesBank={onOpenTemplatesBank}
-        onOpenCourse={onOpenCourse}
-        onOpenAccount={onOpenAccount}
-      />
+      <AppThemeProvider>
+        <MainScreen
+          token={token}
+          onOpenSearch={onOpenSearch}
+          onOpenLibrary={onOpenLibrary}
+          onOpenCaseLaw={onOpenCaseLaw}
+          onOpenCommunity={onOpenCommunity}
+          onOpenTemplatesBank={onOpenTemplatesBank}
+          onOpenCourse={onOpenCourse}
+          onOpenAccount={onOpenAccount}
+        />
+      </AppThemeProvider>
     );
   });
   return tree!;

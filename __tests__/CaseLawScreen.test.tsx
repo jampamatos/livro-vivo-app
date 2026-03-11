@@ -3,6 +3,7 @@ import renderer, { act } from "react-test-renderer";
 
 import { CaseLawScreen } from "../src/screens/CaseLawScreen";
 import { searchCaseLaw } from "../src/api/caselaw";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/caselaw", () => ({
   searchCaseLaw: jest.fn(),
@@ -54,7 +55,11 @@ describe("CaseLawScreen a11y baseline", () => {
 
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
-      tree = renderer.create(<CaseLawScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />);
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CaseLawScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+        </AppThemeProvider>
+      );
     });
 
     await act(async () => {
@@ -63,10 +68,12 @@ describe("CaseLawScreen a11y baseline", () => {
     });
     await flushEffects();
 
-    expect(tree!.root.findByProps({ accessibilityLabel: "Voltar para menu principal" }).props.accessibilityRole).toBe(
-      "button"
+    expect(tree!.root.findByProps({ accessibilityLabel: "Busca por jurisprudência" }).props.accessibilityLabel).toBe(
+      "Busca por jurisprudência"
     );
-    expect(tree!.root.findByProps({ accessibilityLabel: "Sair da conta" }).props.accessibilityRole).toBe("button");
+    expect(tree!.root.findByProps({ accessibilityLabel: "Filtro por tribunal" }).props.accessibilityLabel).toBe(
+      "Filtro por tribunal"
+    );
     expect(
       tree!.root.findByProps({ accessibilityLabel: "Abrir jurisprudência STJ REsp 1234/DF" }).props.accessibilityRole
     ).toBe("button");

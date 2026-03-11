@@ -11,6 +11,7 @@ import {
 
 import { ApiError } from "../api/http";
 import { GlobalSearchResult, searchGlobal } from "../api/search";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 type Props = {
   token: string;
@@ -37,6 +38,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 export function MainSearchScreen({ token, onBack, onLogout, onOpenResult }: Props) {
+  const { theme } = useAppTheme();
   const [query, setQuery] = React.useState("");
   const [submittedQuery, setSubmittedQuery] = React.useState("");
   const [results, setResults] = React.useState<GlobalSearchResult[]>([]);
@@ -116,87 +118,128 @@ export function MainSearchScreen({ token, onBack, onLogout, onOpenResult }: Prop
   }, [results]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.headerRow}>
-        <Pressable testID="main-search-back" style={styles.linkBtn} onPress={onBack}>
-          <Text style={styles.linkBtnText}>Voltar</Text>
+        <Pressable
+          testID="main-search-back"
+          style={[styles.linkBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
+          onPress={onBack}
+        >
+          <Text style={[styles.linkBtnText, { color: theme.colors.text }]}>Voltar</Text>
         </Pressable>
-        <Text style={styles.title}>Busca Global</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Busca Global</Text>
         <Pressable
           testID="main-search-logout"
-          style={[styles.linkBtn, styles.logoutBtn]}
+          style={[
+            styles.linkBtn,
+            styles.logoutBtn,
+            { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface },
+          ]}
           onPress={() => void Promise.resolve(onLogout())}
         >
-          <Text style={styles.logoutBtnText}>Sair</Text>
+          <Text style={[styles.logoutBtnText, { color: theme.colors.danger }]}>Sair</Text>
         </Pressable>
       </View>
 
-      <Text style={styles.subtitle}>Busque em livro, jurisprudência e comunidade.</Text>
+      <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Busque em livro, jurisprudência e comunidade.</Text>
 
       <View style={styles.searchRow}>
         <TextInput
           testID="main-search-input"
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.text,
+            },
+          ]}
           value={query}
           onChangeText={setQuery}
           autoCapitalize="none"
           autoCorrect={false}
           placeholder="Buscar (ex.: bagagem, overbooking...)"
+          placeholderTextColor={theme.colors.textMuted}
           returnKeyType="search"
           onSubmitEditing={() => void onSubmit()}
         />
         <Pressable
           testID="main-search-submit"
-          style={[styles.searchBtn, loading ? styles.searchBtnDisabled : null]}
+          style={[
+            styles.searchBtn,
+            { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+            loading ? styles.searchBtnDisabled : null,
+          ]}
           disabled={loading}
           onPress={() => void onSubmit()}
         >
-          <Text style={styles.searchBtnText}>{loading ? "Buscando..." : "Buscar"}</Text>
+          <Text style={[styles.searchBtnText, { color: theme.colors.textInverse }]}>
+            {loading ? "Buscando..." : "Buscar"}
+          </Text>
         </Pressable>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
       {loading && !loadingMore ? (
         <View style={styles.loadingRow}>
           <ActivityIndicator />
-          <Text style={styles.loadingText}>Consultando módulos...</Text>
+          <Text style={[styles.loadingText, { color: theme.colors.textMuted }]}>Consultando módulos...</Text>
         </View>
       ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {hasSearched ? (
           <>
-            <Text style={styles.meta}>
+            <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
               {count > 0 ? `${results.length} de ${count} resultados` : `0 resultados para "${submittedQuery}"`}
             </Text>
 
             {grouped.map(([source, items]) => (
               <View key={source} style={styles.groupBox}>
-                <Text style={styles.groupTitle}>{SOURCE_LABEL[source] ?? source}</Text>
+                <Text style={[styles.groupTitle, { color: theme.colors.text }]}>{SOURCE_LABEL[source] ?? source}</Text>
                 {items.map(({ item, index }) => (
                   <Pressable
                     key={`${item.type}-${index}`}
                     testID={`main-search-result-${index}`}
-                    style={({ pressed }) => [styles.resultCard, pressed ? styles.resultCardPressed : null]}
+                    style={({ pressed }) => [
+                      styles.resultCard,
+                      {
+                        borderColor: theme.colors.border,
+                        backgroundColor: theme.colors.surface,
+                      },
+                      pressed ? styles.resultCardPressed : null,
+                    ]}
                     onPress={() => onOpenResult(item)}
                   >
-                    <Text style={styles.resultTitle}>{item.title}</Text>
-                    {item.subtitle ? <Text style={styles.resultSubtitle}>{item.subtitle}</Text> : null}
-                    {item.snippet ? <Text style={styles.resultSnippet}>{item.snippet}</Text> : null}
-                    <Text style={styles.resultType}>{item.type}</Text>
+                    <Text style={[styles.resultTitle, { color: theme.colors.text }]}>{item.title}</Text>
+                    {item.subtitle ? <Text style={[styles.resultSubtitle, { color: theme.colors.textMuted }]}>{item.subtitle}</Text> : null}
+                    {item.snippet ? <Text style={[styles.resultSnippet, { color: theme.colors.textMuted }]}>{item.snippet}</Text> : null}
+                    <Text style={[styles.resultType, { color: theme.colors.accent }]}>{item.type}</Text>
                   </Pressable>
                 ))}
               </View>
             ))}
 
             {canLoadMore ? (
-              <Pressable testID="main-search-load-more" style={styles.loadMoreBtn} onPress={() => void onLoadMore()}>
-                <Text style={styles.loadMoreText}>{loadingMore ? "Carregando..." : "Carregar mais"}</Text>
+              <Pressable
+                testID="main-search-load-more"
+                style={[
+                  styles.loadMoreBtn,
+                  {
+                    borderColor: theme.colors.primary,
+                    backgroundColor: theme.colors.surface,
+                  },
+                ]}
+                onPress={() => void onLoadMore()}
+              >
+                <Text style={[styles.loadMoreText, { color: theme.colors.primary }]}>
+                  {loadingMore ? "Carregando..." : "Carregar mais"}
+                </Text>
               </Pressable>
             ) : null}
           </>
         ) : (
-          <Text style={styles.emptyHint}>Digite um termo para iniciar a busca global.</Text>
+          <Text style={[styles.emptyHint, { color: theme.colors.textMuted }]}>Digite um termo para iniciar a busca global.</Text>
         )}
       </ScrollView>
     </View>
@@ -204,72 +247,61 @@ export function MainSearchScreen({ token, onBack, onLogout, onOpenResult }: Prop
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: "#f7f4ee" },
+  container: { flex: 1, padding: 16 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  title: { fontSize: 18, fontWeight: "800", color: "#1e1a15" },
-  subtitle: { marginTop: 8, marginBottom: 10, fontSize: 13, color: "#5c5549" },
+  title: { fontSize: 18, fontWeight: "800", fontFamily: "Georgia" },
+  subtitle: { marginTop: 8, marginBottom: 10, fontSize: 13 },
   linkBtn: {
     borderWidth: 1,
-    borderColor: "#d8d1c6",
-    backgroundColor: "#fff",
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  linkBtnText: { color: "#1f1a13", fontWeight: "700" },
-  logoutBtn: { borderColor: "#e5b3ac" },
-  logoutBtnText: { color: "#8a2417", fontWeight: "700" },
+  linkBtnText: { fontWeight: "700" },
+  logoutBtn: {},
+  logoutBtnText: { fontWeight: "700" },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#cfc7ba",
     borderRadius: 10,
-    backgroundColor: "#fff",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#1f1a13",
   },
   searchBtn: {
     borderWidth: 1,
-    borderColor: "#1f1a13",
     borderRadius: 10,
-    backgroundColor: "#1f1a13",
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   searchBtnDisabled: { opacity: 0.65 },
-  searchBtnText: { color: "#fff", fontWeight: "800" },
-  error: { marginTop: 8, color: "#b00020", fontSize: 12 },
+  searchBtnText: { fontWeight: "800" },
+  error: { marginTop: 8, fontSize: 12 },
   loadingRow: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
-  loadingText: { fontSize: 12, color: "#6a6256" },
+  loadingText: { fontSize: 12 },
   scrollContent: { paddingTop: 12, paddingBottom: 24, gap: 10 },
-  emptyHint: { color: "#6a6256", fontSize: 13 },
-  meta: { fontSize: 12, color: "#6a6256", marginBottom: 4 },
+  emptyHint: { fontSize: 13 },
+  meta: { fontSize: 12, marginBottom: 4 },
   groupBox: { gap: 8 },
-  groupTitle: { fontSize: 13, fontWeight: "800", color: "#2f2921" },
+  groupTitle: { fontSize: 13, fontWeight: "800" },
   resultCard: {
     borderWidth: 1,
-    borderColor: "#ded7ca",
     borderRadius: 10,
-    backgroundColor: "#fff",
     padding: 10,
     gap: 4,
   },
   resultCardPressed: { opacity: 0.9 },
-  resultTitle: { fontSize: 14, fontWeight: "700", color: "#1f1a13" },
-  resultSubtitle: { fontSize: 12, color: "#4f483d" },
-  resultSnippet: { fontSize: 12, color: "#5b5449" },
-  resultType: { fontSize: 11, color: "#7a7264", fontWeight: "700", textTransform: "uppercase" },
+  resultTitle: { fontSize: 14, fontWeight: "700" },
+  resultSubtitle: { fontSize: 12 },
+  resultSnippet: { fontSize: 12 },
+  resultType: { fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
   loadMoreBtn: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: "#1f1a13",
     borderRadius: 10,
-    backgroundColor: "#fff",
     paddingHorizontal: 12,
     paddingVertical: 10,
     alignItems: "center",
   },
-  loadMoreText: { color: "#1f1a13", fontWeight: "800" },
+  loadMoreText: { fontWeight: "800" },
 });

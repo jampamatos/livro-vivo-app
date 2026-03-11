@@ -6,6 +6,7 @@ import { AccountScreen } from "../src/screens/AccountScreen";
 import { getMeProfile, getMyEntitlements } from "../src/api/entitlements";
 import { getNotificationPreferences, updateNotificationPreferences } from "../src/api/notifications";
 import { buildDataExportSummary, getMyDataExport, requestMyDataErasure } from "../src/api/privacy";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/entitlements", () => ({
   getMeProfile: jest.fn(),
@@ -54,12 +55,14 @@ async function renderScreen(
   let tree: renderer.ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(
-      <AccountScreen
-        token={token}
-        onBack={onBack}
-        onLogout={onLogout}
-        pushStatusMessage={pushStatusMessage}
-      />
+      <AppThemeProvider>
+        <AccountScreen
+          token={token}
+          onBack={onBack}
+          onLogout={onLogout}
+          pushStatusMessage={pushStatusMessage}
+        />
+      </AppThemeProvider>
     );
   });
   return tree!;

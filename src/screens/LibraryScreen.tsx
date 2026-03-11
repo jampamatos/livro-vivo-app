@@ -31,6 +31,7 @@ import {
   deleteAnnotation,
   listChapterAnnotationsForVersion,
 } from "../api/annotations";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
 import {
   BookReaderScreen,
@@ -83,7 +84,8 @@ type ChapterLoadParams = {
   restoreOffset?: number;
 };
 
-export function LibraryScreen({ token, onBack, onLogout, initialOpenRequest = null }: Props) {
+export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
+  const { theme } = useAppTheme();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
 
   const [loadingBooks, setLoadingBooks] = React.useState(true);
@@ -1144,40 +1146,10 @@ export function LibraryScreen({ token, onBack, onLogout, initialOpenRequest = nu
   }
 
   return (
-    <View style={[styles.root, webRootStyle]}>
+    <View style={[styles.root, webRootStyle, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.shell}>
-        <Text style={styles.title}>Biblioteca</Text>
-        <Text style={styles.subtitle}>Leitura e busca por capítulos</Text>
-
-        <View style={styles.row}>
-          <Pressable
-            style={styles.button}
-            onPress={loadBooks}
-            accessibilityRole="button"
-            accessibilityLabel="Recarregar biblioteca"
-            accessibilityHint="Atualiza a lista de livros disponíveis"
-          >
-            <Text style={styles.buttonText}>Recarregar</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.button, styles.buttonSecondary]}
-            onPress={onBack}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar para menu principal"
-          >
-            <Text style={styles.buttonText}>Voltar</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.button, styles.buttonDanger]}
-            onPress={onLogout}
-            accessibilityRole="button"
-            accessibilityLabel="Sair da conta"
-          >
-            <Text style={styles.buttonText}>Sair</Text>
-          </Pressable>
-        </View>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Biblioteca</Text>
+        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Leitura e busca por capítulos</Text>
 
         {loadingBooks ? (
           <View style={styles.center}>
@@ -1230,7 +1202,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     width: "100%",
-    backgroundColor: "#f2f2f2",
   },
   shell: {
     flex: 1,
@@ -1244,13 +1215,7 @@ const styles = StyleSheet.create({
   center: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
 
   title: { fontSize: 22, fontWeight: "700" },
-  subtitle: { fontSize: 13, color: "#555" },
-
-  row: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  button: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, backgroundColor: "#111" },
-  buttonSecondary: { backgroundColor: "#444" },
-  buttonDanger: { backgroundColor: "#b00020" },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  subtitle: { fontSize: 13 },
 
   error: { color: "#b00020", fontFamily: "monospace", paddingHorizontal: 14, paddingBottom: 8 },
   errorInline: { color: "#b00020", fontFamily: "monospace", paddingTop: 6 },
