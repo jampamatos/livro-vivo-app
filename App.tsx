@@ -219,6 +219,12 @@ function AppRoot() {
     setRoute("main");
   }, []);
 
+  const openLibraryWithRequest = React.useCallback((request?: LibraryOpenRequest | null) => {
+    setSelectedPost(null);
+    setLibraryOpenRequest(request ?? null);
+    setRoute("library");
+  }, []);
+
   if (loading) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.bg }]}>
@@ -252,8 +258,13 @@ function AppRoot() {
         token={token}
         onOpenSearch={() => setRoute("mainSearch")}
         onOpenLibrary={() => {
-          setLibraryOpenRequest(null);
-          setRoute("library");
+          openLibraryWithRequest(null);
+        }}
+        onOpenLibraryResume={(request) => {
+          openLibraryWithRequest({
+            bookId: request.bookId,
+            chapterSlug: request.chapterSlug,
+          });
         }}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
@@ -342,8 +353,13 @@ function AppRoot() {
         token={token}
         onOpenSearch={() => setRoute("mainSearch")}
         onOpenLibrary={() => {
-          setLibraryOpenRequest(null);
-          setRoute("library");
+          openLibraryWithRequest(null);
+        }}
+        onOpenLibraryResume={(request) => {
+          openLibraryWithRequest({
+            bookId: request.bookId,
+            chapterSlug: request.chapterSlug,
+          });
         }}
         onOpenCaseLaw={() => setRoute("caselaw")}
         onOpenCommunity={() => setRoute("community")}
