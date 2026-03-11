@@ -16,6 +16,7 @@ import {
   createCommunityPost,
   listCommunityCategories,
 } from "../api/community";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 const FORM_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
 
@@ -27,6 +28,7 @@ type Props = {
 };
 
 export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: Props) {
+  const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [category, setCategory] = React.useState<CommunityCategory | null>(null);
@@ -92,14 +94,20 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.topbar}>
-        <Pressable onPress={onBack} style={styles.topBtn}>
-          <Text style={styles.topBtnText}>Voltar</Text>
+        <Pressable
+          onPress={onBack}
+          style={[styles.topBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
+        >
+          <Text style={[styles.topBtnText, { color: theme.colors.text }]}>Voltar</Text>
         </Pressable>
-        <Text style={styles.title}>Novo Post</Text>
-        <Pressable onPress={onLogout} style={styles.topBtn}>
-          <Text style={styles.topBtnText}>Sair</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Novo Post</Text>
+        <Pressable
+          onPress={onLogout}
+          style={[styles.topBtn, { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface }]}
+        >
+          <Text style={[styles.topBtnText, { color: theme.colors.danger }]}>Sair</Text>
         </Pressable>
       </View>
 
@@ -109,8 +117,8 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
         </View>
       ) : (
         <>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.subtitle}>
+          {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
+          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
             Categoria: {category ? category.name : "Sem categoria"}
           </Text>
           <KeyboardAvoidingView
@@ -121,22 +129,48 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
               value={title}
               onChangeText={setTitle}
               placeholder="Título do post"
-              style={styles.input}
+              style={[
+                styles.input,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.surface,
+                  color: theme.colors.text,
+                },
+              ]}
+              placeholderTextColor={theme.colors.textMuted}
               maxLength={120}
             />
             <TextInput
               value={body}
               onChangeText={setBody}
               placeholder="Escreva o conteúdo do post…"
-              style={[styles.input, styles.bodyInput]}
+              style={[
+                styles.input,
+                styles.bodyInput,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.colors.surface,
+                  color: theme.colors.text,
+                },
+              ]}
+              placeholderTextColor={theme.colors.textMuted}
               multiline
             />
             <Pressable
               onPress={handleCreate}
               disabled={sending}
-              style={[styles.submitBtn, sending && styles.submitBtnDisabled]}
+              style={[
+                styles.submitBtn,
+                {
+                  borderColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primary,
+                },
+                sending && styles.submitBtnDisabled,
+              ]}
             >
-              <Text style={styles.submitText}>{sending ? "Publicando…" : "Publicar"}</Text>
+              <Text style={[styles.submitText, { color: theme.colors.textInverse }]}>
+                {sending ? "Publicando…" : "Publicar"}
+              </Text>
             </Pressable>
           </KeyboardAvoidingView>
         </>
@@ -146,16 +180,16 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12, backgroundColor: "#f7f4ee" },
+  container: { flex: 1, padding: 16, gap: 12 },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  title: { fontSize: 18, fontWeight: "700" },
+  title: { fontSize: 18, fontWeight: "700", fontFamily: "Georgia" },
 
   topBtn: { paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 8 },
-  topBtnText: { fontSize: 12 },
+  topBtnText: { fontSize: 12, fontWeight: "700" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  error: { color: "crimson" },
-  subtitle: { fontSize: 13, opacity: 0.8 },
+  error: {},
+  subtitle: { fontSize: 13 },
 
   form: { gap: 10, paddingBottom: FORM_BOTTOM_GUTTER },
   input: { borderWidth: 1, borderRadius: 12, padding: 10, minHeight: 44 },

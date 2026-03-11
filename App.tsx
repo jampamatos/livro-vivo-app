@@ -1,12 +1,5 @@
 import React from "react";
-import {
-  ActivityIndicator,
-  BackHandler,
-  Platform,
-  StatusBar as NativeStatusBar,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, BackHandler, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 
 import { AccountScreen } from "./src/screens/AccountScreen";
@@ -25,23 +18,14 @@ import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tok
 import { setSessionListener } from "./src/auth/sessionBus";
 import { logout } from "./src/api/auth";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
+import { AppShell } from "./src/layout/AppShell";
+import { AppRoute } from "./src/navigation/routes";
 import { useNotificationCenter } from "./src/notifications/useNotificationCenter";
+import { AppThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 
 import type { AuthSession } from "./src/auth/authSession";
 import type { CommunityPost } from "./src/api/community";
 import type { GlobalSearchResult } from "./src/api/search";
-
-type Route = 
-  | "main"
-  | "mainSearch"
-  | "account"
-  | "caselaw"
-  | "community"
-  | "communityNewPost"
-  | "communityPost"
-  | "course"
-  | "library"
-  | "templatesBank";
 
 type LibraryOpenRequest = {
   bookId: number;
@@ -52,12 +36,12 @@ type LibraryOpenRequest = {
   matchEnd?: number;
 };
 
-
-export default function App() {
+function AppRoot() {
+  const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [session, setSession] = React.useState<AuthSession | null>(null);
 
-  const [route, setRoute] = React.useState<Route>("main");
+  const [route, setRoute] = React.useState<AppRoute>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
   const [libraryOpenRequest, setLibraryOpenRequest] = React.useState<LibraryOpenRequest | null>(null);
   const openMainFromNotification = React.useCallback(() => {
@@ -66,8 +50,6 @@ export default function App() {
     setRoute("main");
   }, []);
   const notificationCenter = useNotificationCenter(session?.accessToken ?? null, openMainFromNotification);
-  const androidStatusBarInset = Platform.OS === "android" ? Math.max(0, NativeStatusBar.currentHeight ?? 0) : 0;
-  const androidBottomInset = Platform.OS === "android" ? 28 : 0;
 
   const navigateBack = React.useCallback(() => {
     switch (route) {
@@ -142,7 +124,7 @@ export default function App() {
         await logout(session.refreshToken, session.accessToken);
       }
     } catch {
-      // logou remoto é best-effort
+      // logout remoto é best-effort
     } finally {
       await clearAuthSession();
       setSelectedPost(null);
@@ -151,6 +133,14 @@ export default function App() {
       setRoute("account");
     }
   };
+
+  const handleShellNavigate = React.useCallback((nextRoute: AppRoute) => {
+    setSelectedPost(null);
+    if (nextRoute !== "library") {
+      setLibraryOpenRequest(null);
+    }
+    setRoute(nextRoute);
+  }, []);
 
   const handleOpenGlobalSearchResult = React.useCallback((result: GlobalSearchResult) => {
     const routeTarget = result?.target?.route;
@@ -231,14 +221,20 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: theme.colors.bg }]}>
+        <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
         <ActivityIndicator />
       </View>
     );
   }
 
   if (!session) {
-    return <LoginScreen onAuthSuccess={handleAuthSuccess} />;
+    return (
+      <View style={[styles.loginRoot, { backgroundColor: theme.colors.bg }]}>
+        <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
+        <LoginScreen onAuthSuccess={handleAuthSuccess} />
+      </View>
+    );
   }
 
   const token = session.accessToken;
@@ -359,15 +355,18 @@ export default function App() {
   }
 
   return (
-    <View
-      style={[
-        styles.appRoot,
-        androidStatusBarInset > 0 ? { paddingTop: androidStatusBarInset } : null,
-        androidBottomInset > 0 ? { paddingBottom: androidBottomInset } : null,
-      ]}
-    >
-      <StatusBar style="dark" backgroundColor="#f7f4ee" />
-      {content}
+    <View style={[styles.appRoot, { backgroundColor: theme.colors.bg }]}>
+      <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
+      <AppShell
+        route={route}
+        onNavigate={handleShellNavigate}
+        onOpenSearch={() => setRoute("mainSearch")}
+        onOpenAccount={() => setRoute("account")}
+        onLogout={handleLogout}
+      >
+        {content}
+      </AppShell>
+
       {notificationCenter.currentBanner ? (
         <InAppNotificationBanner
           title={notificationCenter.currentBanner.title}
@@ -380,14 +379,22 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <AppThemeProvider>
+      <AppRoot />
+    </AppThemeProvider>
+  );
+}
+
 const styles = StyleSheet.create({
-  appRoot: { flex: 1, backgroundColor: "#f7f4ee" },
+  appRoot: { flex: 1 },
+  loginRoot: { flex: 1 },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
     padding: 16,
-    backgroundColor: "#f7f4ee",
   },
 });

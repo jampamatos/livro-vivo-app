@@ -33,6 +33,7 @@ import {
   type DataExportSummary,
 } from "../api/privacy";
 import { ApiError } from "../api/http";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 type Props = {
   token: string;
@@ -89,6 +90,7 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 }
 
 export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Props) {
+  const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [entitlements, setEntitlements] = React.useState<EntitlementsResponse | null>(null);
   const [profile, setProfile] = React.useState<MeProfileResponse | null>(null);
@@ -238,40 +240,46 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
   const canSubmitErasure = deleteConfirmation.trim().toUpperCase() === "DELETE" && !deletingData;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.headerRow}>
         <Pressable
           testID="account-back"
           accessibilityRole="button"
           accessibilityLabel="Voltar para menu principal"
-          style={styles.headerBtn}
+          style={[styles.headerBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
           onPress={onBack}
         >
-          <Text style={styles.headerBtnText}>Voltar</Text>
+          <Text style={[styles.headerBtnText, { color: theme.colors.text }]}>Voltar</Text>
         </Pressable>
 
         <Pressable
           testID="account-logout"
           accessibilityRole="button"
           accessibilityLabel="Sair da conta"
-          style={[styles.headerBtn, styles.dangerBtn]}
+          style={[
+            styles.headerBtn,
+            styles.dangerBtn,
+            { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface },
+          ]}
           onPress={onLogout}
         >
-          <Text style={[styles.headerBtnText, styles.dangerText]}>Sair</Text>
+          <Text style={[styles.headerBtnText, styles.dangerText, { color: theme.colors.danger }]}>Sair</Text>
         </Pressable>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Minha Conta</Text>
-        <Text style={styles.subtitle}>Seu plano, dados de perfil e módulos liberados.</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Minha Conta</Text>
+        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
+          Seu plano, dados de perfil e módulos liberados.
+        </Text>
 
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator />
-            <Text style={styles.muted}>Carregando dados da conta…</Text>
+            <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando dados da conta…</Text>
           </View>
         ) : error ? (
-          <Text style={styles.error}>{error}</Text>
+          <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text>
         ) : (
           <View style={styles.content}>
           <View style={styles.box}>
@@ -288,7 +296,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={[styles.box, styles.subscriptionBox]}>
-            <Text style={styles.sectionTitle}>Assinatura</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Assinatura</Text>
             <Text style={styles.planName}>{formatTier(entitlements?.effective_tier)}</Text>
             <Text style={styles.meta}>Status: {formatStatus(entitlements?.subscription?.status)}</Text>
             <Text style={styles.meta}>Founder: {entitlements?.subscription?.is_founder ? "Sim" : "Não"}</Text>
@@ -296,7 +304,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={styles.box}>
-            <Text style={styles.sectionTitle}>Módulos liberados</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Módulos liberados</Text>
             {modules.length === 0 ? (
               <Text style={styles.meta}>Nenhum módulo liberado sem assinatura ativa.</Text>
             ) : (
@@ -305,7 +313,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={styles.box}>
-            <Text style={styles.sectionTitle}>Notificações</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Notificações</Text>
             <Text style={styles.sectionHint}>
               Escolha quais categorias o backend pode preparar para envio. O push real no aparelho entra em uma
               etapa futura.
@@ -454,7 +462,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={styles.box}>
-            <Text style={styles.sectionTitle}>Privacidade (LGPD)</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Privacidade (LGPD)</Text>
             <Text style={styles.sectionHint}>
               Você pode exportar seus dados em JSON ou solicitar exclusão com anonimização da conta.
             </Text>
@@ -545,7 +553,7 @@ export function AccountScreen({ token, onBack, onLogout, pushStatusMessage }: Pr
           </View>
 
           <View style={styles.box}>
-            <Text style={styles.sectionTitle}>Ajustes da conta</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ajustes da conta</Text>
             <View style={styles.actionsRow}>
               <Pressable style={[styles.secondaryAction, styles.disabledAction]} disabled>
                 <Text style={styles.secondaryActionText}>Editar perfil</Text>

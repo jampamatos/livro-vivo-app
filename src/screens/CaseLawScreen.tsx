@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import { CaseLaw, CaseLawAnchor, searchCaseLaw } from "../api/caselaw";
+import { useAppTheme } from "../theme/ThemeProvider";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
 
 type Props = {
@@ -107,7 +108,8 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function CaseLawScreen({ token, onBack, onLogout }: Props) {
+export function CaseLawScreen({ token }: Props) {
+  const { theme } = useAppTheme();
   const LIMIT = 20;
 
   const [q, setQ] = React.useState("");
@@ -224,6 +226,7 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
           node.italic ? styles.detailInlineItalic : null,
           node.underline ? styles.detailInlineUnderline : null,
           node.href ? styles.detailInlineLink : null,
+          { color: node.href ? theme.colors.primary : theme.colors.text },
         ];
 
         if (!node.href) {
@@ -249,7 +252,7 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
         );
       });
     },
-    []
+    [theme.colors.primary, theme.colors.text]
   );
 
   const renderBlock = React.useCallback(
@@ -272,8 +275,19 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
 
       if (block.type === "blockquote") {
         return (
-          <View key={`block-${index}`} style={styles.detailBlockquote}>
-            <Text style={styles.detailBlockquoteText}>{renderInline(block.inlines, `quote-${index}`)}</Text>
+          <View
+            key={`block-${index}`}
+            style={[
+              styles.detailBlockquote,
+              {
+                borderLeftColor: theme.colors.accent,
+                backgroundColor: theme.colors.surfaceMuted,
+              },
+            ]}
+          >
+            <Text style={[styles.detailBlockquoteText, { color: theme.colors.textMuted }]}>
+              {renderInline(block.inlines, `quote-${index}`)}
+            </Text>
           </View>
         );
       }
@@ -283,8 +297,12 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
           <View key={`block-${index}`} style={styles.detailList} accessibilityRole="list">
             {block.items.map((item, itemIndex) => (
               <View key={`item-${index}-${itemIndex}`} style={styles.detailListRow}>
-                <Text style={styles.detailListMarker}>{block.ordered ? `${itemIndex + 1}.` : "\u2022"}</Text>
-                <Text style={styles.detailListText}>{renderInline(item, `li-${index}-${itemIndex}`)}</Text>
+                <Text style={[styles.detailListMarker, { color: theme.colors.text }]}>
+                  {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
+                </Text>
+                <Text style={[styles.detailListText, { color: theme.colors.text }]}>
+                  {renderInline(item, `li-${index}-${itemIndex}`)}
+                </Text>
               </View>
             ))}
           </View>
@@ -292,38 +310,44 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
       }
 
       return (
-        <Text key={`block-${index}`} style={styles.detailParagraph}>
+        <Text key={`block-${index}`} style={[styles.detailParagraph, { color: theme.colors.text }]}>
           {renderInline(block.inlines, `p-${index}`)}
         </Text>
       );
     },
-    [renderInline]
+    [renderInline, theme.colors.accent, theme.colors.surfaceMuted, theme.colors.text, theme.colors.textMuted]
   );
 
   const renderItem = ({ item }: { item: CaseLaw }) => (
     <Pressable
-      style={styles.card}
+      style={[
+        styles.card,
+        {
+          borderColor: theme.colors.border,
+          backgroundColor: theme.colors.surface,
+        },
+      ]}
       onPress={() => setSelected(item)}
       accessibilityRole="button"
       accessibilityLabel={`Abrir jurisprudência ${item.court} ${item.case_number}`}
       accessibilityHint="Abre o detalhe da ementa e ações de cópia e abertura do acórdão"
     >
       <View style={styles.rowBetween}>
-        <Text style={styles.title}>
+        <Text style={[styles.title, { color: theme.colors.text }]}>
           {item.court} • {item.case_number}
         </Text>
-        <Text style={styles.muted}>{formatDateBR(item.decision_date)}</Text>
+        <Text style={[styles.muted, { color: theme.colors.textMuted }]}>{formatDateBR(item.decision_date)}</Text>
       </View>
 
-      <Text style={styles.summary} numberOfLines={3}>
+      <Text style={[styles.summary, { color: theme.colors.textMuted }]} numberOfLines={3}>
         {item.ementa_plain}
       </Text>
 
       {item.tags?.length ? (
         <View style={styles.tagsWrap}>
           {item.tags.slice(0, 6).map((tag, idx) => (
-            <View key={`${tag}-${idx}`} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
+            <View key={`${tag}-${idx}`} style={[styles.tag, { borderColor: theme.colors.border }]}>
+              <Text style={[styles.tagText, { color: theme.colors.textMuted }]}>{tag}</Text>
             </View>
           ))}
         </View>
@@ -332,36 +356,22 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Pressable
-          style={styles.headerBtn}
-          onPress={onBack}
-          accessibilityRole="button"
-          accessibilityLabel="Voltar para menu principal"
-        >
-          <Text style={styles.headerBtnText}>Voltar</Text>
-        </Pressable>
-
-        <Text style={styles.headerTitle}>Jurisprudência</Text>
-
-        <Pressable
-          style={styles.headerBtn}
-          onPress={onLogout}
-          accessibilityRole="button"
-          accessibilityLabel="Sair da conta"
-        >
-          <Text style={styles.headerBtnText}>Sair</Text>
-        </Pressable>
-      </View>
-
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.searchBox}>
         <TextInput
           accessibilityLabel="Busca por jurisprudência"
           value={q}
           onChangeText={setQ}
           placeholder="Buscar (ex: bagagem, overbooking, dano moral...)"
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.text,
+            },
+          ]}
+          placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
         />
@@ -370,7 +380,15 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
           value={court}
           onChangeText={setCourt}
           placeholder="Tribunal (opcional: STJ, TJMG...)"
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: theme.colors.border,
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.text,
+            },
+          ]}
+          placeholderTextColor={theme.colors.textMuted}
           autoCapitalize="characters"
           autoCorrect={false}
         />
@@ -379,18 +397,18 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={styles.muted}>Carregando…</Text>
+          <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando…</Text>
         </View>
       ) : error ? (
         <View style={styles.center}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={[styles.errorText, { color: theme.colors.danger }]}>{error}</Text>
           <Pressable
-            style={styles.retryBtn}
+            style={[styles.retryBtn, { borderColor: theme.colors.borderStrong }]}
             onPress={onRefresh}
             accessibilityRole="button"
             accessibilityLabel="Tentar carregar jurisprudência novamente"
           >
-            <Text style={styles.retryText}>Tentar de novo</Text>
+            <Text style={[styles.retryText, { color: theme.colors.text }]}>Tentar de novo</Text>
           </Pressable>
         </View>
       ) : (
@@ -405,14 +423,14 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
           onRefresh={onRefresh}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={styles.muted}>Nenhum resultado.</Text>
+              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Nenhum resultado.</Text>
             </View>
           }
           ListFooterComponent={
             loadingMore ? (
               <View style={styles.footer}>
                 <ActivityIndicator />
-                <Text style={styles.muted}>Carregando mais…</Text>
+                <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando mais…</Text>
               </View>
             ) : null
           }
@@ -420,10 +438,19 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
       )}
 
       <Modal visible={Boolean(selected)} transparent animationType="fade" onRequestClose={closeModal}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <View style={[styles.modalBackdrop, { backgroundColor: theme.colors.overlay }]}>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                borderWidth: 1,
+              },
+            ]}
+          >
             <View style={styles.rowBetween}>
-              <Text style={styles.modalTitle}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
                 {selected?.court} • {selected?.case_number}
               </Text>
               <Pressable
@@ -431,12 +458,14 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Fechar detalhe da jurisprudência"
               >
-                <Text style={styles.modalClose}>✕</Text>
+                <Text style={[styles.modalClose, { color: theme.colors.textMuted }]}>✕</Text>
               </Pressable>
             </View>
 
             {selected?.decision_date ? (
-              <Text style={styles.muted}>Data: {formatDateBR(selected.decision_date)}</Text>
+              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>
+                Data: {formatDateBR(selected.decision_date)}
+              </Text>
             ) : null}
 
             {selected?.anchors?.length ? (
@@ -446,34 +475,56 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
                   .filter((label) => label.length > 0)
                   .slice(0, 8)
                   .map((label, idx) => (
-                    <View key={`${label}-${idx}`} style={styles.anchorTag}>
-                      <Text style={styles.anchorTagText}>#{label}</Text>
+                    <View
+                      key={`${label}-${idx}`}
+                      style={[
+                        styles.anchorTag,
+                        {
+                          borderColor: theme.colors.borderStrong,
+                          backgroundColor: theme.colors.surfaceMuted,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.anchorTagText, { color: theme.colors.textMuted }]}>#{label}</Text>
                     </View>
                   ))}
               </View>
             ) : null}
 
-            <ScrollView style={styles.modalBody} contentContainerStyle={styles.modalBodyContent}>
+            <ScrollView
+              style={[styles.modalBody, { borderColor: theme.colors.border }]}
+              contentContainerStyle={styles.modalBodyContent}
+            >
               {selectedBlocks.length > 0 ? (
                 selectedBlocks.map((block, index) => renderBlock(block, index))
               ) : (
-                <Text style={styles.detailParagraph}>{selected?.ementa_plain || "Sem ementa."}</Text>
+                <Text style={[styles.detailParagraph, { color: theme.colors.text }]}>
+                  {selected?.ementa_plain || "Sem ementa."}
+                </Text>
               )}
             </ScrollView>
 
             <View style={styles.modalActions}>
               <Pressable
-                style={[styles.copyBtn, !getEmentaPlain(selected) ? styles.actionBtnDisabled : null]}
+                style={[
+                  styles.copyBtn,
+                  { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+                  !getEmentaPlain(selected) ? styles.actionBtnDisabled : null,
+                ]}
                 onPress={onCopyEmenta}
                 disabled={!getEmentaPlain(selected)}
                 accessibilityRole="button"
                 accessibilityLabel="Copiar ementa"
               >
-                <Text style={styles.copyBtnText}>Copiar ementa</Text>
+                <Text style={[styles.copyBtnText, { color: theme.colors.textInverse }]}>Copiar ementa</Text>
               </Pressable>
 
               <Pressable
-                style={[styles.openBtn, !selected?.url ? styles.actionBtnDisabled : null]}
+                style={[
+                  styles.openBtn,
+                  { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted },
+                  !selected?.url ? styles.actionBtnDisabled : null,
+                ]}
                 onPress={() => {
                   if (selected?.url) {
                     void openUrl(selected.url);
@@ -483,11 +534,11 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="Abrir acórdão"
               >
-                <Text style={styles.openBtnText}>Abrir acórdão</Text>
+                <Text style={[styles.openBtnText, { color: theme.colors.text }]}>Abrir acórdão</Text>
               </Pressable>
             </View>
 
-            {copyFeedback ? <Text style={styles.copyFeedback}>{copyFeedback}</Text> : null}
+            {copyFeedback ? <Text style={[styles.copyFeedback, { color: theme.colors.success }]}>{copyFeedback}</Text> : null}
           </View>
         </View>
       </Modal>
@@ -497,25 +548,8 @@ export function CaseLawScreen({ token, onBack, onLogout }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingTop: 16,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  headerTitle: { fontSize: 18, fontWeight: "700" },
-  headerBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-  },
-  headerBtnText: { fontWeight: "600" },
 
-  searchBox: { paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
+  searchBox: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8, gap: 8 },
   input: {
     borderWidth: 1,
     borderRadius: 10,
@@ -543,23 +577,20 @@ const styles = StyleSheet.create({
 
   anchorTag: {
     borderWidth: 1,
-    borderColor: "#d7c898",
     borderRadius: 999,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    backgroundColor: "#fff7dc",
   },
-  anchorTagText: { fontSize: 12, color: "#4d3b13", fontWeight: "600" },
+  anchorTagText: { fontSize: 12, fontWeight: "600" },
 
   footer: { alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16 },
 
-  errorText: { textAlign: "center", color: "#b00020" },
+  errorText: { textAlign: "center" },
   retryBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   retryText: { fontWeight: "700" },
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
     alignItems: "center",
     justifyContent: "center",
     padding: 16,
@@ -568,7 +599,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 860,
     maxHeight: "92%",
-    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 14,
     gap: 10,
@@ -577,53 +607,46 @@ const styles = StyleSheet.create({
   modalClose: { fontSize: 18, fontWeight: "800" },
   modalBody: {
     borderWidth: 1,
-    borderColor: "#ebe7da",
     borderRadius: 10,
     maxHeight: 430,
   },
   modalBodyContent: { padding: 14, gap: 10 },
 
-  detailInlineBase: { color: "#1f2937" },
+  detailInlineBase: {},
   detailInlineBold: { fontWeight: "700" },
   detailInlineItalic: { fontStyle: "italic" },
   detailInlineUnderline: { textDecorationLine: "underline" },
-  detailInlineLink: { color: "#0b4e9b", textDecorationLine: "underline" },
-  detailParagraph: { color: "#1f2937", fontSize: 16, lineHeight: 28 },
-  detailHeading2: { color: "#0f172a", fontWeight: "800", fontSize: 24, lineHeight: 32 },
-  detailHeading3: { color: "#111827", fontWeight: "700", fontSize: 20, lineHeight: 28 },
+  detailInlineLink: { textDecorationLine: "underline" },
+  detailParagraph: { fontSize: 16, lineHeight: 28 },
+  detailHeading2: { fontWeight: "800", fontSize: 24, lineHeight: 32 },
+  detailHeading3: { fontWeight: "700", fontSize: 20, lineHeight: 28 },
   detailBlockquote: {
     borderLeftWidth: 3,
-    borderLeftColor: "#c8b27b",
     paddingLeft: 12,
-    backgroundColor: "#f7f3e8",
     borderRadius: 6,
     paddingVertical: 8,
   },
-  detailBlockquoteText: { color: "#4a3a1e", fontStyle: "italic", fontSize: 16, lineHeight: 27 },
+  detailBlockquoteText: { fontStyle: "italic", fontSize: 16, lineHeight: 27 },
   detailList: { gap: 8 },
   detailListRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  detailListMarker: { minWidth: 20, color: "#1f2937", fontWeight: "700", fontSize: 16, lineHeight: 28 },
-  detailListText: { flex: 1, color: "#1f2937", fontSize: 16, lineHeight: 28 },
+  detailListMarker: { minWidth: 20, fontWeight: "700", fontSize: 16, lineHeight: 28 },
+  detailListText: { flex: 1, fontSize: 16, lineHeight: 28 },
 
   modalActions: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   copyBtn: {
     borderWidth: 1,
-    borderColor: "#111",
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    backgroundColor: "#111",
   },
-  copyBtnText: { color: "#fff", fontWeight: "800" },
+  copyBtnText: { fontWeight: "800" },
   openBtn: {
     borderWidth: 1,
-    borderColor: "#111",
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    backgroundColor: "#fff",
   },
-  openBtnText: { color: "#111", fontWeight: "800" },
+  openBtnText: { fontWeight: "800" },
   actionBtnDisabled: { opacity: 0.45 },
-  copyFeedback: { color: "#14532d", fontWeight: "600" },
+  copyFeedback: { fontWeight: "600" },
 });

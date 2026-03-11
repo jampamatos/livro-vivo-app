@@ -23,6 +23,7 @@ import {
   listCommunityComments,
   unfollowCommunityPost,
 } from "../api/community";
+import { useAppTheme } from "../theme/ThemeProvider";
 
 const SCROLL_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
 
@@ -44,6 +45,7 @@ type Props = {
 };
 
 export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
+  const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -163,24 +165,24 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.topbar}>
         <Pressable
           onPress={onBack}
-          style={styles.topBtn}
+          style={[styles.topBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
           accessibilityRole="button"
           accessibilityLabel="Voltar para feed da comunidade"
         >
-          <Text style={styles.topBtnText}>Voltar</Text>
+          <Text style={[styles.topBtnText, { color: theme.colors.text }]}>Voltar</Text>
         </Pressable>
-        <Text style={styles.title}>Post</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Post</Text>
         <Pressable
           onPress={onLogout}
-          style={styles.topBtn}
+          style={[styles.topBtn, { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface }]}
           accessibilityRole="button"
           accessibilityLabel="Sair da conta"
         >
-          <Text style={styles.topBtnText}>Sair</Text>
+          <Text style={[styles.topBtnText, { color: theme.colors.danger }]}>Sair</Text>
         </Pressable>
       </View>
 
@@ -189,7 +191,7 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.postCard}>
+        <View style={[styles.postCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
           {moderationLabel(currentPost.moderation_state) ? (
             <Text
               style={[
@@ -201,22 +203,23 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
               {moderationLabel(currentPost.moderation_state)}
             </Text>
           ) : null}
-          <Text style={styles.postTitle}>{currentPost.title}</Text>
-          <Text style={styles.meta}>
+          <Text style={[styles.postTitle, { color: theme.colors.text }]}>{currentPost.title}</Text>
+          <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
             por {currentPost.author_display} • {formatDate(currentPost.created_at)}
           </Text>
           <Text
             style={[
               styles.postBody,
+              { color: theme.colors.text },
               currentPost.moderation_state === "removed" && styles.removedText,
               currentPost.moderation_state === "under_review" && styles.reviewText,
             ]}
           >
             {currentPost.moderation_state === "removed" ? "[Conteudo removido pela moderacao]" : currentPost.body}
           </Text>
-          <View style={styles.followCard}>
-            <Text style={styles.followTitle}>Notificações deste post</Text>
-            <Text style={styles.followDescription}>
+          <View style={[styles.followCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted }]}>
+            <Text style={[styles.followTitle, { color: theme.colors.text }]}>Notificações deste post</Text>
+            <Text style={[styles.followDescription, { color: theme.colors.textMuted }]}>
               {currentPost.is_following
                 ? "Você está seguindo este post e será avisado sobre novos comentários."
                 : "Siga este post se quiser receber notificações quando houver novos comentários."}
@@ -230,6 +233,10 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
               accessibilityLabel="Seguir notificações deste post"
               style={[
                 styles.followBtn,
+                {
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.surface,
+                },
                 currentPost.is_following && styles.followBtnActive,
                 followUpdating && styles.followBtnDisabled,
               ]}
@@ -237,6 +244,7 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
               <Text
                 style={[
                   styles.followBtnText,
+                  { color: theme.colors.text },
                   currentPost.is_following && styles.followBtnTextActive,
                 ]}
               >
@@ -250,24 +258,24 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
           </View>
           <Pressable
             onPress={reportPost}
-            style={styles.reportBtn}
+            style={[styles.reportBtn, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}
             accessibilityRole="button"
             accessibilityLabel="Denunciar post"
           >
-            <Text style={styles.reportText}>Denunciar Post</Text>
+            <Text style={[styles.reportText, { color: theme.colors.text }]}>Denunciar Post</Text>
           </Pressable>
         </View>
 
-        <Text style={styles.sectionTitle}>Comentários</Text>
+        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Comentários</Text>
         {loading ? (
           <View style={styles.loadingBlock}>
             <ActivityIndicator />
           </View>
         ) : (
           <>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
             {comments.length === 0 ? (
-              <Text style={styles.muted}>Nenhum comentário ainda. Seja o primeiro :)</Text>
+              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Nenhum comentário ainda. Seja o primeiro :)</Text>
             ) : (
               <View style={styles.list}>
                 {comments.map((item) => (
@@ -275,6 +283,7 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                     key={String(item.id)}
                     style={[
                       styles.commentCard,
+                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
                       item.moderation_state === "removed" && styles.commentCardRemoved,
                       item.moderation_state === "under_review" && styles.commentCardUnderReview,
                     ]}
@@ -290,12 +299,13 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                         {moderationLabel(item.moderation_state)}
                       </Text>
                     ) : null}
-                    <Text style={styles.commentMeta}>
+                    <Text style={[styles.commentMeta, { color: theme.colors.textMuted }]}>
                       {item.author_display} • {formatDate(item.created_at)}
                     </Text>
                     <Text
                       style={[
                         styles.commentBody,
+                        { color: theme.colors.text },
                         item.moderation_state === "removed" && styles.removedText,
                         item.moderation_state === "under_review" && styles.reviewText,
                       ]}
@@ -304,11 +314,11 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
                     </Text>
                     <Pressable
                       onPress={() => reportComment(item.id)}
-                      style={styles.reportMiniBtn}
+                      style={[styles.reportMiniBtn, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}
                       accessibilityRole="button"
                       accessibilityLabel={`Denunciar comentário de ${item.author_display}`}
                     >
-                      <Text style={styles.reportMiniText}>Denunciar</Text>
+                      <Text style={[styles.reportMiniText, { color: theme.colors.text }]}>Denunciar</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -322,7 +332,15 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
             value={text}
             onChangeText={setText}
             placeholder="Escreva um comentário…"
-            style={styles.input}
+            style={[
+              styles.input,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                color: theme.colors.text,
+              },
+            ]}
+            placeholderTextColor={theme.colors.textMuted}
             multiline
           />
           <Pressable
@@ -330,9 +348,15 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
             disabled={sending || !text.trim()}
             accessibilityRole="button"
             accessibilityLabel="Enviar comentário"
-            style={[styles.sendBtn, (sending || !text.trim()) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+              (sending || !text.trim()) && styles.sendBtnDisabled,
+            ]}
           >
-            <Text style={styles.sendText}>{sending ? "Enviando…" : "Enviar"}</Text>
+            <Text style={[styles.sendText, { color: theme.colors.textInverse }]}>
+              {sending ? "Enviando…" : "Enviar"}
+            </Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -343,40 +367,53 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
         animationType="fade"
         onRequestClose={closeReport}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: theme.colors.overlay }]}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={styles.modalKeyboard}
           >
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>
+            <View style={[styles.modalCard, { backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
                 {reportTarget?.type === "post" ? "Denunciar post" : "Denunciar comentário"}
               </Text>
-              <Text style={styles.modalSubtitle}>Escreva o motivo da denúncia:</Text>
+              <Text style={[styles.modalSubtitle, { color: theme.colors.textMuted }]}>Escreva o motivo da denúncia:</Text>
               <TextInput
                 value={reportReason}
                 onChangeText={setReportReason}
                 placeholder="Ex: spam, ofensa, conteúdo inadequado…"
-                style={styles.modalInput}
+                style={[
+                  styles.modalInput,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surfaceMuted,
+                    color: theme.colors.text,
+                  },
+                ]}
+                placeholderTextColor={theme.colors.textMuted}
                 multiline
               />
               <View style={styles.modalActions}>
                 <Pressable
                   onPress={closeReport}
-                  style={styles.modalBtn}
+                  style={[styles.modalBtn, { backgroundColor: theme.colors.surfaceMuted }]}
                   accessibilityRole="button"
                   accessibilityLabel="Cancelar denúncia"
                 >
-                  <Text style={styles.modalBtnText}>Cancelar</Text>
+                  <Text style={[styles.modalBtnText, { color: theme.colors.text }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
                   onPress={submitReport}
                   disabled={reporting}
                   accessibilityRole="button"
                   accessibilityLabel="Enviar denúncia"
-                  style={[styles.modalBtn, styles.modalBtnPrimary, reporting && styles.modalBtnDisabled]}
+                  style={[
+                    styles.modalBtn,
+                    styles.modalBtnPrimary,
+                    { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary },
+                    reporting && styles.modalBtnDisabled,
+                  ]}
                 >
-                  <Text style={styles.modalBtnTextPrimary}>
+                  <Text style={[styles.modalBtnTextPrimary, { color: theme.colors.textInverse }]}>
                     {reporting ? "Enviando…" : "Enviar"}
                   </Text>
                 </Pressable>
@@ -390,20 +427,20 @@ export function CommunityPostScreen({ token, post, onBack, onLogout }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12, backgroundColor: "#f7f4ee" },
+  container: { flex: 1, padding: 16, gap: 12 },
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  title: { fontSize: 18, fontWeight: "700" },
+  title: { fontSize: 18, fontWeight: "700", fontFamily: "Georgia" },
 
   topBtn: { paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 8 },
-  topBtnText: { fontSize: 12 },
+  topBtnText: { fontSize: 12, fontWeight: "700" },
 
   postCard: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 6 },
   postTitle: { fontSize: 16, fontWeight: "800" },
-  meta: { fontSize: 12, opacity: 0.7 },
+  meta: { fontSize: 12 },
   postBody: { fontSize: 14 },
   followCard: { marginTop: 6, borderWidth: 1, borderRadius: 10, padding: 10, gap: 8 },
   followTitle: { fontSize: 13, fontWeight: "800" },
-  followDescription: { fontSize: 12, opacity: 0.8 },
+  followDescription: { fontSize: 12 },
   followBtn: {
     alignSelf: "flex-start",
     borderWidth: 1,
@@ -433,14 +470,14 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { gap: 10, paddingBottom: SCROLL_BOTTOM_GUTTER },
   loadingBlock: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
-  error: { color: "crimson" },
-  muted: { opacity: 0.7 },
+  error: {},
+  muted: {},
 
   list: { gap: 10 },
   commentCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 },
   commentCardRemoved: { borderColor: "#c44545", backgroundColor: "#fff4f4" },
   commentCardUnderReview: { borderColor: "#b17b15", backgroundColor: "#fff9ef" },
-  commentMeta: { fontSize: 12, opacity: 0.7 },
+  commentMeta: { fontSize: 12 },
   commentBody: { fontSize: 13 },
   reportBtn: {
     marginTop: 4,
@@ -462,19 +499,17 @@ const styles = StyleSheet.create({
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
     padding: 16,
   },
   modalKeyboard: { width: "100%" },
   modalCard: {
-    backgroundColor: "white",
     borderRadius: 12,
     padding: 16,
     gap: 10,
   },
   modalTitle: { fontSize: 16, fontWeight: "800" },
-  modalSubtitle: { fontSize: 12, opacity: 0.7 },
+  modalSubtitle: { fontSize: 12 },
   modalInput: {
     borderWidth: 1,
     borderRadius: 10,
