@@ -1,10 +1,12 @@
 import React from "react";
 import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import {
   AppRoute,
   DESKTOP_NAV_ITEMS,
   MOBILE_TAB_ITEMS,
+  type NavIconName,
   ROUTE_TITLES,
 } from "../navigation/routes";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -24,6 +26,20 @@ function isRouteActive(current: AppRoute, target: AppRoute) {
     return current === "communityPost" || current === "communityNewPost";
   }
   return false;
+}
+
+type AppShellIconName = NavIconName | "magnify" | "weather-sunny" | "moon-waning-crescent" | "logout-variant";
+
+function ShellIcon({
+  name,
+  color,
+  size,
+}: {
+  name: AppShellIconName;
+  color: string;
+  size: number;
+}) {
+  return <MaterialCommunityIcons name={name} size={size} color={color} />;
 }
 
 export function AppShell({
@@ -60,6 +76,7 @@ export function AppShell({
           <View style={styles.desktopNav}>
             {DESKTOP_NAV_ITEMS.map((item) => {
               const active = isRouteActive(route, item.route);
+              const color = active ? theme.colors.sidebarText : theme.colors.sidebarTextMuted;
               return (
                 <Pressable
                   key={item.route}
@@ -71,14 +88,10 @@ export function AppShell({
                       : null,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.desktopNavText,
-                      { color: active ? theme.colors.sidebarText : theme.colors.sidebarTextMuted },
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
+                  <View style={styles.desktopNavInner}>
+                    <ShellIcon name={item.icon} size={20} color={color} />
+                    <Text style={[styles.desktopNavText, { color }]}>{item.label}</Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -86,17 +99,25 @@ export function AppShell({
 
           <View style={[styles.desktopFooter, { borderTopColor: theme.colors.sidebarBorder }]}>
             <Pressable style={styles.desktopFooterAction} onPress={onOpenSearch}>
+              <ShellIcon name="magnify" size={20} color={theme.colors.sidebarText} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.sidebarText }]}>Busca global</Text>
             </Pressable>
             <Pressable style={styles.desktopFooterAction} onPress={onOpenAccount}>
+              <ShellIcon name="account-circle-outline" size={20} color={theme.colors.sidebarText} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.sidebarText }]}>Minha conta</Text>
             </Pressable>
             <Pressable style={styles.desktopFooterAction} onPress={toggleMode}>
+              <ShellIcon
+                name={theme.isDark ? "weather-sunny" : "moon-waning-crescent"}
+                size={20}
+                color={theme.colors.sidebarText}
+              />
               <Text style={[styles.desktopFooterText, { color: theme.colors.sidebarText }]}>
                 {theme.isDark ? "Modo claro" : "Modo escuro"}
               </Text>
             </Pressable>
             <Pressable style={styles.desktopFooterAction} onPress={() => void Promise.resolve(onLogout())}>
+              <ShellIcon name="logout-variant" size={20} color={theme.colors.danger} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.danger }]}>Sair</Text>
             </Pressable>
           </View>
@@ -139,17 +160,21 @@ export function AppShell({
             testID="shell-mobile-search"
             style={[styles.mobileActionButton, { borderColor: theme.colors.sidebarBorder }]}
             onPress={onOpenSearch}
+            accessibilityLabel="Abrir busca global"
           >
-            <Text style={[styles.mobileActionText, { color: theme.colors.sidebarText }]}>Busca</Text>
+            <ShellIcon name="magnify" size={18} color={theme.colors.sidebarText} />
           </Pressable>
           <Pressable
             testID="shell-mobile-theme"
             style={[styles.mobileActionButton, { borderColor: theme.colors.sidebarBorder }]}
             onPress={toggleMode}
+            accessibilityLabel={theme.isDark ? "Ativar modo claro" : "Ativar modo escuro"}
           >
-            <Text style={[styles.mobileActionText, { color: theme.colors.sidebarText }]}>
-              {theme.isDark ? "Claro" : "Escuro"}
-            </Text>
+            <ShellIcon
+              name={theme.isDark ? "weather-sunny" : "moon-waning-crescent"}
+              size={18}
+              color={theme.colors.sidebarText}
+            />
           </Pressable>
         </View>
       </View>
@@ -174,12 +199,12 @@ export function AppShell({
               onPress={() => onNavigate(item.route)}
               style={styles.mobileTab}
             >
-              <Text
-                style={[
-                  styles.mobileTabLabel,
-                  { color: active ? theme.colors.accent : theme.colors.textMuted },
-                ]}
-              >
+              <ShellIcon
+                name={item.icon}
+                size={20}
+                color={active ? theme.colors.accent : theme.colors.textMuted}
+              />
+              <Text style={[styles.mobileTabLabel, { color: active ? theme.colors.accent : theme.colors.textMuted }]}>
                 {item.shortLabel || item.label}
               </Text>
             </Pressable>
@@ -219,6 +244,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
+  desktopNavInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   desktopNavText: { fontSize: 15, fontWeight: "700" },
   desktopFooter: {
     marginTop: "auto",
@@ -227,6 +257,9 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   desktopFooterAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 8,
@@ -265,10 +298,11 @@ const styles = StyleSheet.create({
   mobileActionButton: {
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  mobileActionText: { fontSize: 12, fontWeight: "700" },
   mobileBottomBar: {
     minHeight: 72,
     borderTopWidth: 1,
@@ -280,6 +314,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   mobileTab: {
+    alignItems: "center",
+    gap: 3,
     paddingHorizontal: 6,
     paddingVertical: 6,
     borderRadius: 8,
