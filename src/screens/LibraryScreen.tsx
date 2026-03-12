@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { ApiError } from "../api/http";
 import {
@@ -84,6 +86,40 @@ type ChapterLoadParams = {
   restoreOffset?: number;
 };
 
+type BookCardMeta = {
+  chapterCount: number;
+  chapterPosition: number | null;
+  progressPercent: number;
+  lastOpenedAt: string | null;
+  coverUrl: string | null;
+};
+
+function safeTimestamp(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function formatBookDateLabel(value?: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function normalizeBookStatus(status?: string | null) {
+  const normalized = String(status || "").trim();
+  if (!normalized) return "Sem status";
+  if (normalized.toLowerCase() === "published") return "Publicado";
+  if (normalized.toLowerCase() === "draft") return "Rascunho";
+  if (normalized.toLowerCase() === "archived") return "Arquivado";
+  return normalized.toUpperCase();
+}
+
 export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -91,6 +127,8 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [loadingBooks, setLoadingBooks] = React.useState(true);
   const [books, setBooks] = React.useState<Book[]>([]);
   const [booksError, setBooksError] = React.useState<string | null>(null);
+  const [bookCardMetaById, setBookCardMetaById] = React.useState<Record<number, BookCardMeta>>({});
+  const [bookCardMetaLoading, setBookCardMetaLoading] = React.useState(false);
 
   const [openBook, setOpenBook] = React.useState<OpenBookState | null>(null);
   const [openBookLoading, setOpenBookLoading] = React.useState(false);
@@ -101,6 +139,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [activeChapter, setActiveChapter] = React.useState<LoadedChapterState | null>(null);
   const [readerFocus, setReaderFocus] = React.useState<ReaderFocus | null>(null);
   const [readerInitialOffset, setReaderInitialOffset] = React.useState(0);
+  const [hoveredBookId, setHoveredBookId] = React.useState<number | null>(null);
 
   const [query, setQuery] = React.useState("");
   const [searchLoading, setSearchLoading] = React.useState(false);
@@ -114,6 +153,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
   const [annotationMode, setAnnotationMode] = React.useState(false);
   const [readerFontScale, setReaderFontScale] = React.useState(1);
+  const [readerToolbarOpen, setReaderToolbarOpen] = React.useState(Platform.OS === "web");
 
   const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
   const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
@@ -142,6 +182,82 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     return Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
   }, []);
   const isNarrow = windowWidth <= 720;
+  const isNative = Platform.OS !== "web";
+  const webLibraryShellStyle = React.useMemo(() => {
+    if (Platform.OS !== "web") return null;
+    return {
+      maxWidth: 1220,
+      paddingTop: 24,
+      paddingHorizontal: 24,
+    };
+  }, []);
+  const webLibraryListContentStyle = React.useMemo(() => {
+    if (Platform.OS !== "web") return null;
+    return {
+      paddingTop: 14,
+    };
+  }, []);
+
+  const readerUi = React.useMemo(() => {
+    return {
+      rootBg: theme.colors.bg,
+      chromeBg: theme.colors.surfaceMuted,
+      chromeBorder: theme.colors.border,
+      bodyBg: theme.colors.surface,
+      bodyBorder: theme.colors.border,
+      title: theme.colors.text,
+      subtitle: theme.colors.textMuted,
+      iconBg: theme.colors.surface,
+      iconBorder: theme.colors.borderStrong,
+      iconText: theme.colors.text,
+      iconActiveBg: theme.colors.primary,
+      iconActiveText: theme.colors.textInverse,
+      bannerBg: theme.isDark ? "#2E2A17" : "#FFF7D9",
+      bannerBorder: theme.isDark ? "#746233" : "#D9C56A",
+      bannerTitle: theme.isDark ? "#F0DDA0" : "#47380D",
+      bannerText: theme.isDark ? "#E6D29D" : "#5A4A15",
+      draftBg: theme.colors.surfaceMuted,
+      draftBorder: theme.colors.border,
+      draftTitle: theme.colors.text,
+      draftText: theme.colors.textMuted,
+      draftActionBg: theme.colors.primary,
+      draftActionText: theme.colors.textInverse,
+      panelBg: theme.colors.surfaceMuted,
+      panelBorder: theme.colors.border,
+      panelTitle: theme.colors.text,
+      inputBg: theme.colors.surface,
+      inputBorder: theme.colors.borderStrong,
+      inputText: theme.colors.text,
+      inputPlaceholder: theme.colors.textMuted,
+      itemBg: theme.colors.surface,
+      itemBorder: theme.colors.border,
+      itemTitle: theme.colors.text,
+      itemText: theme.colors.textMuted,
+      itemHighlightBg: theme.colors.primary,
+      itemHighlightText: theme.colors.textInverse,
+      searchHighlight: theme.isDark ? "#6F5805" : "#FFF59D",
+      bottomBarBg: theme.colors.surfaceMuted,
+      bottomBarBorder: theme.colors.border,
+      pageButtonBg: theme.colors.primary,
+      pageButtonText: theme.colors.textInverse,
+      progressText: theme.colors.textMuted,
+      modalCardBg: theme.colors.surface,
+      modalCardBorder: theme.colors.border,
+      modalTitle: theme.colors.text,
+      modalText: theme.colors.text,
+      modalMuted: theme.colors.textMuted,
+      modalInputBg: theme.colors.surface,
+      modalInputBorder: theme.colors.borderStrong,
+      modalInputText: theme.colors.text,
+      modalCancelBg: theme.colors.surface,
+      modalCancelBorder: theme.colors.borderStrong,
+      modalCancelText: theme.colors.text,
+      modalPrimaryBg: theme.colors.primary,
+      modalPrimaryText: theme.colors.textInverse,
+      error: theme.colors.danger,
+      empty: theme.colors.textMuted,
+    };
+  }, [theme]);
 
   const formatApiError = React.useCallback((error: unknown, prefix: string) => {
     if (error instanceof ApiError) {
@@ -201,19 +317,99 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     [flushReadingProgress]
   );
 
+  const loadBookCardMeta = React.useCallback(
+    async (items: Book[]) => {
+      if (!items.length) {
+        setBookCardMetaById({});
+        return;
+      }
+
+      setBookCardMetaLoading(true);
+      try {
+        const entries = await Promise.all(
+          items.map(async (book) => {
+            const rawCover = (book as Book & { cover_url?: string | null; cover?: string | null }).cover_url
+              ?? (book as Book & { cover?: string | null }).cover
+              ?? null;
+            const coverUrl = typeof rawCover === "string" && rawCover.trim() ? rawCover.trim() : null;
+
+            try {
+              const [versionResponse, chaptersResponse] = await Promise.all([
+                getCurrentBookVersion(token, book.id),
+                listCurrentVersionChapters(token, book.id),
+              ]);
+              const orderedChapters = [...(chaptersResponse.chapters ?? [])].sort((a, b) => a.order - b.order);
+              const chapterCount = orderedChapters.length;
+              const progress = await getReadingProgress(book.id, versionResponse.version.id);
+
+              if (!progress || chapterCount === 0) {
+                return [
+                  book.id,
+                  {
+                    chapterCount,
+                    chapterPosition: null,
+                    progressPercent: 0,
+                    lastOpenedAt: null,
+                    coverUrl,
+                  } satisfies BookCardMeta,
+                ] as const;
+              }
+
+              const chapterIdx = orderedChapters.findIndex((chapter) => chapter.slug === progress.chapterSlug);
+              const chapterPosition = chapterIdx >= 0 ? chapterIdx + 1 : null;
+              const progressPercent =
+                chapterPosition && chapterCount > 0
+                  ? Math.min(100, Math.max(0, Math.round((chapterPosition / chapterCount) * 100)))
+                  : 0;
+
+              return [
+                book.id,
+                {
+                  chapterCount,
+                  chapterPosition,
+                  progressPercent,
+                  lastOpenedAt: progress.updatedAt,
+                  coverUrl,
+                } satisfies BookCardMeta,
+              ] as const;
+            } catch {
+              return [
+                book.id,
+                {
+                  chapterCount: 0,
+                  chapterPosition: null,
+                  progressPercent: 0,
+                  lastOpenedAt: null,
+                  coverUrl,
+                } satisfies BookCardMeta,
+              ] as const;
+            }
+          })
+        );
+
+        setBookCardMetaById(Object.fromEntries(entries));
+      } finally {
+        setBookCardMetaLoading(false);
+      }
+    },
+    [token]
+  );
+
   const loadBooks = React.useCallback(async () => {
     setLoadingBooks(true);
     setBooksError(null);
     try {
       const response = await listBooks(token);
       setBooks(response.books);
+      void loadBookCardMeta(response.books);
     } catch (error) {
       setBooks([]);
+      setBookCardMetaById({});
       setBooksError(formatApiError(error, "Erro ao carregar /books"));
     } finally {
       setLoadingBooks(false);
     }
-  }, [formatApiError, token]);
+  }, [formatApiError, loadBookCardMeta, token]);
 
   React.useEffect(() => {
     loadBooks();
@@ -277,6 +473,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setReaderSummaryOpen(false);
       setAnnotationMode(false);
       setReaderFontScale(1);
+      setReaderToolbarOpen(Platform.OS === "web");
       setAnnotations([]);
       setAnnotationsSyncError(null);
       setAnnotationsLoading(false);
@@ -639,21 +836,21 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, [formatAnnotationError, loadAnnotations, selectedAnnotation, token]);
 
   const renderHighlightedSnippet = React.useCallback(
-    (snippet: string) => {
+    (snippet: string, textColor: string, highlightBg: string) => {
       const term = submittedQuery.trim();
       if (!term) {
-        return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
+        return <Text style={[styles.searchItemSnippet, { color: textColor }]}>{snippet}</Text>;
       }
 
       const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
 
       return (
-        <Text style={styles.searchItemSnippet}>
+        <Text style={[styles.searchItemSnippet, { color: textColor }]}>
           {parts.map((part, idx) => {
             if (part.toLowerCase() === term.toLowerCase()) {
               return (
-                <Text key={`hit-${idx}`} style={styles.searchHighlight}>
+                <Text key={`hit-${idx}`} style={[styles.searchHighlight, { backgroundColor: highlightBg }]}>
                   {part}
                 </Text>
               );
@@ -668,6 +865,26 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
   const activeBookMeta = openBook ? books.find((book) => book.id === openBook.bookId) ?? null : null;
 
+  const sortedBooks = React.useMemo(() => {
+    const ranked = [...books];
+    ranked.sort((a, b) => {
+      const aOpenedAt = safeTimestamp(bookCardMetaById[a.id]?.lastOpenedAt);
+      const bOpenedAt = safeTimestamp(bookCardMetaById[b.id]?.lastOpenedAt);
+      if (aOpenedAt !== bOpenedAt) return bOpenedAt - aOpenedAt;
+
+      const aUpdated = safeTimestamp(a.updated_at);
+      const bUpdated = safeTimestamp(b.updated_at);
+      return bUpdated - aUpdated;
+    });
+    return ranked;
+  }, [bookCardMetaById, books]);
+
+  const highlightedBookId = React.useMemo(() => {
+    const first = sortedBooks[0];
+    if (!first) return null;
+    return bookCardMetaById[first.id]?.lastOpenedAt ? first.id : null;
+  }, [bookCardMetaById, sortedBooks]);
+
   const closeReader = () => {
     if (saveProgressTimerRef.current) {
       clearTimeout(saveProgressTimerRef.current);
@@ -678,6 +895,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setReaderSearchOpen(false);
     setReaderSummaryOpen(false);
     setAnnotationMode(false);
+    setReaderToolbarOpen(Platform.OS === "web");
     setOpenBook(null);
     setOpenBookLoading(false);
     setOpenBookError(null);
@@ -709,99 +927,210 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   };
 
   if (readerMode && openBook) {
+    const readerToolbarControls = (
+      <>
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerSummaryOpen
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => setReaderSummaryOpen((current) => !current)}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar índice de capítulos"
+        >
+          <MaterialCommunityIcons
+            name="format-list-bulleted"
+            size={17}
+            color={readerSummaryOpen ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerSearchOpen
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => setReaderSearchOpen((current) => !current)}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar busca no livro"
+        >
+          <MaterialCommunityIcons
+            name="magnify"
+            size={17}
+            color={readerSearchOpen ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            annotationMode
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => {
+            setAnnotationMode((current) => {
+              const next = !current;
+              if (!next) {
+                setAnnotationDraft(null);
+                setPendingNativeDraft(null);
+              }
+              return next;
+            });
+            setAnnotationDraftNote("");
+            setAnnotationsSyncError(null);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar modo anotação"
+        >
+          <MaterialCommunityIcons
+            name="pencil-outline"
+            size={16}
+            color={annotationMode ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerFontScale <= 0.9 ? styles.readerIconButtonDisabled : null,
+          ]}
+          onPress={() => setReaderFontScale((current) => clampReaderFontScale(current - 0.1))}
+          disabled={readerFontScale <= 0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Diminuir fonte"
+        >
+          <Text style={[styles.readerIconText, { color: readerUi.iconText }]}>A-</Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerFontScale >= 1.35 ? styles.readerIconButtonDisabled : null,
+          ]}
+          onPress={() => setReaderFontScale((current) => clampReaderFontScale(current + 0.1))}
+          disabled={readerFontScale >= 1.35}
+          accessibilityRole="button"
+          accessibilityLabel="Aumentar fonte"
+        >
+          <Text style={[styles.readerIconText, { color: readerUi.iconText }]}>A+</Text>
+        </Pressable>
+      </>
+    );
+
     return (
-      <View style={[styles.readerRoot, webRootStyle]}>
+      <View style={[styles.readerRoot, webRootStyle, { backgroundColor: readerUi.rootBg }]}>
         <View style={styles.readerShell}>
-          <View style={[styles.readerTopBar, isNarrow ? styles.readerTopBarNarrow : null]}>
+          <View
+            style={[
+              styles.readerTopBar,
+              !isNative && isNarrow ? styles.readerTopBarNarrow : null,
+              {
+                borderColor: readerUi.chromeBorder,
+                backgroundColor: readerUi.chromeBg,
+              },
+            ]}
+          >
             <Pressable
-              style={styles.readerIconButton}
+              style={[
+                styles.readerIconButton,
+                {
+                  borderColor: readerUi.iconBorder,
+                  backgroundColor: readerUi.iconBg,
+                },
+              ]}
               onPress={closeReader}
               accessibilityRole="button"
               accessibilityLabel="Fechar modo leitura"
             >
-              <Text style={styles.readerIconText}>←</Text>
+              <MaterialCommunityIcons name="chevron-left" size={18} color={readerUi.iconText} />
             </Pressable>
 
             <View style={[styles.readerTitleWrap, isNarrow ? styles.readerTitleWrapNarrow : null]}>
-              <Text style={styles.readerBookTitle} numberOfLines={1}>
+              <Text style={[styles.readerBookTitle, { color: readerUi.title }]} numberOfLines={1}>
                 {activeBookMeta?.title ?? `Livro ${openBook.bookId}`}
               </Text>
-              <Text style={styles.readerChapterTitle} numberOfLines={1}>
+              <Text style={[styles.readerChapterTitle, { color: readerUi.subtitle }]} numberOfLines={1}>
                 {activeChapter ? `${activeChapter.chapter.order}. ${activeChapter.chapter.title}` : "Carregando capítulo"}
               </Text>
             </View>
 
-            <View style={[styles.readerToolbar, isNarrow ? styles.readerToolbarNarrow : null]}>
+            {isNative ? (
               <Pressable
-                style={[styles.readerIconButton, readerSummaryOpen ? styles.readerIconButtonActive : null]}
-                onPress={() => setReaderSummaryOpen((current) => !current)}
+                style={[
+                  styles.readerIconButton,
+                  {
+                    borderColor: readerToolbarOpen ? readerUi.iconActiveBg : readerUi.iconBorder,
+                    backgroundColor: readerToolbarOpen ? readerUi.iconActiveBg : readerUi.iconBg,
+                  },
+                ]}
+                onPress={() => setReaderToolbarOpen((current) => !current)}
                 accessibilityRole="button"
-                accessibilityLabel="Alternar índice de capítulos"
+                accessibilityLabel={readerToolbarOpen ? "Ocultar controles de leitura" : "Exibir controles de leitura"}
               >
-                <Text style={[styles.readerIconText, readerSummaryOpen ? styles.readerIconTextActive : null]}>
-                  ≡
-                </Text>
+                <MaterialCommunityIcons
+                  name={readerToolbarOpen ? "chevron-up" : "tune-variant"}
+                  size={18}
+                  color={readerToolbarOpen ? readerUi.iconActiveText : readerUi.iconText}
+                />
               </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerSearchOpen ? styles.readerIconButtonActive : null]}
-                onPress={() => setReaderSearchOpen((current) => !current)}
-                accessibilityRole="button"
-                accessibilityLabel="Alternar busca no livro"
-              >
-                <Text style={[styles.readerIconText, readerSearchOpen ? styles.readerIconTextActive : null]}>
-                  ⌕
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, annotationMode ? styles.readerIconButtonActive : null]}
-                onPress={() => {
-                  setAnnotationMode((current) => {
-                    const next = !current;
-                    if (!next) {
-                      setAnnotationDraft(null);
-                      setPendingNativeDraft(null);
-                    }
-                    return next;
-                  });
-                  setAnnotationDraftNote("");
-                  setAnnotationsSyncError(null);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Alternar modo anotação"
-              >
-                <Text style={[styles.readerIconText, annotationMode ? styles.readerIconTextActive : null]}>
-                  ✎
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerFontScale <= 0.9 ? styles.readerIconButtonDisabled : null]}
-                onPress={() => setReaderFontScale((current) => clampReaderFontScale(current - 0.1))}
-                disabled={readerFontScale <= 0.9}
-                accessibilityRole="button"
-                accessibilityLabel="Diminuir fonte"
-              >
-                <Text style={styles.readerIconText}>A-</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerFontScale >= 1.35 ? styles.readerIconButtonDisabled : null]}
-                onPress={() => setReaderFontScale((current) => clampReaderFontScale(current + 0.1))}
-                disabled={readerFontScale >= 1.35}
-                accessibilityRole="button"
-                accessibilityLabel="Aumentar fonte"
-              >
-                <Text style={styles.readerIconText}>A+</Text>
-              </Pressable>
-            </View>
+            ) : (
+              <View style={[styles.readerToolbar, isNarrow ? styles.readerToolbarNarrow : null]}>
+                {readerToolbarControls}
+              </View>
+            )}
           </View>
 
+          {isNative && readerToolbarOpen ? (
+            <View
+              style={[
+                styles.readerToolbarPanel,
+                {
+                  borderColor: readerUi.chromeBorder,
+                  backgroundColor: readerUi.chromeBg,
+                },
+              ]}
+            >
+              <View style={[styles.readerToolbar, styles.readerToolbarNarrow]}>{readerToolbarControls}</View>
+            </View>
+          ) : null}
+
           {annotationMode ? (
-            <View style={styles.annotationModeBanner}>
-              <Text style={styles.annotationModeTitle}>Modo anotação ativo</Text>
-              <Text style={styles.annotationModeSubtitle}>
+            <View
+              style={[
+                styles.annotationModeBanner,
+                {
+                  borderColor: readerUi.bannerBorder,
+                  backgroundColor: readerUi.bannerBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModeTitle, { color: readerUi.bannerTitle }]}>Modo anotação ativo</Text>
+              <Text style={[styles.annotationModeSubtitle, { color: readerUi.bannerText }]}>
                 {annotationsLoading
                   ? "Carregando anotações..."
                   : Platform.OS === "web"
@@ -812,35 +1141,59 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           ) : null}
 
           {pendingNativeDraft && Platform.OS !== "web" ? (
-            <View style={styles.nativeDraftBanner}>
-              <Text style={styles.nativeDraftTitle}>Trecho preparado</Text>
-              <Text style={styles.nativeDraftExcerpt} numberOfLines={2}>
+            <View
+              style={[
+                styles.nativeDraftBanner,
+                {
+                  borderColor: readerUi.draftBorder,
+                  backgroundColor: readerUi.draftBg,
+                },
+              ]}
+            >
+              <Text style={[styles.nativeDraftTitle, { color: readerUi.draftTitle }]}>Trecho preparado</Text>
+              <Text style={[styles.nativeDraftExcerpt, { color: readerUi.draftText }]} numberOfLines={2}>
                 "{pendingNativeDraft.excerpt}"
               </Text>
               <Pressable
-                style={styles.nativeDraftAction}
+                style={[styles.nativeDraftAction, { backgroundColor: readerUi.draftActionBg }]}
                 onPress={() => {
                   setAnnotationDraft(pendingNativeDraft);
                   setPendingNativeDraft(null);
                 }}
               >
-                <Text style={styles.nativeDraftActionText}>Anotar trecho selecionado</Text>
+                <Text style={[styles.nativeDraftActionText, { color: readerUi.draftActionText }]}>Anotar trecho selecionado</Text>
               </Pressable>
             </View>
           ) : null}
 
-          {annotationsSyncError ? <Text style={styles.errorInline}>{annotationsSyncError}</Text> : null}
+          {annotationsSyncError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{annotationsSyncError}</Text> : null}
 
           {readerSearchOpen ? (
-            <View style={styles.readerPanel}>
-              <Text style={styles.readerPanelTitle}>Buscar neste livro</Text>
+            <View
+              style={[
+                styles.readerPanel,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Buscar neste livro</Text>
               <View style={styles.readerSearchRow}>
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Digite um termo..."
+                  placeholderTextColor={readerUi.inputPlaceholder}
                   autoCapitalize="none"
-                  style={styles.readerSearchInput}
+                  style={[
+                    styles.readerSearchInput,
+                    {
+                      borderColor: readerUi.inputBorder,
+                      backgroundColor: readerUi.inputBg,
+                      color: readerUi.inputText,
+                    },
+                  ]}
                   editable={!searchLoading}
                   returnKeyType="search"
                   onSubmitEditing={runSearch}
@@ -848,20 +1201,26 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 <Pressable
                   onPress={runSearch}
                   disabled={searchLoading || !query.trim()}
-                  style={[styles.searchBtn, searchLoading || !query.trim() ? styles.searchBtnDisabled : null]}
+                  style={[
+                    styles.searchBtn,
+                    { backgroundColor: readerUi.pageButtonBg },
+                    searchLoading || !query.trim() ? styles.searchBtnDisabled : null,
+                  ]}
                 >
-                  <Text style={styles.searchBtnText}>{searchLoading ? "..." : "Buscar"}</Text>
+                  <Text style={[styles.searchBtnText, { color: readerUi.pageButtonText }]}>
+                    {searchLoading ? "..." : "Buscar"}
+                  </Text>
                 </Pressable>
               </View>
 
-              {searchError ? <Text style={styles.errorInline}>{searchError}</Text> : null}
+              {searchError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{searchError}</Text> : null}
 
               {hasSearched && !searchLoading ? (
                 displayedSearchResults.length === 0 ? (
-                  <Text style={styles.empty}>Sem resultados.</Text>
+                  <Text style={[styles.empty, { color: readerUi.empty }]}>Sem resultados.</Text>
                 ) : (
                   <View style={styles.readerResults}>
-                    <Text style={styles.searchMeta}>
+                    <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
                       {searchCount != null
                         ? `${displayedSearchResults.length} de ${searchCount} resultados`
                         : `${displayedSearchResults.length} resultados`}
@@ -869,7 +1228,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     {displayedSearchResults.map((result) => (
                       <Pressable
                         key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
-                        style={styles.searchItem}
+                        style={[
+                          styles.searchItem,
+                          {
+                            borderColor: readerUi.itemBorder,
+                            backgroundColor: readerUi.itemBg,
+                          },
+                        ]}
                         onPress={() => {
                           openReaderChapter(result.chapter_slug, {
                             query: submittedQuery.trim(),
@@ -881,10 +1246,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                           }
                         }}
                       >
-                        <Text style={styles.searchItemTitle}>
+                        <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
                           Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
                         </Text>
-                        {renderHighlightedSnippet(result.compactSnippet)}
+                        {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
                       </Pressable>
                     ))}
                   </View>
@@ -894,8 +1259,16 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           ) : null}
 
           {readerSummaryOpen ? (
-            <View style={styles.readerPanel}>
-              <Text style={styles.readerPanelTitle}>Índice</Text>
+            <View
+              style={[
+                styles.readerPanel,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Índice</Text>
               <View style={styles.readerSummaryList}>
                 {openBook.chapters.map((chapter) => {
                   const active = activeChapter?.chapter.slug === chapter.slug;
@@ -908,10 +1281,29 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                           setReaderSummaryOpen(false);
                         }
                       }}
-                      style={[styles.chapterItem, active ? styles.chapterItemActive : null]}
+                      style={[
+                        styles.chapterItem,
+                        {
+                          borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
+                          backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
+                        },
+                      ]}
                     >
-                      <Text style={[styles.chapterOrder, active ? styles.chapterTextActive : null]}>{chapter.order}.</Text>
-                      <Text style={[styles.chapterTitle, active ? styles.chapterTextActive : null]} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.chapterOrder,
+                          { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                        ]}
+                      >
+                        {chapter.order}.
+                      </Text>
+                      <Text
+                        style={[
+                          styles.chapterTitle,
+                          { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
+                        ]}
+                        numberOfLines={1}
+                      >
                         {chapter.title}
                       </Text>
                     </Pressable>
@@ -921,12 +1313,21 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
             </View>
           ) : null}
 
-          <View style={styles.readerBody}>
+          <View
+            style={[
+              styles.readerBody,
+              {
+                borderColor: readerUi.bodyBorder,
+                backgroundColor: readerUi.bodyBg,
+              },
+            ]}
+          >
             <BookReaderScreen
               mode="reader"
               showHeader={false}
               showControls={false}
               enableSwipeNavigation
+              colorMode={theme.isDark ? "dark" : "light"}
               fontScale={readerFontScale}
               onFontScaleChange={setReaderFontScale}
               chapter={activeChapter?.chapter ?? null}
@@ -968,31 +1369,61 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
             />
           </View>
 
-          <View style={styles.readerBottomBar}>
+          <View
+            style={[
+              styles.readerBottomBar,
+              {
+                borderColor: readerUi.bottomBarBorder,
+                backgroundColor: readerUi.bottomBarBg,
+              },
+            ]}
+          >
             <Pressable
-              style={[styles.readerPageButton, !activeChapter?.previousSlug ? styles.readerPageButtonDisabled : null]}
+              style={[
+                styles.readerPageButton,
+                isNative ? styles.readerPageButtonCompact : null,
+                {
+                  backgroundColor: readerUi.pageButtonBg,
+                },
+                !activeChapter?.previousSlug ? styles.readerPageButtonDisabled : null,
+              ]}
               onPress={goToPreviousChapter}
               disabled={!activeChapter?.previousSlug}
               accessibilityRole="button"
               accessibilityLabel="Página anterior"
             >
-              <Text style={styles.readerPageButtonText}>Página anterior</Text>
+              {isNative ? (
+                <MaterialCommunityIcons name="chevron-left" size={20} color={readerUi.pageButtonText} />
+              ) : (
+                <Text style={[styles.readerPageButtonText, { color: readerUi.pageButtonText }]}>Página anterior</Text>
+              )}
             </Pressable>
 
-            <Text style={styles.readerProgressText}>
+            <Text style={[styles.readerProgressText, { color: readerUi.progressText }]}>
               {activeChapter
                 ? `${activeChapter.chapter.order} / ${openBook.chapters.length}`
                 : `0 / ${openBook.chapters.length}`}
             </Text>
 
             <Pressable
-              style={[styles.readerPageButton, !activeChapter?.nextSlug ? styles.readerPageButtonDisabled : null]}
+              style={[
+                styles.readerPageButton,
+                isNative ? styles.readerPageButtonCompact : null,
+                {
+                  backgroundColor: readerUi.pageButtonBg,
+                },
+                !activeChapter?.nextSlug ? styles.readerPageButtonDisabled : null,
+              ]}
               onPress={goToNextChapter}
               disabled={!activeChapter?.nextSlug}
               accessibilityRole="button"
               accessibilityLabel="Próxima página"
             >
-              <Text style={styles.readerPageButtonText}>Próxima página</Text>
+              {isNative ? (
+                <MaterialCommunityIcons name="chevron-right" size={20} color={readerUi.pageButtonText} />
+              ) : (
+                <Text style={[styles.readerPageButtonText, { color: readerUi.pageButtonText }]}>Próxima página</Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -1008,14 +1439,22 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           }}
         >
           <View style={styles.annotationModalBackdrop}>
-            <View style={styles.annotationModalCard}>
-              <Text style={styles.annotationModalTitle}>Nova anotação</Text>
+            <View
+              style={[
+                styles.annotationModalCard,
+                {
+                  borderColor: readerUi.modalCardBorder,
+                  backgroundColor: readerUi.modalCardBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Nova anotação</Text>
               {annotationDraft ? (
                 <>
-                  <Text style={styles.annotationModalMeta}>
+                  <Text style={[styles.annotationModalMeta, { color: readerUi.modalMuted }]}>
                     Cap. {annotationDraft.chapterOrder} • {annotationDraft.chapterTitle}
                   </Text>
-                  <Text style={styles.annotationModalExcerpt} numberOfLines={5}>
+                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={5}>
                     "{annotationDraft.excerpt}"
                   </Text>
                 </>
@@ -1035,13 +1474,22 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                       onPress={() => setAnnotationDraftColor(color.value)}
                       style={[
                         styles.annotationColorChip,
+                        {
+                          borderColor: readerUi.iconBorder,
+                          backgroundColor: readerUi.modalInputBg,
+                        },
                         selected ? styles.annotationColorChipSelected : null,
+                        selected
+                          ? { borderColor: readerUi.modalPrimaryBg, backgroundColor: readerUi.modalPrimaryBg }
+                          : null,
                       ]}
                     >
                       <Text
                         style={[
                           styles.annotationColorChipText,
+                          { color: readerUi.modalText },
                           selected ? styles.annotationColorChipTextSelected : null,
+                          selected ? { color: readerUi.modalPrimaryText } : null,
                         ]}
                       >
                         {color.label}
@@ -1055,8 +1503,16 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 value={annotationDraftNote}
                 onChangeText={setAnnotationDraftNote}
                 placeholder="Nota (opcional)"
+                placeholderTextColor={readerUi.inputPlaceholder}
                 multiline
-                style={styles.annotationNoteInput}
+                style={[
+                  styles.annotationNoteInput,
+                  {
+                    borderColor: readerUi.modalInputBorder,
+                    backgroundColor: readerUi.modalInputBg,
+                    color: readerUi.modalInputText,
+                  },
+                ]}
               />
 
               <View style={styles.annotationModalActions}>
@@ -1066,9 +1522,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     setPendingNativeDraft(null);
                   }}
                   disabled={annotationSaving}
-                  style={styles.annotationModalCancel}
+                  style={[
+                    styles.annotationModalCancel,
+                    {
+                      borderColor: readerUi.modalCancelBorder,
+                      backgroundColor: readerUi.modalCancelBg,
+                    },
+                  ]}
                 >
-                  <Text style={styles.annotationModalCancelText}>Cancelar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -1077,10 +1539,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   disabled={annotationSaving}
                   style={[
                     styles.annotationModalSave,
+                    {
+                      backgroundColor: readerUi.modalPrimaryBg,
+                    },
                     annotationSaving ? styles.annotationModalButtonDisabled : null,
                   ]}
                 >
-                  <Text style={styles.annotationModalSaveText}>
+                  <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
                     {annotationSaving ? "Salvando..." : "Salvar"}
                   </Text>
                 </Pressable>
@@ -1100,17 +1565,25 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           }}
         >
           <View style={styles.annotationModalBackdrop}>
-            <View style={styles.annotationModalCard}>
-              <Text style={styles.annotationModalTitle}>Anotação</Text>
+            <View
+              style={[
+                styles.annotationModalCard,
+                {
+                  borderColor: readerUi.modalCardBorder,
+                  backgroundColor: readerUi.modalCardBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Anotação</Text>
               {selectedAnnotation ? (
                 <>
-                  <Text style={styles.annotationModalExcerpt} numberOfLines={6}>
+                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={6}>
                     "{selectedAnnotation.excerpt || "Trecho sem preview"}"
                   </Text>
                   {selectedAnnotation.note?.trim() ? (
-                    <Text style={styles.annotationModalNote}>Nota: {selectedAnnotation.note}</Text>
+                    <Text style={[styles.annotationModalNote, { color: readerUi.modalText }]}>Nota: {selectedAnnotation.note}</Text>
                   ) : (
-                    <Text style={styles.annotationModalNoteMuted}>Sem nota adicional.</Text>
+                    <Text style={[styles.annotationModalNoteMuted, { color: readerUi.modalMuted }]}>Sem nota adicional.</Text>
                   )}
                 </>
               ) : null}
@@ -1119,9 +1592,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 <Pressable
                   onPress={() => setAnnotationDetailId(null)}
                   disabled={annotationDeleting}
-                  style={styles.annotationModalCancel}
+                  style={[
+                    styles.annotationModalCancel,
+                    {
+                      borderColor: readerUi.modalCancelBorder,
+                      backgroundColor: readerUi.modalCancelBg,
+                    },
+                  ]}
                 >
-                  <Text style={styles.annotationModalCancelText}>Fechar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Fechar</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -1147,44 +1626,136 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
   return (
     <View style={[styles.root, webRootStyle, { backgroundColor: theme.colors.bg }]}>
-      <View style={styles.shell}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Biblioteca</Text>
-        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Leitura e busca por capítulos</Text>
-
+      <View style={[styles.shell, webLibraryShellStyle]}>
         {loadingBooks ? (
           <View style={styles.center}>
             <ActivityIndicator />
           </View>
         ) : booksError ? (
-          <Text style={styles.error}>{booksError}</Text>
+          <Text style={[styles.error, { color: theme.colors.danger }]}>{booksError}</Text>
         ) : (
           <>
             {openBookLoading ? (
-              <View style={styles.readerOpeningBox}>
+              <View
+                style={[
+                  styles.readerOpeningBox,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                  },
+                ]}
+              >
                 <ActivityIndicator />
-                <Text style={styles.readerOpeningText}>Abrindo leitor...</Text>
+                <Text style={[styles.readerOpeningText, { color: theme.colors.text }]}>Abrindo leitor...</Text>
               </View>
             ) : null}
-            {openBookError ? <Text style={styles.error}>{openBookError}</Text> : null}
+            {openBookError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{openBookError}</Text> : null}
 
-            <ScrollView style={[styles.scroll, webScrollStyle]} contentContainerStyle={styles.list}>
-              {books.map((book) => {
+            <ScrollView
+              style={[styles.scroll, webScrollStyle]}
+              contentContainerStyle={[styles.list, webLibraryListContentStyle]}
+            >
+              {bookCardMetaLoading ? (
+                <Text style={[styles.listInfoText, { color: theme.colors.textMuted }]}>Atualizando progresso de leitura…</Text>
+              ) : null}
+
+              {sortedBooks.map((book) => {
+                const meta = bookCardMetaById[book.id];
+                const chapterCount = meta?.chapterCount ?? 0;
+                const chapterPosition = meta?.chapterPosition ?? null;
+                const progressPercent = meta?.progressPercent ?? 0;
+                const hasProgress = chapterPosition != null && chapterCount > 0;
+                const progressLabel = hasProgress
+                  ? `Capítulo ${chapterPosition}/${chapterCount} • ${progressPercent}%`
+                  : chapterCount > 0
+                    ? `0/${chapterCount} • 0%`
+                    : "Capítulos indisponíveis";
+                const statusLabel = normalizeBookStatus(book.status);
+                const isHighlighted = highlightedBookId === book.id;
+                const isHovered = hoveredBookId === book.id;
+
                 return (
-                  <View key={book.id} style={styles.card}>
+                  <View
+                    key={book.id}
+                    style={[
+                      styles.bookCard,
+                      {
+                        backgroundColor: isHovered ? theme.colors.accent : theme.colors.border,
+                      },
+                    ]}
+                  >
                     <Pressable
                       onPress={() => toggleBook(book.id)}
-                      style={styles.cardHeader}
+                      onHoverIn={() => setHoveredBookId(book.id)}
+                      onHoverOut={() => setHoveredBookId((current) => (current === book.id ? null : current))}
+                      style={({ pressed }) => {
+                        const interactive = pressed || isHovered;
+                        return [
+                          styles.bookCardPressable,
+                          {
+                            backgroundColor: interactive ? theme.colors.surfaceMuted : theme.colors.surface,
+                          },
+                        ];
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={`Abrir livro ${book.title}`}
                       accessibilityHint="Entra no leitor desse livro"
                     >
-                      <View style={styles.cardHeaderText}>
-                        <Text style={styles.bookTitle}>{book.title}</Text>
-                        <Text style={styles.bookMeta}>
-                          {book.status} • atualizado em {book.updated_at}
-                        </Text>
+                      <View style={[styles.bookIconBox, { backgroundColor: theme.colors.topBarBg }]}>
+                        {meta?.coverUrl ? (
+                          <Image source={{ uri: meta.coverUrl }} style={styles.bookCoverImage} resizeMode="cover" />
+                        ) : (
+                          <MaterialCommunityIcons name="book-open-variant-outline" size={28} color={theme.colors.sidebarText} />
+                        )}
                       </View>
-                      <Text style={styles.chevron}>▸</Text>
+
+                      <View style={styles.bookMainInfo}>
+                        <View style={styles.bookTitleRow}>
+                          <Text style={[styles.bookTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                            {book.title}
+                          </Text>
+                          {isHighlighted ? (
+                            <View style={[styles.lastOpenedBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                              <Text style={[styles.lastOpenedBadgeText, { color: theme.colors.accent }]}>Última leitura</Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.bookMetaRow}>
+                          <View style={styles.bookMetaItem}>
+                            <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.textMuted} />
+                            <Text style={[styles.bookMetaText, { color: theme.colors.textMuted }]}>
+                              {formatBookDateLabel(book.updated_at)}
+                            </Text>
+                          </View>
+                          <View style={styles.bookMetaItem}>
+                            <MaterialCommunityIcons name="format-list-numbered" size={14} color={theme.colors.textMuted} />
+                            <Text style={[styles.bookMetaText, { color: theme.colors.textMuted }]}>
+                              {chapterCount > 0 ? `${chapterCount} capítulos` : "Sem capítulos"}
+                            </Text>
+                          </View>
+                          <View style={[styles.statusBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                            <Text style={[styles.statusBadgeText, { color: theme.colors.accent }]}>{statusLabel}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.progressSection}>
+                          <View style={[styles.progressTrack, { backgroundColor: theme.colors.surfaceStrong }]}>
+                            <View
+                              style={[
+                                styles.progressFill,
+                                {
+                                  width: `${progressPercent}%`,
+                                  backgroundColor: theme.colors.primary,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.progressCaption, { color: theme.colors.textMuted }]}>{progressLabel}</Text>
+                        </View>
+                      </View>
+
+                      <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.textMuted} />
                     </Pressable>
                   </View>
                 );
@@ -1234,13 +1805,101 @@ const styles = StyleSheet.create({
 
   scroll: { flex: 1, minHeight: 0 },
   list: { gap: 12, paddingTop: 8, paddingBottom: 24, flexGrow: 1 },
+  listInfoText: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
 
-  card: { borderWidth: 1, borderColor: "#ddd", borderRadius: 12, backgroundColor: "#fff" },
-  cardHeader: { padding: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  cardHeaderText: { flex: 1 },
-  chevron: { fontSize: 18, color: "#444" },
-  bookTitle: { fontSize: 16, fontWeight: "700" },
-  bookMeta: { fontSize: 12, color: "#666" },
+  bookCard: {
+    borderRadius: 14,
+    padding: 1,
+  },
+  bookCardPressable: {
+    borderRadius: 13,
+    minHeight: 124,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  bookIconBox: {
+    width: 64,
+    height: 78,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  bookCoverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bookMainInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  bookTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    justifyContent: "space-between",
+  },
+  bookTitle: {
+    flex: 1,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    fontFamily: "Georgia",
+  },
+  lastOpenedBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  lastOpenedBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  bookMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  bookMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  bookMetaText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  progressSection: {
+    gap: 5,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  progressCaption: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
 
   panelRoot: { borderTopWidth: 1, borderTopColor: "#eee" },
   sectionLoading: { paddingVertical: 20 },
@@ -1344,6 +2003,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     flexWrap: "wrap",
   },
+  readerToolbarPanel: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   readerIconButton: {
     minWidth: 34,
     height: 34,
@@ -1444,6 +2109,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minWidth: 132,
     alignItems: "center",
+  },
+  readerPageButtonCompact: {
+    minWidth: 52,
+    paddingHorizontal: 0,
   },
   readerPageButtonDisabled: { opacity: 0.4 },
   readerPageButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },

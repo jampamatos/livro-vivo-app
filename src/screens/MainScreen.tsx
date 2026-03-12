@@ -332,34 +332,47 @@ function HubCard({
     accent: string;
   };
 }) {
+  const [hovered, setHovered] = React.useState(false);
+
   return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      accessibilityLabel={badge ? `${title}. ${badge}` : title}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.moduleCard,
+    <View
+      style={[
+        styles.moduleCardRing,
         {
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
+          backgroundColor: hovered ? colors.accent : colors.border,
         },
         disabled ? styles.moduleCardDisabled : null,
-        pressed && !disabled ? { backgroundColor: colors.surfaceMuted } : null,
       ]}
     >
-      <View style={styles.moduleIconWrap}>
-        <View style={[styles.moduleIconBadge, { backgroundColor: colors.surfaceMuted }]}>
-          <MainIcon name={icon} size={20} color={colors.textMuted} />
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: Boolean(disabled) }}
+        accessibilityLabel={badge ? `${title}. ${badge}` : title}
+        disabled={disabled}
+        onPress={onPress}
+        onHoverIn={() => {
+          if (!disabled) setHovered(true);
+        }}
+        onHoverOut={() => setHovered(false)}
+        style={({ pressed }) => [
+          styles.moduleCard,
+          {
+            backgroundColor: pressed && !disabled ? colors.surfaceMuted : colors.surface,
+          },
+        ]}
+      >
+        <View style={styles.moduleIconWrap}>
+          <View style={[styles.moduleIconBadge, { backgroundColor: colors.surfaceMuted }]}>
+            <MainIcon name={icon} size={20} color={colors.textMuted} />
+          </View>
         </View>
-      </View>
-      <Text style={[styles.moduleTitle, { color: colors.text }]}>{title}</Text>
-      <Text style={[styles.moduleMetric, { color: colors.text }]}>{metric}</Text>
-      {detail ? <Text style={[styles.moduleDetail, { color: colors.textMuted }]}>{detail}</Text> : null}
-      {badge ? <Text style={[styles.moduleBadge, { color: colors.accent }]}>{badge}</Text> : null}
-    </Pressable>
+        <Text style={[styles.moduleTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.moduleMetric, { color: colors.text }]}>{metric}</Text>
+        {detail ? <Text style={[styles.moduleDetail, { color: colors.textMuted }]}>{detail}</Text> : null}
+        {badge ? <Text style={[styles.moduleBadge, { color: colors.accent }]}>{badge}</Text> : null}
+      </Pressable>
+    </View>
   );
 }
 
@@ -387,6 +400,8 @@ export function MainScreen({
   const [continueReading, setContinueReading] = React.useState<ContinueReading | null>(null);
   const [dashboardLoading, setDashboardLoading] = React.useState(true);
   const [dashboardError, setDashboardError] = React.useState<string | null>(null);
+  const [hoveredFeaturedCard, setHoveredFeaturedCard] = React.useState<"reading" | "live" | null>(null);
+  const [hoveredUpdateId, setHoveredUpdateId] = React.useState<string | null>(null);
 
   const fetchAccess = React.useCallback(async () => {
     try {
@@ -701,98 +716,120 @@ export function MainScreen({
       ) : null}
 
       <View style={[styles.featuredWrap, isWide && stats.nextLive ? styles.featuredWrapWide : null]}>
-        <Pressable
-          testID="main-continue-reading"
-          disabled={libraryAccess.disabled}
-          onPress={onContinueReading}
-          style={({ pressed }) => [
-            styles.featuredCard,
+        <View
+          style={[
+            styles.featuredCardRing,
             {
-              borderColor: theme.colors.primary,
-              backgroundColor: theme.colors.surface,
+              backgroundColor: hoveredFeaturedCard === "reading" ? theme.colors.primary : theme.colors.border,
             },
             libraryAccess.disabled ? styles.featuredDisabled : null,
-            pressed && !libraryAccess.disabled ? { backgroundColor: theme.colors.surfaceMuted } : null,
           ]}
         >
-          <View style={styles.featuredHeaderRow}>
-            <View style={[styles.featuredIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
-              <MainIcon name="book-open-variant-outline" size={20} color={theme.colors.primary} />
-            </View>
-            <Text style={[styles.featuredOverline, { color: theme.colors.primary }]}>Continuar leitura</Text>
-          </View>
-          <Text style={[styles.featuredTitle, { color: theme.colors.text }]}>
-            {continueReading ? continueReading.bookTitle : "Retome seu último livro"}
-          </Text>
-          <Text style={[styles.featuredBody, { color: theme.colors.textMuted }]}>
-            {continueReading
-              ? `${continueReading.chapterTitle} • ${formatRelative(continueReading.updatedAt)}`
-              : libraryAccess.badge || "Abra a Biblioteca para iniciar sua leitura"}
-          </Text>
-          {continueReading?.progressPercent != null &&
-          continueReading.chapterPosition != null &&
-          continueReading.totalChapters != null ? (
-            <View style={styles.progressWrap}>
-              <View style={[styles.progressTrack, { backgroundColor: theme.colors.surfaceStrong }]}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      backgroundColor: theme.colors.primary,
-                      width: `${continueReading.progressPercent}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <View style={styles.progressMetaRow}>
-                <Text style={[styles.progressMetaText, { color: theme.colors.textMuted }]}>
-                  Capítulo {continueReading.chapterPosition} / {continueReading.totalChapters}
-                </Text>
-                <Text style={[styles.progressMetaText, { color: theme.colors.textMuted }]}>
-                  {continueReading.progressPercent}% concluído
-                </Text>
-              </View>
-            </View>
-          ) : null}
-          <Text style={[styles.featuredCta, { color: theme.colors.primary }]}>Continuar lendo</Text>
-        </Pressable>
-
-        {stats.nextLive ? (
           <Pressable
-            testID="main-next-live"
-            disabled={courseAccess.disabled}
-            onPress={onOpenCourse}
+            testID="main-continue-reading"
+            disabled={libraryAccess.disabled}
+            onPress={onContinueReading}
+            onHoverIn={() => {
+              if (!libraryAccess.disabled) setHoveredFeaturedCard("reading");
+            }}
+            onHoverOut={() => setHoveredFeaturedCard((current) => (current === "reading" ? null : current))}
             style={({ pressed }) => [
               styles.featuredCard,
               {
-                borderColor: liveHighlightColor,
-                backgroundColor: theme.colors.surface,
+                backgroundColor: pressed && !libraryAccess.disabled ? theme.colors.surfaceMuted : theme.colors.surface,
               },
-              courseAccess.disabled ? styles.featuredDisabled : null,
-              pressed && !courseAccess.disabled ? { backgroundColor: theme.colors.surfaceMuted } : null,
             ]}
           >
             <View style={styles.featuredHeaderRow}>
               <View style={[styles.featuredIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
-                <MainIcon name="video-outline" size={20} color={liveHighlightColor} />
+                <MainIcon name="book-open-variant-outline" size={20} color={theme.colors.primary} />
               </View>
-              <Text style={[styles.featuredOverline, { color: liveHighlightColor }]}>
-                {isLiveNow ? "Ao vivo agora" : "Próxima aula"}
-              </Text>
+              <Text style={[styles.featuredOverline, { color: theme.colors.primary }]}>Continuar leitura</Text>
             </View>
-            {isLiveNow ? (
-              <View style={[styles.liveNowBadge, { backgroundColor: theme.colors.success }]}>
-                <Text style={[styles.liveNowBadgeText, { color: theme.colors.textInverse }]}>AO VIVO AGORA</Text>
+            <Text style={[styles.featuredTitle, { color: theme.colors.text }]}>
+              {continueReading ? continueReading.bookTitle : "Retome seu último livro"}
+            </Text>
+            <Text style={[styles.featuredBody, { color: theme.colors.textMuted }]}>
+              {continueReading
+                ? `${continueReading.chapterTitle} • ${formatRelative(continueReading.updatedAt)}`
+                : libraryAccess.badge || "Abra a Biblioteca para iniciar sua leitura"}
+            </Text>
+            {continueReading?.progressPercent != null &&
+            continueReading.chapterPosition != null &&
+            continueReading.totalChapters != null ? (
+              <View style={styles.progressWrap}>
+                <View style={[styles.progressTrack, { backgroundColor: theme.colors.surfaceStrong }]}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      {
+                        backgroundColor: theme.colors.primary,
+                        width: `${continueReading.progressPercent}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.progressMetaRow}>
+                  <Text style={[styles.progressMetaText, { color: theme.colors.textMuted }]}>
+                    Capítulo {continueReading.chapterPosition} / {continueReading.totalChapters}
+                  </Text>
+                  <Text style={[styles.progressMetaText, { color: theme.colors.textMuted }]}>
+                    {continueReading.progressPercent}% concluído
+                  </Text>
+                </View>
               </View>
             ) : null}
-            <Text style={[styles.featuredTitle, { color: theme.colors.text }]}>{stats.nextLive.title}</Text>
-            <Text style={[styles.featuredBody, { color: theme.colors.textMuted }]}>
-              {`${stats.nextLive.status === "live" ? "Ao vivo agora" : "Live agendada"} • ${formatDateTimeShort(stats.nextLive.starts_at)}`}
-            </Text>
-            <Text style={[styles.featuredCta, { color: liveHighlightColor }]}>
-              {courseAccess.badge || (isLiveNow ? "Entrar na live" : "Ver detalhes")}
-            </Text>
+            <Text style={[styles.featuredCta, { color: theme.colors.primary }]}>Continuar lendo</Text>
           </Pressable>
+        </View>
+
+        {stats.nextLive ? (
+          <View
+            style={[
+              styles.featuredCardRing,
+              {
+                backgroundColor: hoveredFeaturedCard === "live" ? liveHighlightColor : theme.colors.border,
+              },
+              courseAccess.disabled ? styles.featuredDisabled : null,
+            ]}
+          >
+            <Pressable
+              testID="main-next-live"
+              disabled={courseAccess.disabled}
+              onPress={onOpenCourse}
+              onHoverIn={() => {
+                if (!courseAccess.disabled) setHoveredFeaturedCard("live");
+              }}
+              onHoverOut={() => setHoveredFeaturedCard((current) => (current === "live" ? null : current))}
+              style={({ pressed }) => [
+                styles.featuredCard,
+                {
+                  backgroundColor: pressed && !courseAccess.disabled ? theme.colors.surfaceMuted : theme.colors.surface,
+                },
+              ]}
+            >
+              <View style={styles.featuredHeaderRow}>
+                <View style={[styles.featuredIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                  <MainIcon name="video-outline" size={20} color={liveHighlightColor} />
+                </View>
+                <Text style={[styles.featuredOverline, { color: liveHighlightColor }]}>
+                  {isLiveNow ? "Ao vivo agora" : "Próxima aula"}
+                </Text>
+              </View>
+              {isLiveNow ? (
+                <View style={[styles.liveNowBadge, { backgroundColor: theme.colors.success }]}>
+                  <Text style={[styles.liveNowBadgeText, { color: theme.colors.textInverse }]}>AO VIVO AGORA</Text>
+                </View>
+              ) : null}
+              <Text style={[styles.featuredTitle, { color: theme.colors.text }]}>{stats.nextLive.title}</Text>
+              <Text style={[styles.featuredBody, { color: theme.colors.textMuted }]}>
+                {`${stats.nextLive.status === "live" ? "Ao vivo agora" : "Live agendada"} • ${formatDateTimeShort(stats.nextLive.starts_at)}`}
+              </Text>
+              <Text style={[styles.featuredCta, { color: liveHighlightColor }]}>
+                {courseAccess.badge || (isLiveNow ? "Entrar na live" : "Ver detalhes")}
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
       </View>
 
@@ -844,32 +881,41 @@ export function MainScreen({
       ) : null}
 
       {recentUpdates.map((item) => (
-        <Pressable
+        <View
           key={item.id}
-          testID={`main-update-${item.id}`}
-          onPress={() => openUpdate(item.action)}
-          style={({ pressed }) => [
-            styles.updateCard,
+          style={[
+            styles.updateCardRing,
             {
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.surface,
+              backgroundColor: hoveredUpdateId === item.id ? theme.colors.accent : theme.colors.border,
             },
-            pressed ? { backgroundColor: theme.colors.surfaceMuted } : null,
           ]}
         >
-          <View style={styles.updateContentRow}>
-            <View style={[styles.updateIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
-              <MainIcon name={updateIconByAction[item.action]} size={18} color={theme.colors.textMuted} />
-            </View>
-            <View style={styles.updateTextWrap}>
-              <View style={styles.updateRow}>
-                <Text style={[styles.updateModule, { color: theme.colors.accent }]}>{item.module}</Text>
-                <Text style={[styles.updateTime, { color: theme.colors.textMuted }]}>{formatRelative(item.timestamp)}</Text>
+          <Pressable
+            testID={`main-update-${item.id}`}
+            onPress={() => openUpdate(item.action)}
+            onHoverIn={() => setHoveredUpdateId(item.id)}
+            onHoverOut={() => setHoveredUpdateId((current) => (current === item.id ? null : current))}
+            style={({ pressed }) => [
+              styles.updateCard,
+              {
+                backgroundColor: pressed ? theme.colors.surfaceMuted : theme.colors.surface,
+              },
+            ]}
+          >
+            <View style={styles.updateContentRow}>
+              <View style={[styles.updateIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                <MainIcon name={updateIconByAction[item.action]} size={18} color={theme.colors.textMuted} />
               </View>
-              <Text style={[styles.updateTitle, { color: theme.colors.text }]}>{item.title}</Text>
+              <View style={styles.updateTextWrap}>
+                <View style={styles.updateRow}>
+                  <Text style={[styles.updateModule, { color: theme.colors.accent }]}>{item.module}</Text>
+                  <Text style={[styles.updateTime, { color: theme.colors.textMuted }]}>{formatRelative(item.timestamp)}</Text>
+                </View>
+                <Text style={[styles.updateTitle, { color: theme.colors.text }]}>{item.title}</Text>
+              </View>
             </View>
-          </View>
-        </Pressable>
+          </Pressable>
+        </View>
       ))}
     </ScrollView>
   );
@@ -903,9 +949,13 @@ const styles = StyleSheet.create({
 
   featuredWrap: { gap: 10 },
   featuredWrapWide: { flexDirection: "row" },
-  featuredCard: {
-    borderWidth: 1,
+  featuredCardRing: {
     borderRadius: 14,
+    padding: 1,
+    flex: 1,
+  },
+  featuredCard: {
+    borderRadius: 13,
     padding: 14,
     gap: 6,
     flex: 1,
@@ -954,9 +1004,12 @@ const styles = StyleSheet.create({
   modulesGrid: { gap: 10 },
   modulesGridWide: { flexDirection: "row", flexWrap: "wrap" },
   moduleCardWrapWide: { width: "49%" },
-  moduleCard: {
-    borderWidth: 1,
+  moduleCardRing: {
     borderRadius: 12,
+    padding: 1,
+  },
+  moduleCard: {
+    borderRadius: 11,
     paddingVertical: 12,
     paddingHorizontal: 12,
     gap: 4,
@@ -980,9 +1033,12 @@ const styles = StyleSheet.create({
   emptyUpdates: { borderWidth: 1, borderRadius: 12, padding: 12 },
   emptyUpdatesText: { fontSize: 13 },
 
-  updateCard: {
-    borderWidth: 1,
+  updateCardRing: {
     borderRadius: 12,
+    padding: 1,
+  },
+  updateCard: {
+    borderRadius: 11,
     paddingVertical: 11,
     paddingHorizontal: 12,
     gap: 5,
