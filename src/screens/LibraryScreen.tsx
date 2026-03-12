@@ -1,6 +1,7 @@
 import React from "react";
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +12,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { ApiError } from "../api/http";
 import {
@@ -84,6 +86,40 @@ type ChapterLoadParams = {
   restoreOffset?: number;
 };
 
+type BookCardMeta = {
+  chapterCount: number;
+  chapterPosition: number | null;
+  progressPercent: number;
+  lastOpenedAt: string | null;
+  coverUrl: string | null;
+};
+
+function safeTimestamp(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function formatBookDateLabel(value?: string | null) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function normalizeBookStatus(status?: string | null) {
+  const normalized = String(status || "").trim();
+  if (!normalized) return "Sem status";
+  if (normalized.toLowerCase() === "published") return "Publicado";
+  if (normalized.toLowerCase() === "draft") return "Rascunho";
+  if (normalized.toLowerCase() === "archived") return "Arquivado";
+  return normalized.toUpperCase();
+}
+
 export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -91,6 +127,8 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [loadingBooks, setLoadingBooks] = React.useState(true);
   const [books, setBooks] = React.useState<Book[]>([]);
   const [booksError, setBooksError] = React.useState<string | null>(null);
+  const [bookCardMetaById, setBookCardMetaById] = React.useState<Record<number, BookCardMeta>>({});
+  const [bookCardMetaLoading, setBookCardMetaLoading] = React.useState(false);
 
   const [openBook, setOpenBook] = React.useState<OpenBookState | null>(null);
   const [openBookLoading, setOpenBookLoading] = React.useState(false);
@@ -101,6 +139,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [activeChapter, setActiveChapter] = React.useState<LoadedChapterState | null>(null);
   const [readerFocus, setReaderFocus] = React.useState<ReaderFocus | null>(null);
   const [readerInitialOffset, setReaderInitialOffset] = React.useState(0);
+  const [hoveredBookId, setHoveredBookId] = React.useState<number | null>(null);
 
   const [query, setQuery] = React.useState("");
   const [searchLoading, setSearchLoading] = React.useState(false);
@@ -201,19 +240,99 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     [flushReadingProgress]
   );
 
+  const loadBookCardMeta = React.useCallback(
+    async (items: Book[]) => {
+      if (!items.length) {
+        setBookCardMetaById({});
+        return;
+      }
+
+      setBookCardMetaLoading(true);
+      try {
+        const entries = await Promise.all(
+          items.map(async (book) => {
+            const rawCover = (book as Book & { cover_url?: string | null; cover?: string | null }).cover_url
+              ?? (book as Book & { cover?: string | null }).cover
+              ?? null;
+            const coverUrl = typeof rawCover === "string" && rawCover.trim() ? rawCover.trim() : null;
+
+            try {
+              const [versionResponse, chaptersResponse] = await Promise.all([
+                getCurrentBookVersion(token, book.id),
+                listCurrentVersionChapters(token, book.id),
+              ]);
+              const orderedChapters = [...(chaptersResponse.chapters ?? [])].sort((a, b) => a.order - b.order);
+              const chapterCount = orderedChapters.length;
+              const progress = await getReadingProgress(book.id, versionResponse.version.id);
+
+              if (!progress || chapterCount === 0) {
+                return [
+                  book.id,
+                  {
+                    chapterCount,
+                    chapterPosition: null,
+                    progressPercent: 0,
+                    lastOpenedAt: null,
+                    coverUrl,
+                  } satisfies BookCardMeta,
+                ] as const;
+              }
+
+              const chapterIdx = orderedChapters.findIndex((chapter) => chapter.slug === progress.chapterSlug);
+              const chapterPosition = chapterIdx >= 0 ? chapterIdx + 1 : null;
+              const progressPercent =
+                chapterPosition && chapterCount > 0
+                  ? Math.min(100, Math.max(0, Math.round((chapterPosition / chapterCount) * 100)))
+                  : 0;
+
+              return [
+                book.id,
+                {
+                  chapterCount,
+                  chapterPosition,
+                  progressPercent,
+                  lastOpenedAt: progress.updatedAt,
+                  coverUrl,
+                } satisfies BookCardMeta,
+              ] as const;
+            } catch {
+              return [
+                book.id,
+                {
+                  chapterCount: 0,
+                  chapterPosition: null,
+                  progressPercent: 0,
+                  lastOpenedAt: null,
+                  coverUrl,
+                } satisfies BookCardMeta,
+              ] as const;
+            }
+          })
+        );
+
+        setBookCardMetaById(Object.fromEntries(entries));
+      } finally {
+        setBookCardMetaLoading(false);
+      }
+    },
+    [token]
+  );
+
   const loadBooks = React.useCallback(async () => {
     setLoadingBooks(true);
     setBooksError(null);
     try {
       const response = await listBooks(token);
       setBooks(response.books);
+      void loadBookCardMeta(response.books);
     } catch (error) {
       setBooks([]);
+      setBookCardMetaById({});
       setBooksError(formatApiError(error, "Erro ao carregar /books"));
     } finally {
       setLoadingBooks(false);
     }
-  }, [formatApiError, token]);
+  }, [formatApiError, loadBookCardMeta, token]);
 
   React.useEffect(() => {
     loadBooks();
@@ -667,6 +786,26 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   );
 
   const activeBookMeta = openBook ? books.find((book) => book.id === openBook.bookId) ?? null : null;
+
+  const sortedBooks = React.useMemo(() => {
+    const ranked = [...books];
+    ranked.sort((a, b) => {
+      const aOpenedAt = safeTimestamp(bookCardMetaById[a.id]?.lastOpenedAt);
+      const bOpenedAt = safeTimestamp(bookCardMetaById[b.id]?.lastOpenedAt);
+      if (aOpenedAt !== bOpenedAt) return bOpenedAt - aOpenedAt;
+
+      const aUpdated = safeTimestamp(a.updated_at);
+      const bUpdated = safeTimestamp(b.updated_at);
+      return bUpdated - aUpdated;
+    });
+    return ranked;
+  }, [bookCardMetaById, books]);
+
+  const highlightedBookId = React.useMemo(() => {
+    const first = sortedBooks[0];
+    if (!first) return null;
+    return bookCardMetaById[first.id]?.lastOpenedAt ? first.id : null;
+  }, [bookCardMetaById, sortedBooks]);
 
   const closeReader = () => {
     if (saveProgressTimerRef.current) {
@@ -1148,43 +1287,132 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   return (
     <View style={[styles.root, webRootStyle, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.shell}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Biblioteca</Text>
-        <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Leitura e busca por capítulos</Text>
-
         {loadingBooks ? (
           <View style={styles.center}>
             <ActivityIndicator />
           </View>
         ) : booksError ? (
-          <Text style={styles.error}>{booksError}</Text>
+          <Text style={[styles.error, { color: theme.colors.danger }]}>{booksError}</Text>
         ) : (
           <>
             {openBookLoading ? (
-              <View style={styles.readerOpeningBox}>
+              <View
+                style={[
+                  styles.readerOpeningBox,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                  },
+                ]}
+              >
                 <ActivityIndicator />
-                <Text style={styles.readerOpeningText}>Abrindo leitor...</Text>
+                <Text style={[styles.readerOpeningText, { color: theme.colors.text }]}>Abrindo leitor...</Text>
               </View>
             ) : null}
-            {openBookError ? <Text style={styles.error}>{openBookError}</Text> : null}
+            {openBookError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{openBookError}</Text> : null}
 
             <ScrollView style={[styles.scroll, webScrollStyle]} contentContainerStyle={styles.list}>
-              {books.map((book) => {
+              {bookCardMetaLoading ? (
+                <Text style={[styles.listInfoText, { color: theme.colors.textMuted }]}>Atualizando progresso de leitura…</Text>
+              ) : null}
+
+              {sortedBooks.map((book) => {
+                const meta = bookCardMetaById[book.id];
+                const chapterCount = meta?.chapterCount ?? 0;
+                const chapterPosition = meta?.chapterPosition ?? null;
+                const progressPercent = meta?.progressPercent ?? 0;
+                const hasProgress = chapterPosition != null && chapterCount > 0;
+                const progressLabel = hasProgress
+                  ? `Capítulo ${chapterPosition}/${chapterCount} • ${progressPercent}%`
+                  : chapterCount > 0
+                    ? `0/${chapterCount} • 0%`
+                    : "Capítulos indisponíveis";
+                const statusLabel = normalizeBookStatus(book.status);
+                const isHighlighted = highlightedBookId === book.id;
+                const isHovered = hoveredBookId === book.id;
+
                 return (
-                  <View key={book.id} style={styles.card}>
+                  <View
+                    key={book.id}
+                    style={[
+                      styles.bookCard,
+                      {
+                        backgroundColor: isHovered ? theme.colors.accent : theme.colors.border,
+                      },
+                    ]}
+                  >
                     <Pressable
                       onPress={() => toggleBook(book.id)}
-                      style={styles.cardHeader}
+                      onHoverIn={() => setHoveredBookId(book.id)}
+                      onHoverOut={() => setHoveredBookId((current) => (current === book.id ? null : current))}
+                      style={({ pressed }) => {
+                        const interactive = pressed || isHovered;
+                        return [
+                          styles.bookCardPressable,
+                          {
+                            backgroundColor: interactive ? theme.colors.surfaceMuted : theme.colors.surface,
+                          },
+                        ];
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={`Abrir livro ${book.title}`}
                       accessibilityHint="Entra no leitor desse livro"
                     >
-                      <View style={styles.cardHeaderText}>
-                        <Text style={styles.bookTitle}>{book.title}</Text>
-                        <Text style={styles.bookMeta}>
-                          {book.status} • atualizado em {book.updated_at}
-                        </Text>
+                      <View style={[styles.bookIconBox, { backgroundColor: theme.colors.topBarBg }]}>
+                        {meta?.coverUrl ? (
+                          <Image source={{ uri: meta.coverUrl }} style={styles.bookCoverImage} resizeMode="cover" />
+                        ) : (
+                          <MaterialCommunityIcons name="book-open-variant-outline" size={28} color={theme.colors.sidebarText} />
+                        )}
                       </View>
-                      <Text style={styles.chevron}>▸</Text>
+
+                      <View style={styles.bookMainInfo}>
+                        <View style={styles.bookTitleRow}>
+                          <Text style={[styles.bookTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                            {book.title}
+                          </Text>
+                          {isHighlighted ? (
+                            <View style={[styles.lastOpenedBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                              <Text style={[styles.lastOpenedBadgeText, { color: theme.colors.accent }]}>Última leitura</Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.bookMetaRow}>
+                          <View style={styles.bookMetaItem}>
+                            <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.textMuted} />
+                            <Text style={[styles.bookMetaText, { color: theme.colors.textMuted }]}>
+                              {formatBookDateLabel(book.updated_at)}
+                            </Text>
+                          </View>
+                          <View style={styles.bookMetaItem}>
+                            <MaterialCommunityIcons name="format-list-numbered" size={14} color={theme.colors.textMuted} />
+                            <Text style={[styles.bookMetaText, { color: theme.colors.textMuted }]}>
+                              {chapterCount > 0 ? `${chapterCount} capítulos` : "Sem capítulos"}
+                            </Text>
+                          </View>
+                          <View style={[styles.statusBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                            <Text style={[styles.statusBadgeText, { color: theme.colors.accent }]}>{statusLabel}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.progressSection}>
+                          <View style={[styles.progressTrack, { backgroundColor: theme.colors.surfaceStrong }]}>
+                            <View
+                              style={[
+                                styles.progressFill,
+                                {
+                                  width: `${progressPercent}%`,
+                                  backgroundColor: theme.colors.primary,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.progressCaption, { color: theme.colors.textMuted }]}>{progressLabel}</Text>
+                        </View>
+                      </View>
+
+                      <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.textMuted} />
                     </Pressable>
                   </View>
                 );
@@ -1234,13 +1462,101 @@ const styles = StyleSheet.create({
 
   scroll: { flex: 1, minHeight: 0 },
   list: { gap: 12, paddingTop: 8, paddingBottom: 24, flexGrow: 1 },
+  listInfoText: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
 
-  card: { borderWidth: 1, borderColor: "#ddd", borderRadius: 12, backgroundColor: "#fff" },
-  cardHeader: { padding: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  cardHeaderText: { flex: 1 },
-  chevron: { fontSize: 18, color: "#444" },
-  bookTitle: { fontSize: 16, fontWeight: "700" },
-  bookMeta: { fontSize: 12, color: "#666" },
+  bookCard: {
+    borderRadius: 14,
+    padding: 1,
+  },
+  bookCardPressable: {
+    borderRadius: 13,
+    minHeight: 124,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  bookIconBox: {
+    width: 64,
+    height: 78,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  bookCoverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bookMainInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  bookTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    justifyContent: "space-between",
+  },
+  bookTitle: {
+    flex: 1,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    fontFamily: "Georgia",
+  },
+  lastOpenedBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  lastOpenedBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  bookMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  bookMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  bookMetaText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  progressSection: {
+    gap: 5,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  progressCaption: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
 
   panelRoot: { borderTopWidth: 1, borderTopColor: "#eee" },
   sectionLoading: { paddingVertical: 20 },
