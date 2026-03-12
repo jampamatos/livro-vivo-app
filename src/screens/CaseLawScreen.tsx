@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -28,6 +29,11 @@ function formatDateBR(iso: string) {
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
+}
+
+function decisionDateTimestamp(value: string): number {
+  const parsed = Date.parse(value || "");
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function getAnchorLabel(anchor: CaseLawAnchor): string {
@@ -110,10 +116,15 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 
 export function CaseLawScreen({ token }: Props) {
   const { theme } = useAppTheme();
+  const { width } = useWindowDimensions();
   const LIMIT = 20;
+  const isDesktopWeb = Platform.OS === "web" && width >= 1024;
+  const canCollapseFilterCard = !isDesktopWeb;
 
   const [q, setQ] = React.useState("");
-  const [court, setCourt] = React.useState("");
+  const [selectedCourts, setSelectedCourts] = React.useState<string[]>([]);
+  const [sortMode, setSortMode] = React.useState<"recent" | "relevant">("recent");
+  const [filtersOpen, setFiltersOpen] = React.useState(isDesktopWeb);
   const [items, setItems] = React.useState<CaseLaw[]>([]);
   const [count, setCount] = React.useState(0);
   const [offset, setOffset] = React.useState(0);
@@ -127,6 +138,46 @@ export function CaseLawScreen({ token }: Props) {
   const copyFeedbackTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canLoadMore = items.length < count;
+  const availableCourts = React.useMemo(() => {
+    const merged = new Set<string>();
+    items.forEach((item) => {
+      const normalized = String(item.court || "").trim();
+      if (normalized) merged.add(normalized);
+    });
+    return [...merged].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [items]);
+
+  const filteredItems = React.useMemo(() => {
+    const hasCourtFilter = selectedCourts.length > 0;
+    const byCourt = hasCourtFilter
+      ? items.filter((item) => selectedCourts.includes(String(item.court || "").trim()))
+      : items;
+
+    if (sortMode === "relevant") {
+      return byCourt;
+    }
+
+    return [...byCourt].sort((a, b) => decisionDateTimestamp(b.decision_date) - decisionDateTimestamp(a.decision_date));
+  }, [items, selectedCourts, sortMode]);
+
+  const summaryText = React.useMemo(() => {
+    if (selectedCourts.length > 0) {
+      return `${filteredItems.length} resultados filtrados em ${items.length} carregados`;
+    }
+    if (count > 0) {
+      return `${count} resultados`;
+    }
+    return "Nenhum resultado";
+  }, [count, filteredItems.length, items.length, selectedCourts.length]);
+
+  const filterSummaryText = React.useMemo(() => {
+    const tokens: string[] = [];
+    if (q.trim()) tokens.push("busca ativa");
+    if (selectedCourts.length) tokens.push(`${selectedCourts.length} tribunal${selectedCourts.length > 1 ? "is" : ""}`);
+    if (sortMode === "relevant") tokens.push("ordem por relevancia");
+    if (!tokens.length) return "Nenhum filtro ativo";
+    return tokens.join(" • ");
+  }, [q, selectedCourts.length, sortMode]);
 
   const fetchPage = React.useCallback(
     async (nextOffset: number, mode: "replace" | "append") => {
@@ -140,7 +191,6 @@ export function CaseLawScreen({ token }: Props) {
 
         const res = await searchCaseLaw(token, {
           q: q.trim() || undefined,
-          court: court.trim() || undefined,
           limit: LIMIT,
           offset: nextOffset,
         });
@@ -155,7 +205,7 @@ export function CaseLawScreen({ token }: Props) {
         setLoadingMore(false);
       }
     },
-    [token, q, court]
+    [token, q]
   );
 
   React.useEffect(() => {
@@ -164,6 +214,12 @@ export function CaseLawScreen({ token }: Props) {
     }, 250);
     return () => clearTimeout(timer);
   }, [fetchPage]);
+
+  React.useEffect(() => {
+    if (isDesktopWeb) {
+      setFiltersOpen(true);
+    }
+  }, [isDesktopWeb]);
 
   React.useEffect(() => {
     return () => {
@@ -212,6 +268,63 @@ export function CaseLawScreen({ token }: Props) {
     const ok = await copyTextToClipboard(plain);
     showCopyFeedback(ok ? "Ementa copiada." : "Não foi possível copiar a ementa.");
   }, [selected, showCopyFeedback]);
+
+  const toggleCourt = React.useCallback((court: string) => {
+    const normalized = court.trim();
+    if (!normalized) return;
+    setSelectedCourts((current) => {
+      if (current.includes(normalized)) {
+        return current.filter((item) => item !== normalized);
+      }
+      return [...current, normalized];
+    });
+  }, []);
+
+  const clearFilters = React.useCallback(() => {
+    setSelectedCourts([]);
+  }, []);
+
+  const renderHighlightedSummary = React.useCallback(
+    (text: string) => {
+      const normalizedQuery = q.trim();
+      if (!normalizedQuery) {
+        return (
+          <Text style={[styles.summary, { color: theme.colors.textMuted }]} numberOfLines={3}>
+            {text}
+          </Text>
+        );
+      }
+
+      const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const parts = text.split(new RegExp(`(${escaped})`, "ig"));
+      const highlightBg = theme.isDark ? "#6F5805" : "#FFF59D";
+
+      return (
+        <Text style={[styles.summary, { color: theme.colors.textMuted }]} numberOfLines={3}>
+          {parts.map((part, idx) => {
+            if (part.toLowerCase() === normalizedQuery.toLowerCase()) {
+              return (
+                <Text
+                  key={`sum-hit-${idx}`}
+                  style={[
+                    styles.summaryHighlight,
+                    {
+                      backgroundColor: highlightBg,
+                      color: theme.isDark ? "#FFF6D4" : theme.colors.text,
+                    },
+                  ]}
+                >
+                  {part}
+                </Text>
+              );
+            }
+            return <Text key={`sum-text-${idx}`}>{part}</Text>;
+          })}
+        </Text>
+      );
+    },
+    [q, theme.colors.text, theme.colors.textMuted, theme.isDark]
+  );
 
   const renderInline = React.useCallback(
     (inlines: RichInlineNode[], keyPrefix: string) => {
@@ -333,65 +446,230 @@ export function CaseLawScreen({ token }: Props) {
       accessibilityHint="Abre o detalhe da ementa e ações de cópia e abertura do acórdão"
     >
       <View style={styles.rowBetween}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>
-          {item.court} • {item.case_number}
+        <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
+          {item.case_number}
         </Text>
-        <Text style={[styles.muted, { color: theme.colors.textMuted }]}>{formatDateBR(item.decision_date)}</Text>
+        <Text style={[styles.dateLabel, { color: theme.colors.textMuted }]}>{formatDateBR(item.decision_date)}</Text>
       </View>
 
-      <Text style={[styles.summary, { color: theme.colors.textMuted }]} numberOfLines={3}>
-        {item.ementa_plain}
-      </Text>
-
-      {item.tags?.length ? (
-        <View style={styles.tagsWrap}>
-          {item.tags.slice(0, 6).map((tag, idx) => (
-            <View key={`${tag}-${idx}`} style={[styles.tag, { borderColor: theme.colors.border }]}>
-              <Text style={[styles.tagText, { color: theme.colors.textMuted }]}>{tag}</Text>
-            </View>
-          ))}
+      <View style={styles.metaRow}>
+        <View style={[styles.metaBadge, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted }]}>
+          <Text style={[styles.metaBadgeText, { color: theme.colors.textMuted }]}>{item.court}</Text>
         </View>
-      ) : null}
+        {item.anchors?.length ? (
+          <Text style={[styles.anchorPreview, { color: theme.colors.textMuted }]} numberOfLines={1}>
+            {getAnchorLabel(item.anchors[0])}
+          </Text>
+        ) : null}
+      </View>
+
+      {renderHighlightedSummary(item.ementa_plain)}
+
+      <View style={styles.rowBetween}>
+        {item.tags?.length ? (
+          <View style={styles.tagsWrap}>
+            {item.tags.slice(0, 4).map((tag, idx) => (
+              <View key={`${tag}-${idx}`} style={[styles.tag, { borderColor: theme.colors.border }]}>
+                <Text style={[styles.tagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View />
+        )}
+        <Text style={[styles.openLinkLabel, { color: theme.colors.primary }]}>Ver decisão</Text>
+      </View>
     </Pressable>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
       <View style={styles.searchBox}>
-        <TextInput
-          accessibilityLabel="Busca por jurisprudência"
-          value={q}
-          onChangeText={setQ}
-          placeholder="Buscar (ex: bagagem, overbooking, dano moral...)"
+        <View
           style={[
-            styles.input,
+            styles.filterCard,
             {
               borderColor: theme.colors.border,
               backgroundColor: theme.colors.surface,
-              color: theme.colors.text,
             },
           ]}
-          placeholderTextColor={theme.colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <TextInput
-          accessibilityLabel="Filtro por tribunal"
-          value={court}
-          onChangeText={setCourt}
-          placeholder="Tribunal (opcional: STJ, TJMG...)"
-          style={[
-            styles.input,
-            {
-              borderColor: theme.colors.border,
-              backgroundColor: theme.colors.surface,
-              color: theme.colors.text,
-            },
-          ]}
-          placeholderTextColor={theme.colors.textMuted}
-          autoCapitalize="characters"
-          autoCorrect={false}
-        />
+        >
+          <View style={styles.filterCardHeader}>
+            <Text style={[styles.filterCardTitle, { color: theme.colors.text }]}>Busca e filtros</Text>
+            {canCollapseFilterCard ? (
+              <Pressable
+                onPress={() => setFiltersOpen((current) => !current)}
+                accessibilityRole="button"
+                accessibilityLabel={filtersOpen ? "Ocultar busca e filtros" : "Mostrar busca e filtros"}
+              >
+                <Text style={[styles.filterCardToggleText, { color: theme.colors.primary }]}>
+                  {filtersOpen ? "Ocultar" : "Mostrar"}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          {filtersOpen ? (
+            <>
+              <TextInput
+                accessibilityLabel="Busca por jurisprudência"
+                value={q}
+                onChangeText={setQ}
+                placeholder="Buscar (ex: bagagem, overbooking, dano moral...)"
+                style={[
+                  styles.input,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                    color: theme.colors.text,
+                  },
+                ]}
+                placeholderTextColor={theme.colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <View style={styles.filterHeader}>
+                <Text style={[styles.filterTitle, { color: theme.colors.text }]}>Tribunais</Text>
+                {selectedCourts.length > 0 ? (
+                  <Pressable onPress={clearFilters} accessibilityRole="button" accessibilityLabel="Limpar filtro por tribunal">
+                    <Text style={[styles.clearFilterText, { color: theme.colors.primary }]}>Limpar</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                accessibilityLabel="Filtro por tribunal"
+                contentContainerStyle={styles.courtChipsRow}
+              >
+                <Pressable
+                  style={[
+                    styles.courtChip,
+                    {
+                      borderColor: !selectedCourts.length ? theme.colors.primary : theme.colors.borderStrong,
+                      backgroundColor: !selectedCourts.length ? theme.colors.primary : theme.colors.surface,
+                    },
+                  ]}
+                  onPress={clearFilters}
+                  accessibilityRole="button"
+                  accessibilityLabel="Selecionar todos os tribunais"
+                >
+                  <Text
+                    style={[
+                      styles.courtChipText,
+                      { color: !selectedCourts.length ? theme.colors.textInverse : theme.colors.textMuted },
+                    ]}
+                  >
+                    Todos
+                  </Text>
+                </Pressable>
+
+                {availableCourts.map((courtName) => {
+                  const selectedCourt = selectedCourts.includes(courtName);
+                  return (
+                    <Pressable
+                      key={courtName}
+                      style={[
+                        styles.courtChip,
+                        {
+                          borderColor: selectedCourt ? theme.colors.primary : theme.colors.borderStrong,
+                          backgroundColor: selectedCourt ? theme.colors.primary : theme.colors.surface,
+                        },
+                      ]}
+                      onPress={() => toggleCourt(courtName)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filtrar por tribunal ${courtName}`}
+                    >
+                      <Text
+                        style={[
+                          styles.courtChipText,
+                          { color: selectedCourt ? theme.colors.textInverse : theme.colors.textMuted },
+                        ]}
+                      >
+                        {courtName}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={styles.sortRow}>
+                <Pressable
+                  style={[
+                    styles.sortChip,
+                    {
+                      borderColor: sortMode === "recent" ? theme.colors.primary : theme.colors.borderStrong,
+                      backgroundColor: sortMode === "recent" ? theme.colors.primary : theme.colors.surface,
+                    },
+                  ]}
+                  onPress={() => setSortMode("recent")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ordenar por mais recentes"
+                >
+                  <Text
+                    style={[
+                      styles.sortChipText,
+                      { color: sortMode === "recent" ? theme.colors.textInverse : theme.colors.textMuted },
+                    ]}
+                  >
+                    Mais recentes
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.sortChip,
+                    {
+                      borderColor: sortMode === "relevant" ? theme.colors.primary : theme.colors.borderStrong,
+                      backgroundColor: sortMode === "relevant" ? theme.colors.primary : theme.colors.surface,
+                    },
+                  ]}
+                  onPress={() => setSortMode("relevant")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ordenar por mais relevantes"
+                >
+                  <Text
+                    style={[
+                      styles.sortChipText,
+                      { color: sortMode === "relevant" ? theme.colors.textInverse : theme.colors.textMuted },
+                    ]}
+                  >
+                    Mais relevantes
+                  </Text>
+                </Pressable>
+              </View>
+
+              {selectedCourts.length ? (
+                <View style={styles.activeFiltersRow}>
+                  {selectedCourts.map((activeCourt) => (
+                    <View
+                      key={activeCourt}
+                      style={[
+                        styles.activeFilterTag,
+                        {
+                          borderColor: theme.colors.borderStrong,
+                          backgroundColor: theme.colors.surfaceMuted,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.activeFilterText, { color: theme.colors.textMuted }]}>{activeCourt}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.filterCardCollapsedInfo}>
+              <Text style={[styles.resultsMeta, { color: theme.colors.textMuted }]}>{summaryText}</Text>
+              <Text style={[styles.collapsedMetaText, { color: theme.colors.textMuted }]}>{filterSummaryText}</Text>
+            </View>
+          )}
+        </View>
+
+        {(filtersOpen || !canCollapseFilterCard) ? (
+          <Text style={[styles.resultsMeta, { color: theme.colors.textMuted }]}>{summaryText}</Text>
+        ) : null}
       </View>
 
       {loading ? (
@@ -413,7 +691,7 @@ export function CaseLawScreen({ token }: Props) {
         </View>
       ) : (
         <FlatList
-          data={items}
+          data={filteredItems}
           keyExtractor={(it) => String(it.id)}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
@@ -423,7 +701,19 @@ export function CaseLawScreen({ token }: Props) {
           onRefresh={onRefresh}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Nenhum resultado.</Text>
+              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>
+                Nenhum resultado para os filtros atuais.
+              </Text>
+              {selectedCourts.length > 0 ? (
+                <Pressable
+                  style={[styles.retryBtn, { borderColor: theme.colors.borderStrong }]}
+                  onPress={clearFilters}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpar filtros para ver mais jurisprudências"
+                >
+                  <Text style={[styles.retryText, { color: theme.colors.text }]}>Limpar filtros</Text>
+                </Pressable>
+              ) : null}
             </View>
           }
           ListFooterComponent={
@@ -550,6 +840,57 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   searchBox: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8, gap: 8 },
+  filterCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    gap: 8,
+  },
+  filterCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  filterCardTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    fontFamily: "Georgia",
+  },
+  filterCardToggleText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  filterCardCollapsedInfo: { gap: 4 },
+  collapsedMetaText: { fontSize: 12, fontWeight: "600" },
+  filterHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  filterTitle: { fontSize: 13, fontWeight: "700" },
+  clearFilterText: { fontSize: 12, fontWeight: "700" },
+  courtChipsRow: { flexDirection: "row", gap: 8, paddingVertical: 2 },
+  courtChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  courtChipText: { fontSize: 12, fontWeight: "700" },
+  sortRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" },
+  sortChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+  },
+  sortChipText: { fontSize: 12, fontWeight: "700" },
+  activeFiltersRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  activeFilterTag: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  activeFilterText: { fontSize: 11, fontWeight: "600" },
+  resultsMeta: { fontSize: 12, fontWeight: "600" },
   input: {
     borderWidth: 1,
     borderRadius: 10,
@@ -568,8 +909,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", gap: 10, alignItems: "center" },
-  title: { fontWeight: "700", flex: 1 },
-  summary: { lineHeight: 18 },
+  title: { fontWeight: "700", flex: 1, fontSize: 18, fontFamily: "Georgia" },
+  dateLabel: { fontSize: 13, fontWeight: "600" },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  metaBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  metaBadgeText: { fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  anchorPreview: { fontSize: 12, fontWeight: "600", flexShrink: 1 },
+  summary: { fontSize: 15, lineHeight: 22 },
+  summaryHighlight: { fontWeight: "700", borderRadius: 2 },
+  openLinkLabel: { fontSize: 12, fontWeight: "700" },
 
   tagsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   tag: { borderWidth: 1, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 8 },

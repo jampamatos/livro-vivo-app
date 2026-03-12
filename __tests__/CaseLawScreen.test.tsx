@@ -68,6 +68,15 @@ describe("CaseLawScreen a11y baseline", () => {
     });
     await flushEffects();
 
+    const showFiltersButton = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) => node.props.accessibilityLabel === "Mostrar busca e filtros"
+    );
+    if (showFiltersButton.length > 0) {
+      act(() => {
+        showFiltersButton[0].props.onPress();
+      });
+    }
+
     expect(tree!.root.findByProps({ accessibilityLabel: "Busca por jurisprudência" }).props.accessibilityLabel).toBe(
       "Busca por jurisprudência"
     );
