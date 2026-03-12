@@ -1,7 +1,8 @@
 import React from "react";
-import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
+import { getMeProfile, getMyEntitlements, type SubscriptionStatus, type SubscriptionTier } from "../api/entitlements";
 import {
   AppRoute,
   DESKTOP_NAV_ITEMS,
@@ -12,12 +13,21 @@ import {
 import { useAppTheme } from "../theme/ThemeProvider";
 
 type Props = {
+  token: string;
   route: AppRoute;
   children: React.ReactNode;
   onNavigate: (route: AppRoute) => void;
   onOpenSearch: () => void;
   onOpenAccount: () => void;
   onLogout: () => void | Promise<void>;
+};
+
+type AccountQuickSummary = {
+  name: string;
+  email: string;
+  profession: string;
+  planLabel: string;
+  planStatus: string;
 };
 
 function isRouteActive(current: AppRoute, target: AppRoute) {
@@ -29,6 +39,27 @@ function isRouteActive(current: AppRoute, target: AppRoute) {
 }
 
 type AppShellIconName = NavIconName | "magnify" | "weather-sunny" | "moon-waning-crescent" | "logout-variant";
+
+function formatTier(tier: SubscriptionTier | null | undefined) {
+  if (!tier) return "Sem assinatura";
+  if (tier === "professional") return "Profissional";
+  return "Essencial";
+}
+
+function formatStatus(status: SubscriptionStatus | null | undefined) {
+  if (!status) return "-";
+  if (status === "active") return "Ativa";
+  if (status === "canceled") return "Cancelada";
+  return "Inativa";
+}
+
+function getInitials(name: string) {
+  const cleanName = (name || "").trim();
+  if (!cleanName) return "LV";
+  const parts = cleanName.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
 
 function ShellIcon({
   name,
@@ -43,6 +74,7 @@ function ShellIcon({
 }
 
 export function AppShell({
+  token,
   route,
   children,
   onNavigate,
@@ -53,6 +85,188 @@ export function AppShell({
   const { theme, toggleMode } = useAppTheme();
   const { width } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === "web" && width >= 1024;
+  const useCompactMobileLabels = width < 390;
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const [accountSummary, setAccountSummary] = React.useState<AccountQuickSummary | null>(null);
+  const [accountSummaryLoading, setAccountSummaryLoading] = React.useState(false);
+  const [accountSummaryError, setAccountSummaryError] = React.useState<string | null>(null);
+
+  const closeAccountMenu = React.useCallback(() => {
+    setAccountMenuOpen(false);
+  }, []);
+
+  const openAccountMenu = React.useCallback(() => {
+    setAccountMenuOpen(true);
+  }, []);
+
+  const openAccountFromMenu = React.useCallback(() => {
+    closeAccountMenu();
+    onOpenAccount();
+  }, [closeAccountMenu, onOpenAccount]);
+
+  const openSearchFromMenu = React.useCallback(() => {
+    closeAccountMenu();
+    onOpenSearch();
+  }, [closeAccountMenu, onOpenSearch]);
+
+  const toggleModeFromMenu = React.useCallback(() => {
+    closeAccountMenu();
+    toggleMode();
+  }, [closeAccountMenu, toggleMode]);
+
+  React.useEffect(() => {
+    setAccountMenuOpen(false);
+  }, [route]);
+
+  React.useEffect(() => {
+    if (!accountMenuOpen || accountSummary) return;
+
+    let alive = true;
+
+    (async () => {
+      try {
+        setAccountSummaryLoading(true);
+        setAccountSummaryError(null);
+        const [profile, entitlements] = await Promise.all([getMeProfile(token), getMyEntitlements(token)]);
+        if (!alive) return;
+
+        setAccountSummary({
+          name: profile?.name?.trim() || "Conta Livro Vivo",
+          email: profile?.email?.trim() || "-",
+          profession: profile?.profession?.trim() || "Profissão não informada",
+          planLabel: formatTier(entitlements?.effective_tier),
+          planStatus: formatStatus(entitlements?.subscription?.status),
+        });
+      } catch {
+        if (!alive) return;
+        setAccountSummaryError("Não foi possível carregar o resumo da conta.");
+      } finally {
+        if (!alive) return;
+        setAccountSummaryLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [accountMenuOpen, accountSummary, token]);
+
+  const accountDisplayName = accountSummary?.name || "Minha conta";
+  const accountDisplayEmail = accountSummary?.email || "-";
+  const accountDisplayProfession = accountSummary?.profession || "Profissão não informada";
+  const accountDisplayPlan = accountSummary
+    ? `${accountSummary.planLabel} • ${accountSummary.planStatus}`
+    : "Plano indisponível";
+  const accountInitials = getInitials(accountDisplayName);
+
+  const accountButtonStyle = [
+    styles.headerAccountButton,
+    {
+      borderColor: route === "account" ? theme.colors.accent : theme.colors.sidebarBorder,
+      backgroundColor: route === "account" ? theme.colors.sidebarActiveBg : theme.colors.topBarBg,
+    },
+  ];
+
+  const accountMenu = (
+    <Modal visible={accountMenuOpen} transparent animationType="fade" onRequestClose={closeAccountMenu}>
+      <View style={styles.accountMenuOverlay}>
+        <Pressable
+          style={styles.accountMenuBackdrop}
+          onPress={closeAccountMenu}
+          accessibilityRole="button"
+          accessibilityLabel="Fechar menu da conta"
+        />
+        <View
+          style={[
+            styles.accountMenuCard,
+            isDesktopWeb ? styles.accountMenuCardDesktop : styles.accountMenuCardMobile,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}
+        >
+          <View style={styles.accountIdentityRow}>
+            <View style={[styles.accountAvatar, { backgroundColor: theme.colors.topBarBg }]}>
+              <Text style={[styles.accountAvatarText, { color: theme.colors.sidebarText }]}>{accountInitials}</Text>
+            </View>
+            <View style={styles.accountIdentityMeta}>
+              <Text style={[styles.accountName, { color: theme.colors.text }]} numberOfLines={1}>
+                {accountDisplayName}
+              </Text>
+              <Text style={[styles.accountMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                {accountDisplayEmail}
+              </Text>
+              <Text style={[styles.accountMeta, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                {accountDisplayProfession}
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.accountPlanTag,
+              { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderStrong },
+            ]}
+          >
+            <Text style={[styles.accountPlanTagText, { color: theme.colors.accent }]}>{accountDisplayPlan}</Text>
+          </View>
+
+          {accountSummaryLoading ? (
+            <Text style={[styles.accountMeta, { color: theme.colors.textMuted }]}>Carregando resumo da conta…</Text>
+          ) : null}
+          {accountSummaryError ? (
+            <Text style={[styles.accountError, { color: theme.colors.danger }]}>{accountSummaryError}</Text>
+          ) : null}
+
+          <Pressable
+            style={[
+              styles.accountMenuAction,
+              { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+            ]}
+            onPress={openAccountFromMenu}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir tela Minha Conta"
+          >
+            <ShellIcon name="account-circle-outline" size={18} color={theme.colors.text} />
+            <Text style={[styles.accountMenuActionText, { color: theme.colors.text }]}>Minha conta</Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.accountMenuAction,
+              { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+            ]}
+            onPress={openSearchFromMenu}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir tela Busca Global"
+          >
+            <ShellIcon name="magnify" size={18} color={theme.colors.text} />
+            <Text style={[styles.accountMenuActionText, { color: theme.colors.text }]}>Busca global</Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.accountMenuAction,
+              { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+            ]}
+            onPress={toggleModeFromMenu}
+            accessibilityRole="button"
+            accessibilityLabel={theme.isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+          >
+            <ShellIcon
+              name={theme.isDark ? "weather-sunny" : "moon-waning-crescent"}
+              size={18}
+              color={theme.colors.text}
+            />
+            <Text style={[styles.accountMenuActionText, { color: theme.colors.text }]}>
+              {theme.isDark ? "Modo claro" : "Modo escuro"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (isDesktopWeb) {
     return (
@@ -68,9 +282,7 @@ export function AppShell({
         >
           <View style={styles.brandBlock}>
             <Text style={[styles.brandTitle, { color: theme.colors.sidebarText }]}>Livro Vivo</Text>
-            <Text style={[styles.brandSubtitle, { color: theme.colors.sidebarTextMuted }]}>
-              Direito do Consumidor
-            </Text>
+            <Text style={[styles.brandSubtitle, { color: theme.colors.sidebarTextMuted }]}>Direito do Consumidor</Text>
           </View>
 
           <View style={styles.desktopNav}>
@@ -133,12 +345,21 @@ export function AppShell({
               },
             ]}
           >
-            <Text style={[styles.desktopHeaderTitle, { color: theme.colors.sidebarText }]}>
-              {ROUTE_TITLES[route]}
-            </Text>
+            <Text style={[styles.desktopHeaderTitle, { color: theme.colors.sidebarText }]}>{ROUTE_TITLES[route]}</Text>
+            <Pressable
+              testID="shell-desktop-account"
+              style={accountButtonStyle}
+              onPress={openAccountMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir menu da conta"
+            >
+              <ShellIcon name="account-circle-outline" size={18} color={theme.colors.sidebarText} />
+            </Pressable>
           </View>
           <View style={styles.contentWrap}>{children}</View>
         </View>
+
+        {accountMenu}
       </View>
     );
   }
@@ -157,24 +378,13 @@ export function AppShell({
         <Text style={[styles.mobileTitle, { color: theme.colors.sidebarText }]}>{ROUTE_TITLES[route]}</Text>
         <View style={styles.mobileActions}>
           <Pressable
-            testID="shell-mobile-search"
-            style={[styles.mobileActionButton, { borderColor: theme.colors.sidebarBorder }]}
-            onPress={onOpenSearch}
-            accessibilityLabel="Abrir busca global"
+            testID="shell-mobile-account"
+            style={accountButtonStyle}
+            onPress={openAccountMenu}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir menu da conta"
           >
-            <ShellIcon name="magnify" size={18} color={theme.colors.sidebarText} />
-          </Pressable>
-          <Pressable
-            testID="shell-mobile-theme"
-            style={[styles.mobileActionButton, { borderColor: theme.colors.sidebarBorder }]}
-            onPress={toggleMode}
-            accessibilityLabel={theme.isDark ? "Ativar modo claro" : "Ativar modo escuro"}
-          >
-            <ShellIcon
-              name={theme.isDark ? "weather-sunny" : "moon-waning-crescent"}
-              size={18}
-              color={theme.colors.sidebarText}
-            />
+            <ShellIcon name="account-circle-outline" size={18} color={theme.colors.sidebarText} />
           </Pressable>
         </View>
       </View>
@@ -192,6 +402,7 @@ export function AppShell({
       >
         {MOBILE_TAB_ITEMS.map((item) => {
           const active = isRouteActive(route, item.route);
+          const tabLabel = useCompactMobileLabels ? (item.shortLabel || item.label) : item.label;
           return (
             <Pressable
               key={item.route}
@@ -199,18 +410,21 @@ export function AppShell({
               onPress={() => onNavigate(item.route)}
               style={styles.mobileTab}
             >
-              <ShellIcon
-                name={item.icon}
-                size={20}
-                color={active ? theme.colors.accent : theme.colors.textMuted}
-              />
-              <Text style={[styles.mobileTabLabel, { color: active ? theme.colors.accent : theme.colors.textMuted }]}>
-                {item.shortLabel || item.label}
+              <ShellIcon name={item.icon} size={20} color={active ? theme.colors.accent : theme.colors.textMuted} />
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.78}
+                style={[styles.mobileTabLabel, { color: active ? theme.colors.accent : theme.colors.textMuted }]}
+              >
+                {tabLabel}
               </Text>
             </Pressable>
           );
         })}
       </View>
+
+      {accountMenu}
     </View>
   );
 }
@@ -269,8 +483,11 @@ const styles = StyleSheet.create({
   desktopHeader: {
     minHeight: 70,
     borderBottomWidth: 1,
-    justifyContent: "center",
+    justifyContent: "space-between",
+    alignItems: "center",
+    flexDirection: "row",
     paddingHorizontal: 22,
+    gap: 12,
   },
   desktopHeaderTitle: {
     fontSize: 25,
@@ -295,30 +512,112 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   mobileActions: { flexDirection: "row", gap: 8 },
-  mobileActionButton: {
+  headerAccountButton: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 999,
     width: 36,
     height: 36,
     justifyContent: "center",
     alignItems: "center",
   },
+  accountMenuOverlay: {
+    flex: 1,
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+  },
+  accountMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  accountMenuCard: {
+    width: 304,
+    maxWidth: "92%",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+  },
+  accountMenuCardDesktop: {
+    marginTop: 78,
+    marginRight: 20,
+  },
+  accountMenuCardMobile: {
+    marginTop: 68,
+    marginRight: 10,
+  },
+  accountIdentityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  accountAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountAvatarText: {
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  accountIdentityMeta: {
+    flex: 1,
+    gap: 1,
+  },
+  accountName: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  accountMeta: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  accountPlanTag: {
+    borderWidth: 1,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  accountPlanTagText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  accountError: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  accountMenuAction: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  accountMenuActionText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
   mobileBottomBar: {
     minHeight: 72,
     borderTopWidth: 1,
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
     alignItems: "center",
     paddingBottom: 10,
     paddingTop: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 6,
   },
   mobileTab: {
+    flex: 1,
     alignItems: "center",
     gap: 3,
-    paddingHorizontal: 6,
+    paddingHorizontal: 2,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  mobileTabLabel: { fontSize: 12, fontWeight: "700" },
+  mobileTabLabel: { fontSize: 11, fontWeight: "700", textAlign: "center" },
 });

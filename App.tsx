@@ -374,6 +374,7 @@ function AppRoot() {
     <View style={[styles.appRoot, { backgroundColor: theme.colors.bg }]}>
       <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
       <AppShell
+        token={token}
         route={route}
         onNavigate={handleShellNavigate}
         onOpenSearch={() => setRoute("mainSearch")}
