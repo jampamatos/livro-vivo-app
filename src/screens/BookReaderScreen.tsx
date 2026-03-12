@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import type { BookChapter } from "../api/books";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
@@ -53,6 +53,7 @@ type Props = {
   annotations?: ReaderAnnotationHighlight[];
   onCreateAnnotationDraft?: (draft: ReaderAnnotationDraft) => void;
   onOpenAnnotation?: (annotationId: number) => void;
+  colorMode?: "light" | "dark";
 };
 
 type InlineCursor = { current: number };
@@ -66,6 +67,90 @@ type DecoratedSegment = {
 const MIN_FONT_SCALE = 0.9;
 const MAX_FONT_SCALE = 1.35;
 const STEP_FONT_SCALE = 0.1;
+
+type ReaderPalette = {
+  cardBorder: string;
+  cardBg: string;
+  headingText: string;
+  loadingText: string;
+  errorText: string;
+  offlineBorder: string;
+  offlineBg: string;
+  offlineText: string;
+  navButtonBg: string;
+  navButtonText: string;
+  scaleButtonBg: string;
+  scaleButtonBorder: string;
+  scaleButtonText: string;
+  scaleLabel: string;
+  contentText: string;
+  linkText: string;
+  matchBg: string;
+  matchText: string;
+  heading2Text: string;
+  heading3Text: string;
+  blockquoteBorder: string;
+  blockquoteBg: string;
+  blockquoteText: string;
+  listMarker: string;
+  emptyText: string;
+};
+
+const lightReaderPalette: ReaderPalette = {
+  cardBorder: "#e6e3dc",
+  cardBg: "#f7f5f0",
+  headingText: "#111",
+  loadingText: "#555",
+  errorText: "#b00020",
+  offlineBorder: "#dccb90",
+  offlineBg: "#fff7db",
+  offlineText: "#5a4a15",
+  navButtonBg: "#111",
+  navButtonText: "#fff",
+  scaleButtonBg: "#fff",
+  scaleButtonBorder: "#111",
+  scaleButtonText: "#111",
+  scaleLabel: "#444",
+  contentText: "#272727",
+  linkText: "#0b4e9b",
+  matchBg: "#fff176",
+  matchText: "#2a2000",
+  heading2Text: "#0f172a",
+  heading3Text: "#111827",
+  blockquoteBorder: "#c8b27b",
+  blockquoteBg: "#f3efe5",
+  blockquoteText: "#3f3320",
+  listMarker: "#1f2937",
+  emptyText: "#666",
+};
+
+const darkReaderPalette: ReaderPalette = {
+  cardBorder: "#31445f",
+  cardBg: "#101d32",
+  headingText: "#e8eef8",
+  loadingText: "#b1bdd1",
+  errorText: "#f09a90",
+  offlineBorder: "#6a5a2b",
+  offlineBg: "#3a2e12",
+  offlineText: "#f7df9b",
+  navButtonBg: "#385f93",
+  navButtonText: "#f4f8ff",
+  scaleButtonBg: "#17243a",
+  scaleButtonBorder: "#4a6388",
+  scaleButtonText: "#e7edf6",
+  scaleLabel: "#a7b4c7",
+  contentText: "#e0e8f4",
+  linkText: "#9ac8ff",
+  matchBg: "#6f5805",
+  matchText: "#fff6d4",
+  heading2Text: "#f2f6fd",
+  heading3Text: "#edf4ff",
+  blockquoteBorder: "#8d7642",
+  blockquoteBg: "#1a2b44",
+  blockquoteText: "#d0ddf2",
+  listMarker: "#c9d5e8",
+  emptyText: "#9caac0",
+};
 
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ");
@@ -95,8 +180,17 @@ function findBestOccurrence(haystack: string, needle: string, approxIndex: numbe
   return best;
 }
 
-function annotationBgColor(color: string | undefined): string {
+function annotationBgColor(color: string | undefined, isDark: boolean): string {
   const normalized = (color || "yellow").trim().toLowerCase();
+  if (isDark) {
+    if (normalized === "green") return "#225b43";
+    if (normalized === "blue") return "#214f77";
+    if (normalized === "pink") return "#6c2f4d";
+    if (normalized === "orange") return "#7a4d1f";
+    if (normalized.startsWith("#")) return normalized;
+    return "#75600e";
+  }
+
   if (normalized === "green") return "#b9f6ca";
   if (normalized === "blue") return "#bbdefb";
   if (normalized === "pink") return "#f8bbd0";
@@ -128,9 +222,11 @@ export function BookReaderScreen({
   annotations = [],
   onCreateAnnotationDraft,
   onOpenAnnotation,
+  colorMode = "light",
 }: Props) {
   const scrollRef = React.useRef<ScrollView | null>(null);
   const readingColumnRef = React.useRef<any>(null);
+  const swipeTranslateX = React.useRef(new Animated.Value(0)).current;
 
   const chapterText = chapter?.content_plain || "";
   const [contentHeight, setContentHeight] = React.useState(0);
@@ -153,6 +249,8 @@ export function BookReaderScreen({
   );
 
   const currentFontScale = controlledFontScale ?? internalFontScale;
+  const isDarkReader = colorMode === "dark";
+  const palette = isDarkReader ? darkReaderPalette : lightReaderPalette;
   const clampFontScale = React.useCallback((value: number) => {
     if (value < MIN_FONT_SCALE) return MIN_FONT_SCALE;
     if (value > MAX_FONT_SCALE) return MAX_FONT_SCALE;
@@ -199,6 +297,10 @@ export function BookReaderScreen({
     matchStart,
     viewportHeight,
   ]);
+
+  React.useEffect(() => {
+    swipeTranslateX.setValue(0);
+  }, [chapter?.slug, swipeTranslateX]);
 
   const openLink = React.useCallback(async (href: string | undefined) => {
     const normalizedHref = normalizeRichTextHref(href);
@@ -331,7 +433,7 @@ export function BookReaderScreen({
               node.bold ? styles.inlineBold : null,
               node.italic ? styles.inlineItalic : null,
               node.underline ? styles.inlineUnderline : null,
-              node.href ? styles.inlineLink : null,
+              node.href ? [styles.inlineLink, { color: palette.linkText }] : null,
             ];
 
             const segments = splitDecoratedSegments(nodeText, start);
@@ -353,11 +455,13 @@ export function BookReaderScreen({
                       style={[
                         segment.annotation
                           ? {
-                              backgroundColor: annotationBgColor(segment.annotation.color),
+                              backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
                               borderRadius: 2,
                             }
                           : null,
-                        segment.isSearchMatch ? styles.contentMatch : null,
+                        segment.isSearchMatch
+                          ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
+                          : null,
                       ]}
                       selectable={annotationMode}
                     >
@@ -376,11 +480,13 @@ export function BookReaderScreen({
                     style={[
                       segment.annotation
                         ? {
-                            backgroundColor: annotationBgColor(segment.annotation.color),
+                            backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
                             borderRadius: 2,
                           }
                         : null,
-                      segment.isSearchMatch ? styles.contentMatch : null,
+                      segment.isSearchMatch
+                        ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
+                        : null,
                     ]}
                     selectable={annotationMode}
                     accessibilityRole={canOpenAnnotation && segment.annotation ? "button" : undefined}
@@ -401,7 +507,7 @@ export function BookReaderScreen({
         </Text>
       );
     },
-    [annotationMode, onOpenAnnotation, openLink, splitDecoratedSegments]
+    [annotationMode, isDarkReader, onOpenAnnotation, openLink, palette.linkText, palette.matchBg, palette.matchText, splitDecoratedSegments]
   );
 
   const toInlinePlainText = React.useCallback((inlines: RichInlineNode[]) => {
@@ -544,7 +650,7 @@ export function BookReaderScreen({
           <View accessibilityRole="header" accessibilityLabel="Título de seção nível 2">
             {renderInlineText(
               block.inlines,
-              [styles.h2, { fontSize: scaled(28), lineHeight: scaled(36) }],
+              [styles.h2, { color: palette.heading2Text, fontSize: scaled(28), lineHeight: scaled(36) }],
               cursor,
               "header"
             )}
@@ -568,7 +674,7 @@ export function BookReaderScreen({
           <View accessibilityRole="header" accessibilityLabel="Título de seção nível 3">
             {renderInlineText(
               block.inlines,
-              [styles.h3, { fontSize: scaled(23), lineHeight: scaled(31) }],
+              [styles.h3, { color: palette.heading3Text, fontSize: scaled(23), lineHeight: scaled(31) }],
               cursor,
               "header"
             )}
@@ -589,10 +695,10 @@ export function BookReaderScreen({
 
       if (block.type === "blockquote") {
         const content = (
-          <View style={styles.blockquote}>
+          <View style={[styles.blockquote, { borderLeftColor: palette.blockquoteBorder, backgroundColor: palette.blockquoteBg }]}>
             {renderInlineText(
               block.inlines,
-              [styles.blockquoteText, { fontSize: scaled(18), lineHeight: scaled(31) }],
+              [styles.blockquoteText, { color: palette.blockquoteText, fontSize: scaled(18), lineHeight: scaled(31) }],
               cursor
             )}
           </View>
@@ -616,7 +722,7 @@ export function BookReaderScreen({
             {block.items.map((item, itemIndex) => {
               const content = (
                 <>
-                  <Text style={[styles.listMarker, { fontSize: scaled(18), lineHeight: scaled(31) }]}> 
+                  <Text style={[styles.listMarker, { color: palette.listMarker, fontSize: scaled(18), lineHeight: scaled(31) }]}> 
                     {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
                   </Text>
                 <View style={styles.listItemTextWrap}>
@@ -626,7 +732,7 @@ export function BookReaderScreen({
                     })() : null}
                     {renderInlineText(
                       item,
-                      [styles.listText, { fontSize: scaled(18), lineHeight: scaled(31) }],
+                      [styles.listText, { color: palette.contentText, fontSize: scaled(18), lineHeight: scaled(31) }],
                       cursor
                     )}
                   </View>
@@ -662,7 +768,7 @@ export function BookReaderScreen({
         <View style={styles.paragraphWrap}>
           {renderInlineText(
             block.inlines,
-            [styles.paragraph, { fontSize: scaled(18), lineHeight: scaled(31) }],
+            [styles.paragraph, { color: palette.contentText, fontSize: scaled(18), lineHeight: scaled(31) }],
             cursor
           )}
         </View>
@@ -679,7 +785,7 @@ export function BookReaderScreen({
         </Pressable>
       );
     },
-    [allowLongPressFallback, emitLongPressDraft, renderInlineText, scaled]
+    [allowLongPressFallback, emitLongPressDraft, palette.blockquoteBg, palette.blockquoteBorder, palette.blockquoteText, palette.contentText, palette.heading2Text, palette.heading3Text, palette.listMarker, renderInlineText, scaled]
   );
 
   const panResponder = React.useMemo(() => {
@@ -688,17 +794,50 @@ export function BookReaderScreen({
     return PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) =>
         Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+      onPanResponderMove: (_, gestureState) => {
+        swipeTranslateX.setValue(gestureState.dx * 0.32);
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(swipeTranslateX, {
+          toValue: 0,
+          tension: 52,
+          friction: 10,
+          useNativeDriver: true,
+        }).start();
+      },
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dx <= -70 && canGoNext) {
-          onNext();
+          Animated.timing(swipeTranslateX, {
+            toValue: -120,
+            duration: 120,
+            useNativeDriver: true,
+          }).start(() => {
+            swipeTranslateX.setValue(0);
+            onNext();
+          });
           return;
         }
         if (gestureState.dx >= 70 && canGoPrevious) {
-          onPrevious();
+          Animated.timing(swipeTranslateX, {
+            toValue: 120,
+            duration: 120,
+            useNativeDriver: true,
+          }).start(() => {
+            swipeTranslateX.setValue(0);
+            onPrevious();
+          });
+          return;
         }
+
+        Animated.spring(swipeTranslateX, {
+          toValue: 0,
+          tension: 52,
+          friction: 10,
+          useNativeDriver: true,
+        }).start();
       },
     });
-  }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious]);
+  }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious, swipeTranslateX]);
 
   const webSelectionHandlers =
     Platform.OS === "web"
@@ -706,21 +845,30 @@ export function BookReaderScreen({
       : {};
 
   return (
-    <View
-      style={[styles.chapterCard, mode === "embedded" ? styles.chapterCardEmbedded : styles.chapterCardReader]}
+    <Animated.View
+      style={[
+        styles.chapterCard,
+        mode === "embedded" ? styles.chapterCardEmbedded : styles.chapterCardReader,
+        mode === "embedded" ? { borderColor: palette.cardBorder, backgroundColor: palette.cardBg } : null,
+        { transform: [{ translateX: swipeTranslateX }] },
+      ]}
       {...(panResponder ? panResponder.panHandlers : {})}
     >
       {showHeader ? (
         <View style={styles.chapterHeader}>
-          <Text style={styles.sectionTitle} accessibilityRole="header">
+          <Text style={[styles.sectionTitle, { color: palette.headingText }]} accessibilityRole="header">
             {chapter ? chapter.title : "Capítulo"}
           </Text>
-          {loading ? <Text style={styles.loading}>Carregando...</Text> : null}
+          {loading ? <Text style={[styles.loading, { color: palette.loadingText }]}>Carregando...</Text> : null}
         </View>
       ) : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {offlineCached ? <Text style={styles.offlineBadge}>Sem conexão: exibindo capítulo em cache.</Text> : null}
+      {error ? <Text style={[styles.error, { color: palette.errorText }]}>{error}</Text> : null}
+      {offlineCached ? (
+        <Text style={[styles.offlineBadge, { borderColor: palette.offlineBorder, backgroundColor: palette.offlineBg, color: palette.offlineText }]}>
+          Sem conexão: exibindo capítulo em cache.
+        </Text>
+      ) : null}
 
       {chapter ? (
         <>
@@ -731,9 +879,13 @@ export function BookReaderScreen({
                 disabled={!canGoPrevious || loading}
                 accessibilityRole="button"
                 accessibilityLabel="Capítulo anterior"
-                style={[styles.navButton, !canGoPrevious || loading ? styles.navButtonDisabled : null]}
+                style={[
+                  styles.navButton,
+                  { backgroundColor: palette.navButtonBg },
+                  !canGoPrevious || loading ? styles.navButtonDisabled : null,
+                ]}
               >
-                <Text style={styles.navButtonText}>Capítulo anterior</Text>
+                <Text style={[styles.navButtonText, { color: palette.navButtonText }]}>Capítulo anterior</Text>
               </Pressable>
 
               <Pressable
@@ -741,9 +893,13 @@ export function BookReaderScreen({
                 disabled={!canGoNext || loading}
                 accessibilityRole="button"
                 accessibilityLabel="Próximo capítulo"
-                style={[styles.navButton, !canGoNext || loading ? styles.navButtonDisabled : null]}
+                style={[
+                  styles.navButton,
+                  { backgroundColor: palette.navButtonBg },
+                  !canGoNext || loading ? styles.navButtonDisabled : null,
+                ]}
               >
-                <Text style={styles.navButtonText}>Próximo capítulo</Text>
+                <Text style={[styles.navButtonText, { color: palette.navButtonText }]}>Próximo capítulo</Text>
               </Pressable>
 
               <Pressable
@@ -754,12 +910,19 @@ export function BookReaderScreen({
                 hitSlop={8}
                 onPress={decreaseFontScale}
                 disabled={currentFontScale <= MIN_FONT_SCALE}
-                style={[styles.scaleButton, currentFontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null]}
+                style={[
+                  styles.scaleButton,
+                  {
+                    borderColor: palette.scaleButtonBorder,
+                    backgroundColor: palette.scaleButtonBg,
+                  },
+                  currentFontScale <= MIN_FONT_SCALE ? styles.scaleButtonDisabled : null,
+                ]}
               >
-                <Text style={styles.scaleButtonText}>A-</Text>
+                <Text style={[styles.scaleButtonText, { color: palette.scaleButtonText }]}>A-</Text>
               </Pressable>
               <Text
-                style={styles.scaleLabel}
+                style={[styles.scaleLabel, { color: palette.scaleLabel }]}
                 accessibilityLabel={`Escala da fonte ${Math.round(currentFontScale * 100)} por cento`}
               >
                 {Math.round(currentFontScale * 100)}%
@@ -772,9 +935,16 @@ export function BookReaderScreen({
                 hitSlop={8}
                 onPress={increaseFontScale}
                 disabled={currentFontScale >= MAX_FONT_SCALE}
-                style={[styles.scaleButton, currentFontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null]}
+                style={[
+                  styles.scaleButton,
+                  {
+                    borderColor: palette.scaleButtonBorder,
+                    backgroundColor: palette.scaleButtonBg,
+                  },
+                  currentFontScale >= MAX_FONT_SCALE ? styles.scaleButtonDisabled : null,
+                ]}
               >
-                <Text style={styles.scaleButtonText}>A+</Text>
+                <Text style={[styles.scaleButtonText, { color: palette.scaleButtonText }]}>A+</Text>
               </Pressable>
             </View>
           ) : null}
@@ -813,9 +983,9 @@ export function BookReaderScreen({
           </ScrollView>
         </>
       ) : (
-        <Text style={styles.empty}>Selecione um capítulo no sumário.</Text>
+        <Text style={[styles.empty, { color: palette.emptyText }]}>Selecione um capítulo no sumário.</Text>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -886,12 +1056,12 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   paragraphWrap: { marginBottom: 2 },
-  inlineBase: { color: "#272727" },
+  inlineBase: {},
   contentMatch: { backgroundColor: "#fff176", fontWeight: "700" },
   inlineBold: { fontWeight: "700" },
   inlineItalic: { fontStyle: "italic" },
   inlineUnderline: { textDecorationLine: "underline" },
-  inlineLink: { color: "#0b4e9b", textDecorationLine: "underline" },
+  inlineLink: { textDecorationLine: "underline" },
   paragraph: { color: "#272727" },
   h2: { fontWeight: "700", color: "#0f172a", marginTop: 4 },
   h3: { fontWeight: "700", color: "#111827", marginTop: 4 },

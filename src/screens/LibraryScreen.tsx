@@ -153,6 +153,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
   const [annotationMode, setAnnotationMode] = React.useState(false);
   const [readerFontScale, setReaderFontScale] = React.useState(1);
+  const [readerToolbarOpen, setReaderToolbarOpen] = React.useState(Platform.OS === "web");
 
   const [annotations, setAnnotations] = React.useState<Annotation[]>([]);
   const [annotationsLoading, setAnnotationsLoading] = React.useState(false);
@@ -181,6 +182,82 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     return Platform.OS === "web" ? ({ overflow: "auto" } as any) : null;
   }, []);
   const isNarrow = windowWidth <= 720;
+  const isNative = Platform.OS !== "web";
+  const webLibraryShellStyle = React.useMemo(() => {
+    if (Platform.OS !== "web") return null;
+    return {
+      maxWidth: 1220,
+      paddingTop: 24,
+      paddingHorizontal: 24,
+    };
+  }, []);
+  const webLibraryListContentStyle = React.useMemo(() => {
+    if (Platform.OS !== "web") return null;
+    return {
+      paddingTop: 14,
+    };
+  }, []);
+
+  const readerUi = React.useMemo(() => {
+    return {
+      rootBg: theme.colors.bg,
+      chromeBg: theme.colors.surfaceMuted,
+      chromeBorder: theme.colors.border,
+      bodyBg: theme.colors.surface,
+      bodyBorder: theme.colors.border,
+      title: theme.colors.text,
+      subtitle: theme.colors.textMuted,
+      iconBg: theme.colors.surface,
+      iconBorder: theme.colors.borderStrong,
+      iconText: theme.colors.text,
+      iconActiveBg: theme.colors.primary,
+      iconActiveText: theme.colors.textInverse,
+      bannerBg: theme.isDark ? "#2E2A17" : "#FFF7D9",
+      bannerBorder: theme.isDark ? "#746233" : "#D9C56A",
+      bannerTitle: theme.isDark ? "#F0DDA0" : "#47380D",
+      bannerText: theme.isDark ? "#E6D29D" : "#5A4A15",
+      draftBg: theme.colors.surfaceMuted,
+      draftBorder: theme.colors.border,
+      draftTitle: theme.colors.text,
+      draftText: theme.colors.textMuted,
+      draftActionBg: theme.colors.primary,
+      draftActionText: theme.colors.textInverse,
+      panelBg: theme.colors.surfaceMuted,
+      panelBorder: theme.colors.border,
+      panelTitle: theme.colors.text,
+      inputBg: theme.colors.surface,
+      inputBorder: theme.colors.borderStrong,
+      inputText: theme.colors.text,
+      inputPlaceholder: theme.colors.textMuted,
+      itemBg: theme.colors.surface,
+      itemBorder: theme.colors.border,
+      itemTitle: theme.colors.text,
+      itemText: theme.colors.textMuted,
+      itemHighlightBg: theme.colors.primary,
+      itemHighlightText: theme.colors.textInverse,
+      searchHighlight: theme.isDark ? "#6F5805" : "#FFF59D",
+      bottomBarBg: theme.colors.surfaceMuted,
+      bottomBarBorder: theme.colors.border,
+      pageButtonBg: theme.colors.primary,
+      pageButtonText: theme.colors.textInverse,
+      progressText: theme.colors.textMuted,
+      modalCardBg: theme.colors.surface,
+      modalCardBorder: theme.colors.border,
+      modalTitle: theme.colors.text,
+      modalText: theme.colors.text,
+      modalMuted: theme.colors.textMuted,
+      modalInputBg: theme.colors.surface,
+      modalInputBorder: theme.colors.borderStrong,
+      modalInputText: theme.colors.text,
+      modalCancelBg: theme.colors.surface,
+      modalCancelBorder: theme.colors.borderStrong,
+      modalCancelText: theme.colors.text,
+      modalPrimaryBg: theme.colors.primary,
+      modalPrimaryText: theme.colors.textInverse,
+      error: theme.colors.danger,
+      empty: theme.colors.textMuted,
+    };
+  }, [theme]);
 
   const formatApiError = React.useCallback((error: unknown, prefix: string) => {
     if (error instanceof ApiError) {
@@ -396,6 +473,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setReaderSummaryOpen(false);
       setAnnotationMode(false);
       setReaderFontScale(1);
+      setReaderToolbarOpen(Platform.OS === "web");
       setAnnotations([]);
       setAnnotationsSyncError(null);
       setAnnotationsLoading(false);
@@ -758,21 +836,21 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, [formatAnnotationError, loadAnnotations, selectedAnnotation, token]);
 
   const renderHighlightedSnippet = React.useCallback(
-    (snippet: string) => {
+    (snippet: string, textColor: string, highlightBg: string) => {
       const term = submittedQuery.trim();
       if (!term) {
-        return <Text style={styles.searchItemSnippet}>{snippet}</Text>;
+        return <Text style={[styles.searchItemSnippet, { color: textColor }]}>{snippet}</Text>;
       }
 
       const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const parts = snippet.split(new RegExp(`(${escaped})`, "ig"));
 
       return (
-        <Text style={styles.searchItemSnippet}>
+        <Text style={[styles.searchItemSnippet, { color: textColor }]}>
           {parts.map((part, idx) => {
             if (part.toLowerCase() === term.toLowerCase()) {
               return (
-                <Text key={`hit-${idx}`} style={styles.searchHighlight}>
+                <Text key={`hit-${idx}`} style={[styles.searchHighlight, { backgroundColor: highlightBg }]}>
                   {part}
                 </Text>
               );
@@ -817,6 +895,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setReaderSearchOpen(false);
     setReaderSummaryOpen(false);
     setAnnotationMode(false);
+    setReaderToolbarOpen(Platform.OS === "web");
     setOpenBook(null);
     setOpenBookLoading(false);
     setOpenBookError(null);
@@ -848,99 +927,210 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   };
 
   if (readerMode && openBook) {
+    const readerToolbarControls = (
+      <>
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerSummaryOpen
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => setReaderSummaryOpen((current) => !current)}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar índice de capítulos"
+        >
+          <MaterialCommunityIcons
+            name="format-list-bulleted"
+            size={17}
+            color={readerSummaryOpen ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerSearchOpen
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => setReaderSearchOpen((current) => !current)}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar busca no livro"
+        >
+          <MaterialCommunityIcons
+            name="magnify"
+            size={17}
+            color={readerSearchOpen ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            annotationMode
+              ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
+              : null,
+          ]}
+          onPress={() => {
+            setAnnotationMode((current) => {
+              const next = !current;
+              if (!next) {
+                setAnnotationDraft(null);
+                setPendingNativeDraft(null);
+              }
+              return next;
+            });
+            setAnnotationDraftNote("");
+            setAnnotationsSyncError(null);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Alternar modo anotação"
+        >
+          <MaterialCommunityIcons
+            name="pencil-outline"
+            size={16}
+            color={annotationMode ? readerUi.iconActiveText : readerUi.iconText}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerFontScale <= 0.9 ? styles.readerIconButtonDisabled : null,
+          ]}
+          onPress={() => setReaderFontScale((current) => clampReaderFontScale(current - 0.1))}
+          disabled={readerFontScale <= 0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Diminuir fonte"
+        >
+          <Text style={[styles.readerIconText, { color: readerUi.iconText }]}>A-</Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.readerIconButton,
+            {
+              borderColor: readerUi.iconBorder,
+              backgroundColor: readerUi.iconBg,
+            },
+            readerFontScale >= 1.35 ? styles.readerIconButtonDisabled : null,
+          ]}
+          onPress={() => setReaderFontScale((current) => clampReaderFontScale(current + 0.1))}
+          disabled={readerFontScale >= 1.35}
+          accessibilityRole="button"
+          accessibilityLabel="Aumentar fonte"
+        >
+          <Text style={[styles.readerIconText, { color: readerUi.iconText }]}>A+</Text>
+        </Pressable>
+      </>
+    );
+
     return (
-      <View style={[styles.readerRoot, webRootStyle]}>
+      <View style={[styles.readerRoot, webRootStyle, { backgroundColor: readerUi.rootBg }]}>
         <View style={styles.readerShell}>
-          <View style={[styles.readerTopBar, isNarrow ? styles.readerTopBarNarrow : null]}>
+          <View
+            style={[
+              styles.readerTopBar,
+              !isNative && isNarrow ? styles.readerTopBarNarrow : null,
+              {
+                borderColor: readerUi.chromeBorder,
+                backgroundColor: readerUi.chromeBg,
+              },
+            ]}
+          >
             <Pressable
-              style={styles.readerIconButton}
+              style={[
+                styles.readerIconButton,
+                {
+                  borderColor: readerUi.iconBorder,
+                  backgroundColor: readerUi.iconBg,
+                },
+              ]}
               onPress={closeReader}
               accessibilityRole="button"
               accessibilityLabel="Fechar modo leitura"
             >
-              <Text style={styles.readerIconText}>←</Text>
+              <MaterialCommunityIcons name="chevron-left" size={18} color={readerUi.iconText} />
             </Pressable>
 
             <View style={[styles.readerTitleWrap, isNarrow ? styles.readerTitleWrapNarrow : null]}>
-              <Text style={styles.readerBookTitle} numberOfLines={1}>
+              <Text style={[styles.readerBookTitle, { color: readerUi.title }]} numberOfLines={1}>
                 {activeBookMeta?.title ?? `Livro ${openBook.bookId}`}
               </Text>
-              <Text style={styles.readerChapterTitle} numberOfLines={1}>
+              <Text style={[styles.readerChapterTitle, { color: readerUi.subtitle }]} numberOfLines={1}>
                 {activeChapter ? `${activeChapter.chapter.order}. ${activeChapter.chapter.title}` : "Carregando capítulo"}
               </Text>
             </View>
 
-            <View style={[styles.readerToolbar, isNarrow ? styles.readerToolbarNarrow : null]}>
+            {isNative ? (
               <Pressable
-                style={[styles.readerIconButton, readerSummaryOpen ? styles.readerIconButtonActive : null]}
-                onPress={() => setReaderSummaryOpen((current) => !current)}
+                style={[
+                  styles.readerIconButton,
+                  {
+                    borderColor: readerToolbarOpen ? readerUi.iconActiveBg : readerUi.iconBorder,
+                    backgroundColor: readerToolbarOpen ? readerUi.iconActiveBg : readerUi.iconBg,
+                  },
+                ]}
+                onPress={() => setReaderToolbarOpen((current) => !current)}
                 accessibilityRole="button"
-                accessibilityLabel="Alternar índice de capítulos"
+                accessibilityLabel={readerToolbarOpen ? "Ocultar controles de leitura" : "Exibir controles de leitura"}
               >
-                <Text style={[styles.readerIconText, readerSummaryOpen ? styles.readerIconTextActive : null]}>
-                  ≡
-                </Text>
+                <MaterialCommunityIcons
+                  name={readerToolbarOpen ? "chevron-up" : "tune-variant"}
+                  size={18}
+                  color={readerToolbarOpen ? readerUi.iconActiveText : readerUi.iconText}
+                />
               </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerSearchOpen ? styles.readerIconButtonActive : null]}
-                onPress={() => setReaderSearchOpen((current) => !current)}
-                accessibilityRole="button"
-                accessibilityLabel="Alternar busca no livro"
-              >
-                <Text style={[styles.readerIconText, readerSearchOpen ? styles.readerIconTextActive : null]}>
-                  ⌕
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, annotationMode ? styles.readerIconButtonActive : null]}
-                onPress={() => {
-                  setAnnotationMode((current) => {
-                    const next = !current;
-                    if (!next) {
-                      setAnnotationDraft(null);
-                      setPendingNativeDraft(null);
-                    }
-                    return next;
-                  });
-                  setAnnotationDraftNote("");
-                  setAnnotationsSyncError(null);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Alternar modo anotação"
-              >
-                <Text style={[styles.readerIconText, annotationMode ? styles.readerIconTextActive : null]}>
-                  ✎
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerFontScale <= 0.9 ? styles.readerIconButtonDisabled : null]}
-                onPress={() => setReaderFontScale((current) => clampReaderFontScale(current - 0.1))}
-                disabled={readerFontScale <= 0.9}
-                accessibilityRole="button"
-                accessibilityLabel="Diminuir fonte"
-              >
-                <Text style={styles.readerIconText}>A-</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerIconButton, readerFontScale >= 1.35 ? styles.readerIconButtonDisabled : null]}
-                onPress={() => setReaderFontScale((current) => clampReaderFontScale(current + 0.1))}
-                disabled={readerFontScale >= 1.35}
-                accessibilityRole="button"
-                accessibilityLabel="Aumentar fonte"
-              >
-                <Text style={styles.readerIconText}>A+</Text>
-              </Pressable>
-            </View>
+            ) : (
+              <View style={[styles.readerToolbar, isNarrow ? styles.readerToolbarNarrow : null]}>
+                {readerToolbarControls}
+              </View>
+            )}
           </View>
 
+          {isNative && readerToolbarOpen ? (
+            <View
+              style={[
+                styles.readerToolbarPanel,
+                {
+                  borderColor: readerUi.chromeBorder,
+                  backgroundColor: readerUi.chromeBg,
+                },
+              ]}
+            >
+              <View style={[styles.readerToolbar, styles.readerToolbarNarrow]}>{readerToolbarControls}</View>
+            </View>
+          ) : null}
+
           {annotationMode ? (
-            <View style={styles.annotationModeBanner}>
-              <Text style={styles.annotationModeTitle}>Modo anotação ativo</Text>
-              <Text style={styles.annotationModeSubtitle}>
+            <View
+              style={[
+                styles.annotationModeBanner,
+                {
+                  borderColor: readerUi.bannerBorder,
+                  backgroundColor: readerUi.bannerBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModeTitle, { color: readerUi.bannerTitle }]}>Modo anotação ativo</Text>
+              <Text style={[styles.annotationModeSubtitle, { color: readerUi.bannerText }]}>
                 {annotationsLoading
                   ? "Carregando anotações..."
                   : Platform.OS === "web"
@@ -951,35 +1141,59 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           ) : null}
 
           {pendingNativeDraft && Platform.OS !== "web" ? (
-            <View style={styles.nativeDraftBanner}>
-              <Text style={styles.nativeDraftTitle}>Trecho preparado</Text>
-              <Text style={styles.nativeDraftExcerpt} numberOfLines={2}>
+            <View
+              style={[
+                styles.nativeDraftBanner,
+                {
+                  borderColor: readerUi.draftBorder,
+                  backgroundColor: readerUi.draftBg,
+                },
+              ]}
+            >
+              <Text style={[styles.nativeDraftTitle, { color: readerUi.draftTitle }]}>Trecho preparado</Text>
+              <Text style={[styles.nativeDraftExcerpt, { color: readerUi.draftText }]} numberOfLines={2}>
                 "{pendingNativeDraft.excerpt}"
               </Text>
               <Pressable
-                style={styles.nativeDraftAction}
+                style={[styles.nativeDraftAction, { backgroundColor: readerUi.draftActionBg }]}
                 onPress={() => {
                   setAnnotationDraft(pendingNativeDraft);
                   setPendingNativeDraft(null);
                 }}
               >
-                <Text style={styles.nativeDraftActionText}>Anotar trecho selecionado</Text>
+                <Text style={[styles.nativeDraftActionText, { color: readerUi.draftActionText }]}>Anotar trecho selecionado</Text>
               </Pressable>
             </View>
           ) : null}
 
-          {annotationsSyncError ? <Text style={styles.errorInline}>{annotationsSyncError}</Text> : null}
+          {annotationsSyncError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{annotationsSyncError}</Text> : null}
 
           {readerSearchOpen ? (
-            <View style={styles.readerPanel}>
-              <Text style={styles.readerPanelTitle}>Buscar neste livro</Text>
+            <View
+              style={[
+                styles.readerPanel,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Buscar neste livro</Text>
               <View style={styles.readerSearchRow}>
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Digite um termo..."
+                  placeholderTextColor={readerUi.inputPlaceholder}
                   autoCapitalize="none"
-                  style={styles.readerSearchInput}
+                  style={[
+                    styles.readerSearchInput,
+                    {
+                      borderColor: readerUi.inputBorder,
+                      backgroundColor: readerUi.inputBg,
+                      color: readerUi.inputText,
+                    },
+                  ]}
                   editable={!searchLoading}
                   returnKeyType="search"
                   onSubmitEditing={runSearch}
@@ -987,20 +1201,26 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 <Pressable
                   onPress={runSearch}
                   disabled={searchLoading || !query.trim()}
-                  style={[styles.searchBtn, searchLoading || !query.trim() ? styles.searchBtnDisabled : null]}
+                  style={[
+                    styles.searchBtn,
+                    { backgroundColor: readerUi.pageButtonBg },
+                    searchLoading || !query.trim() ? styles.searchBtnDisabled : null,
+                  ]}
                 >
-                  <Text style={styles.searchBtnText}>{searchLoading ? "..." : "Buscar"}</Text>
+                  <Text style={[styles.searchBtnText, { color: readerUi.pageButtonText }]}>
+                    {searchLoading ? "..." : "Buscar"}
+                  </Text>
                 </Pressable>
               </View>
 
-              {searchError ? <Text style={styles.errorInline}>{searchError}</Text> : null}
+              {searchError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{searchError}</Text> : null}
 
               {hasSearched && !searchLoading ? (
                 displayedSearchResults.length === 0 ? (
-                  <Text style={styles.empty}>Sem resultados.</Text>
+                  <Text style={[styles.empty, { color: readerUi.empty }]}>Sem resultados.</Text>
                 ) : (
                   <View style={styles.readerResults}>
-                    <Text style={styles.searchMeta}>
+                    <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
                       {searchCount != null
                         ? `${displayedSearchResults.length} de ${searchCount} resultados`
                         : `${displayedSearchResults.length} resultados`}
@@ -1008,7 +1228,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     {displayedSearchResults.map((result) => (
                       <Pressable
                         key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
-                        style={styles.searchItem}
+                        style={[
+                          styles.searchItem,
+                          {
+                            borderColor: readerUi.itemBorder,
+                            backgroundColor: readerUi.itemBg,
+                          },
+                        ]}
                         onPress={() => {
                           openReaderChapter(result.chapter_slug, {
                             query: submittedQuery.trim(),
@@ -1020,10 +1246,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                           }
                         }}
                       >
-                        <Text style={styles.searchItemTitle}>
+                        <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
                           Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
                         </Text>
-                        {renderHighlightedSnippet(result.compactSnippet)}
+                        {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
                       </Pressable>
                     ))}
                   </View>
@@ -1033,8 +1259,16 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           ) : null}
 
           {readerSummaryOpen ? (
-            <View style={styles.readerPanel}>
-              <Text style={styles.readerPanelTitle}>Índice</Text>
+            <View
+              style={[
+                styles.readerPanel,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Índice</Text>
               <View style={styles.readerSummaryList}>
                 {openBook.chapters.map((chapter) => {
                   const active = activeChapter?.chapter.slug === chapter.slug;
@@ -1047,10 +1281,29 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                           setReaderSummaryOpen(false);
                         }
                       }}
-                      style={[styles.chapterItem, active ? styles.chapterItemActive : null]}
+                      style={[
+                        styles.chapterItem,
+                        {
+                          borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
+                          backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
+                        },
+                      ]}
                     >
-                      <Text style={[styles.chapterOrder, active ? styles.chapterTextActive : null]}>{chapter.order}.</Text>
-                      <Text style={[styles.chapterTitle, active ? styles.chapterTextActive : null]} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.chapterOrder,
+                          { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                        ]}
+                      >
+                        {chapter.order}.
+                      </Text>
+                      <Text
+                        style={[
+                          styles.chapterTitle,
+                          { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
+                        ]}
+                        numberOfLines={1}
+                      >
                         {chapter.title}
                       </Text>
                     </Pressable>
@@ -1060,12 +1313,21 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
             </View>
           ) : null}
 
-          <View style={styles.readerBody}>
+          <View
+            style={[
+              styles.readerBody,
+              {
+                borderColor: readerUi.bodyBorder,
+                backgroundColor: readerUi.bodyBg,
+              },
+            ]}
+          >
             <BookReaderScreen
               mode="reader"
               showHeader={false}
               showControls={false}
               enableSwipeNavigation
+              colorMode={theme.isDark ? "dark" : "light"}
               fontScale={readerFontScale}
               onFontScaleChange={setReaderFontScale}
               chapter={activeChapter?.chapter ?? null}
@@ -1107,31 +1369,61 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
             />
           </View>
 
-          <View style={styles.readerBottomBar}>
+          <View
+            style={[
+              styles.readerBottomBar,
+              {
+                borderColor: readerUi.bottomBarBorder,
+                backgroundColor: readerUi.bottomBarBg,
+              },
+            ]}
+          >
             <Pressable
-              style={[styles.readerPageButton, !activeChapter?.previousSlug ? styles.readerPageButtonDisabled : null]}
+              style={[
+                styles.readerPageButton,
+                isNative ? styles.readerPageButtonCompact : null,
+                {
+                  backgroundColor: readerUi.pageButtonBg,
+                },
+                !activeChapter?.previousSlug ? styles.readerPageButtonDisabled : null,
+              ]}
               onPress={goToPreviousChapter}
               disabled={!activeChapter?.previousSlug}
               accessibilityRole="button"
               accessibilityLabel="Página anterior"
             >
-              <Text style={styles.readerPageButtonText}>Página anterior</Text>
+              {isNative ? (
+                <MaterialCommunityIcons name="chevron-left" size={20} color={readerUi.pageButtonText} />
+              ) : (
+                <Text style={[styles.readerPageButtonText, { color: readerUi.pageButtonText }]}>Página anterior</Text>
+              )}
             </Pressable>
 
-            <Text style={styles.readerProgressText}>
+            <Text style={[styles.readerProgressText, { color: readerUi.progressText }]}>
               {activeChapter
                 ? `${activeChapter.chapter.order} / ${openBook.chapters.length}`
                 : `0 / ${openBook.chapters.length}`}
             </Text>
 
             <Pressable
-              style={[styles.readerPageButton, !activeChapter?.nextSlug ? styles.readerPageButtonDisabled : null]}
+              style={[
+                styles.readerPageButton,
+                isNative ? styles.readerPageButtonCompact : null,
+                {
+                  backgroundColor: readerUi.pageButtonBg,
+                },
+                !activeChapter?.nextSlug ? styles.readerPageButtonDisabled : null,
+              ]}
               onPress={goToNextChapter}
               disabled={!activeChapter?.nextSlug}
               accessibilityRole="button"
               accessibilityLabel="Próxima página"
             >
-              <Text style={styles.readerPageButtonText}>Próxima página</Text>
+              {isNative ? (
+                <MaterialCommunityIcons name="chevron-right" size={20} color={readerUi.pageButtonText} />
+              ) : (
+                <Text style={[styles.readerPageButtonText, { color: readerUi.pageButtonText }]}>Próxima página</Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -1147,14 +1439,22 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           }}
         >
           <View style={styles.annotationModalBackdrop}>
-            <View style={styles.annotationModalCard}>
-              <Text style={styles.annotationModalTitle}>Nova anotação</Text>
+            <View
+              style={[
+                styles.annotationModalCard,
+                {
+                  borderColor: readerUi.modalCardBorder,
+                  backgroundColor: readerUi.modalCardBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Nova anotação</Text>
               {annotationDraft ? (
                 <>
-                  <Text style={styles.annotationModalMeta}>
+                  <Text style={[styles.annotationModalMeta, { color: readerUi.modalMuted }]}>
                     Cap. {annotationDraft.chapterOrder} • {annotationDraft.chapterTitle}
                   </Text>
-                  <Text style={styles.annotationModalExcerpt} numberOfLines={5}>
+                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={5}>
                     "{annotationDraft.excerpt}"
                   </Text>
                 </>
@@ -1174,13 +1474,22 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                       onPress={() => setAnnotationDraftColor(color.value)}
                       style={[
                         styles.annotationColorChip,
+                        {
+                          borderColor: readerUi.iconBorder,
+                          backgroundColor: readerUi.modalInputBg,
+                        },
                         selected ? styles.annotationColorChipSelected : null,
+                        selected
+                          ? { borderColor: readerUi.modalPrimaryBg, backgroundColor: readerUi.modalPrimaryBg }
+                          : null,
                       ]}
                     >
                       <Text
                         style={[
                           styles.annotationColorChipText,
+                          { color: readerUi.modalText },
                           selected ? styles.annotationColorChipTextSelected : null,
+                          selected ? { color: readerUi.modalPrimaryText } : null,
                         ]}
                       >
                         {color.label}
@@ -1194,8 +1503,16 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 value={annotationDraftNote}
                 onChangeText={setAnnotationDraftNote}
                 placeholder="Nota (opcional)"
+                placeholderTextColor={readerUi.inputPlaceholder}
                 multiline
-                style={styles.annotationNoteInput}
+                style={[
+                  styles.annotationNoteInput,
+                  {
+                    borderColor: readerUi.modalInputBorder,
+                    backgroundColor: readerUi.modalInputBg,
+                    color: readerUi.modalInputText,
+                  },
+                ]}
               />
 
               <View style={styles.annotationModalActions}>
@@ -1205,9 +1522,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     setPendingNativeDraft(null);
                   }}
                   disabled={annotationSaving}
-                  style={styles.annotationModalCancel}
+                  style={[
+                    styles.annotationModalCancel,
+                    {
+                      borderColor: readerUi.modalCancelBorder,
+                      backgroundColor: readerUi.modalCancelBg,
+                    },
+                  ]}
                 >
-                  <Text style={styles.annotationModalCancelText}>Cancelar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -1216,10 +1539,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   disabled={annotationSaving}
                   style={[
                     styles.annotationModalSave,
+                    {
+                      backgroundColor: readerUi.modalPrimaryBg,
+                    },
                     annotationSaving ? styles.annotationModalButtonDisabled : null,
                   ]}
                 >
-                  <Text style={styles.annotationModalSaveText}>
+                  <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
                     {annotationSaving ? "Salvando..." : "Salvar"}
                   </Text>
                 </Pressable>
@@ -1239,17 +1565,25 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           }}
         >
           <View style={styles.annotationModalBackdrop}>
-            <View style={styles.annotationModalCard}>
-              <Text style={styles.annotationModalTitle}>Anotação</Text>
+            <View
+              style={[
+                styles.annotationModalCard,
+                {
+                  borderColor: readerUi.modalCardBorder,
+                  backgroundColor: readerUi.modalCardBg,
+                },
+              ]}
+            >
+              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Anotação</Text>
               {selectedAnnotation ? (
                 <>
-                  <Text style={styles.annotationModalExcerpt} numberOfLines={6}>
+                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={6}>
                     "{selectedAnnotation.excerpt || "Trecho sem preview"}"
                   </Text>
                   {selectedAnnotation.note?.trim() ? (
-                    <Text style={styles.annotationModalNote}>Nota: {selectedAnnotation.note}</Text>
+                    <Text style={[styles.annotationModalNote, { color: readerUi.modalText }]}>Nota: {selectedAnnotation.note}</Text>
                   ) : (
-                    <Text style={styles.annotationModalNoteMuted}>Sem nota adicional.</Text>
+                    <Text style={[styles.annotationModalNoteMuted, { color: readerUi.modalMuted }]}>Sem nota adicional.</Text>
                   )}
                 </>
               ) : null}
@@ -1258,9 +1592,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 <Pressable
                   onPress={() => setAnnotationDetailId(null)}
                   disabled={annotationDeleting}
-                  style={styles.annotationModalCancel}
+                  style={[
+                    styles.annotationModalCancel,
+                    {
+                      borderColor: readerUi.modalCancelBorder,
+                      backgroundColor: readerUi.modalCancelBg,
+                    },
+                  ]}
                 >
-                  <Text style={styles.annotationModalCancelText}>Fechar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Fechar</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -1286,7 +1626,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
   return (
     <View style={[styles.root, webRootStyle, { backgroundColor: theme.colors.bg }]}>
-      <View style={styles.shell}>
+      <View style={[styles.shell, webLibraryShellStyle]}>
         {loadingBooks ? (
           <View style={styles.center}>
             <ActivityIndicator />
@@ -1311,7 +1651,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
             ) : null}
             {openBookError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{openBookError}</Text> : null}
 
-            <ScrollView style={[styles.scroll, webScrollStyle]} contentContainerStyle={styles.list}>
+            <ScrollView
+              style={[styles.scroll, webScrollStyle]}
+              contentContainerStyle={[styles.list, webLibraryListContentStyle]}
+            >
               {bookCardMetaLoading ? (
                 <Text style={[styles.listInfoText, { color: theme.colors.textMuted }]}>Atualizando progresso de leitura…</Text>
               ) : null}
@@ -1660,6 +2003,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     flexWrap: "wrap",
   },
+  readerToolbarPanel: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   readerIconButton: {
     minWidth: 34,
     height: 34,
@@ -1760,6 +2109,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minWidth: 132,
     alignItems: "center",
+  },
+  readerPageButtonCompact: {
+    minWidth: 52,
+    paddingHorizontal: 0,
   },
   readerPageButtonDisabled: { opacity: 0.4 },
   readerPageButtonText: { color: "#fff", fontSize: 13, fontWeight: "700" },
