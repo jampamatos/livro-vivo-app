@@ -9,6 +9,7 @@ export type MeProfileResponse = {
   email: string;
   name: string;
   profession: string;
+  avatar_url?: string | null;
 };
 
 export type EntitlementItem = {

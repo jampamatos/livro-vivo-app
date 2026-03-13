@@ -8,9 +8,15 @@ import {
   createCommunityReport,
   followCommunityPost,
   getCommunityPost,
+  likeCommunityComment,
+  likeCommunityPost,
+  listCommunityMentionCandidates,
   listCommunityComments,
+  unlikeCommunityComment,
+  unlikeCommunityPost,
   unfollowCommunityPost,
 } from "../src/api/community";
+import { getMeProfile } from "../src/api/entitlements";
 import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/community", () => ({
@@ -18,16 +24,30 @@ jest.mock("../src/api/community", () => ({
   createCommunityReport: jest.fn(),
   followCommunityPost: jest.fn(),
   getCommunityPost: jest.fn(),
+  likeCommunityComment: jest.fn(),
+  likeCommunityPost: jest.fn(),
+  listCommunityMentionCandidates: jest.fn(),
   listCommunityComments: jest.fn(),
+  unlikeCommunityComment: jest.fn(),
+  unlikeCommunityPost: jest.fn(),
   unfollowCommunityPost: jest.fn(),
+}));
+jest.mock("../src/api/entitlements", () => ({
+  getMeProfile: jest.fn(),
 }));
 
 const createCommunityCommentMock = createCommunityComment as unknown as jest.Mock;
 const createCommunityReportMock = createCommunityReport as unknown as jest.Mock;
 const followCommunityPostMock = followCommunityPost as unknown as jest.Mock;
 const getCommunityPostMock = getCommunityPost as unknown as jest.Mock;
+const likeCommunityCommentMock = likeCommunityComment as unknown as jest.Mock;
+const likeCommunityPostMock = likeCommunityPost as unknown as jest.Mock;
+const listCommunityMentionCandidatesMock = listCommunityMentionCandidates as unknown as jest.Mock;
 const listCommunityCommentsMock = listCommunityComments as unknown as jest.Mock;
+const unlikeCommunityCommentMock = unlikeCommunityComment as unknown as jest.Mock;
+const unlikeCommunityPostMock = unlikeCommunityPost as unknown as jest.Mock;
 const unfollowCommunityPostMock = unfollowCommunityPost as unknown as jest.Mock;
+const getMeProfileMock = getMeProfile as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -60,8 +80,22 @@ describe("CommunityPostScreen", () => {
     createCommunityReportMock.mockReset();
     followCommunityPostMock.mockReset();
     getCommunityPostMock.mockReset();
+    likeCommunityCommentMock.mockReset();
+    likeCommunityPostMock.mockReset();
+    listCommunityMentionCandidatesMock.mockReset();
     listCommunityCommentsMock.mockReset();
+    unlikeCommunityCommentMock.mockReset();
+    unlikeCommunityPostMock.mockReset();
     unfollowCommunityPostMock.mockReset();
+    getMeProfileMock.mockReset();
+    getMeProfileMock.mockResolvedValue({
+      id: 1,
+      email: "autor@test.com",
+      name: "Autor Teste",
+      profession: "Advogado",
+      avatar_url: null,
+    });
+    listCommunityMentionCandidatesMock.mockResolvedValue([]);
   });
 
   it("carrega o detalhe com estado de follow atualizado", async () => {
@@ -86,15 +120,12 @@ describe("CommunityPostScreen", () => {
     const json = JSON.stringify(tree!.toJSON());
     expect(getCommunityPostMock).toHaveBeenCalledWith("token-ok", 7);
     expect(listCommunityCommentsMock).toHaveBeenCalledWith("token-ok", 7);
-    expect(json).toContain("Você está seguindo este post");
-    expect(json).toContain("Deixar de seguir");
-    expect(tree!.root.findByProps({ accessibilityLabel: "Voltar para feed da comunidade" }).props.accessibilityRole).toBe(
-      "button"
-    );
-    expect(tree!.root.findByProps({ accessibilityLabel: "Sair da conta" }).props.accessibilityRole).toBe("button");
-    expect(tree!.root.findByProps({ accessibilityLabel: "Seguir notificações deste post" }).props.accessibilityRole).toBe(
-      "switch"
-    );
+    expect(listCommunityMentionCandidatesMock).toHaveBeenCalledWith("token-ok", 7);
+    expect(getMeProfileMock).toHaveBeenCalledWith("token-ok");
+    expect(json).toContain("Comentarios");
+    const followToggle = tree!.root.findByProps({ testID: "community-post-follow-toggle" });
+    expect(followToggle.props.accessibilityRole).toBe("switch");
+    expect(followToggle.props.accessibilityState.checked).toBe(true);
   });
 
   it("permite seguir e deixar de seguir o post pelo detalhe", async () => {
@@ -124,7 +155,9 @@ describe("CommunityPostScreen", () => {
     await flushEffects();
 
     expect(followCommunityPostMock).toHaveBeenCalledWith("token-ok", 7);
-    expect(JSON.stringify(tree!.toJSON())).toContain("Deixar de seguir");
+    expect(tree!.root.findByProps({ testID: "community-post-follow-toggle" }).props.accessibilityState.checked).toBe(
+      true
+    );
 
     await act(async () => {
       tree!.root.findByProps({ testID: "community-post-follow-toggle" }).props.onPress();
@@ -132,6 +165,8 @@ describe("CommunityPostScreen", () => {
     await flushEffects();
 
     expect(unfollowCommunityPostMock).toHaveBeenCalledWith("token-ok", 7);
-    expect(JSON.stringify(tree!.toJSON())).toContain("Seguir este post");
+    expect(tree!.root.findByProps({ testID: "community-post-follow-toggle" }).props.accessibilityState.checked).toBe(
+      false
+    );
   });
 });
