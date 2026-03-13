@@ -306,7 +306,6 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
       >
         <View style={styles.headerRow}>
           <View style={styles.headerInfo}>
-            <Text style={[styles.title, { color: theme.colors.text }]}>Comunidade</Text>
             <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
               {categoryName} • {posts.length} discussoes ativas
             </Text>
@@ -557,7 +556,6 @@ const styles = StyleSheet.create({
   },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
   headerInfo: { gap: 2, flex: 1 },
-  title: { fontSize: 20, fontWeight: "800", fontFamily: "Georgia" },
   subtitle: { fontSize: 13 },
   newPostBtn: {
     paddingVertical: 8,
