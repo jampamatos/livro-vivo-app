@@ -4,9 +4,14 @@ import {
   createCommunityReport,
   followCommunityPost,
   getCommunityPost,
+  likeCommunityComment,
+  likeCommunityPost,
+  listCommunityMentionCandidates,
   listCommunityCategories,
   listCommunityComments,
   listCommunityPosts,
+  unlikeCommunityComment,
+  unlikeCommunityPost,
   unfollowCommunityPost,
 } from "../src/api/community";
 import { apiFetch } from "../src/api/http";
@@ -48,13 +53,19 @@ describe("api/community", () => {
     expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/?post=99", { token: "t123" });
   });
 
+  it("listCommunityMentionCandidates chama endpoint de mencoes por post", async () => {
+    apiFetchMock.mockResolvedValueOnce([]);
+    await listCommunityMentionCandidates("t123", 99, "jam");
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/99/mention-candidates/?q=jam", { token: "t123" });
+  });
+
   it("createCommunityComment faz POST em /community/comments/ com body", async () => {
     apiFetchMock.mockResolvedValueOnce({ id: 1 });
-    await createCommunityComment("t123", { post_id: 99, body: "C1" });
+    await createCommunityComment("t123", { post_id: 99, body: "C1", mention_user_ids: [7, 12] });
     expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/", {
       token: "t123",
       method: "POST",
-      body: { post_id: 99, body: "C1" },
+      body: { post_id: 99, body: "C1", mention_user_ids: [7, 12] },
     });
   });
 
@@ -89,6 +100,46 @@ describe("api/community", () => {
     expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/unfollow/", {
       token: "t123",
       method: "POST",
+    });
+  });
+
+  it("likeCommunityPost faz POST em /community/posts/:id/like/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9, likes_count: 3, liked_by_me: true });
+    await likeCommunityPost("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/like/", {
+      token: "t123",
+      method: "POST",
+      allowNoContent: true,
+    });
+  });
+
+  it("unlikeCommunityPost faz POST em /community/posts/:id/unlike/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 9, likes_count: 2, liked_by_me: false });
+    await unlikeCommunityPost("t123", 9);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/9/unlike/", {
+      token: "t123",
+      method: "POST",
+      allowNoContent: true,
+    });
+  });
+
+  it("likeCommunityComment faz POST em /community/comments/:id/like/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 21, likes_count: 4, liked_by_me: true });
+    await likeCommunityComment("t123", 21);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/21/like/", {
+      token: "t123",
+      method: "POST",
+      allowNoContent: true,
+    });
+  });
+
+  it("unlikeCommunityComment faz POST em /community/comments/:id/unlike/", async () => {
+    apiFetchMock.mockResolvedValueOnce({ id: 21, likes_count: 3, liked_by_me: false });
+    await unlikeCommunityComment("t123", 21);
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/21/unlike/", {
+      token: "t123",
+      method: "POST",
+      allowNoContent: true,
     });
   });
 });
