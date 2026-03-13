@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getMeProfile, getMyEntitlements, type SubscriptionStatus, type SubscriptionTier } from "../api/entitlements";
 import {
@@ -84,6 +85,7 @@ export function AppShell({
 }: Props) {
   const { theme, toggleMode } = useAppTheme();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isDesktopWeb = Platform.OS === "web" && width >= 1024;
   const useCompactMobileLabels = width < 390;
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
@@ -179,7 +181,9 @@ export function AppShell({
         <View
           style={[
             styles.accountMenuCard,
-            isDesktopWeb ? styles.accountMenuCardDesktop : styles.accountMenuCardMobile,
+            isDesktopWeb
+              ? styles.accountMenuCardDesktop
+              : [styles.accountMenuCardMobile, { marginTop: 68 + insets.top }],
             {
               backgroundColor: theme.colors.surface,
               borderColor: theme.colors.border,
@@ -372,6 +376,8 @@ export function AppShell({
           {
             backgroundColor: theme.colors.topBarBg,
             borderBottomColor: theme.colors.sidebarBorder,
+            paddingTop: 8 + insets.top,
+            minHeight: 62 + insets.top,
           },
         ]}
       >
@@ -397,6 +403,7 @@ export function AppShell({
           {
             backgroundColor: theme.colors.bottomBarBg,
             borderTopColor: theme.colors.border,
+            paddingBottom: Math.max(10, insets.bottom + 8),
           },
         ]}
       >

@@ -1,6 +1,7 @@
 import React from "react";
 import { ActivityIndicator, BackHandler, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AccountScreen } from "./src/screens/AccountScreen";
 import { CaseLawScreen } from "./src/screens/CaseLawScreen";
@@ -398,9 +399,11 @@ function AppRoot() {
 
 export default function App() {
   return (
-    <AppThemeProvider>
-      <AppRoot />
-    </AppThemeProvider>
+    <SafeAreaProvider>
+      <AppThemeProvider>
+        <AppRoot />
+      </AppThemeProvider>
+    </SafeAreaProvider>
   );
 }
 

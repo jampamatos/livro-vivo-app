@@ -1,5 +1,5 @@
 import React from "react";
-import { Animated, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import type { BookChapter } from "../api/books";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
@@ -224,9 +224,12 @@ export function BookReaderScreen({
   onOpenAnnotation,
   colorMode = "light",
 }: Props) {
+  const { width: viewportWidth } = useWindowDimensions();
   const scrollRef = React.useRef<ScrollView | null>(null);
   const readingColumnRef = React.useRef<any>(null);
   const swipeTranslateX = React.useRef(new Animated.Value(0)).current;
+  const pendingSwipeDirectionRef = React.useRef<-1 | 0 | 1>(0);
+  const [isSwipeActive, setIsSwipeActive] = React.useState(false);
 
   const chapterText = chapter?.content_plain || "";
   const [contentHeight, setContentHeight] = React.useState(0);
@@ -250,6 +253,14 @@ export function BookReaderScreen({
 
   const currentFontScale = controlledFontScale ?? internalFontScale;
   const isDarkReader = colorMode === "dark";
+  const swipeMaxTranslate = React.useMemo(
+    () => Math.max(180, Math.min(460, viewportWidth * 0.9)),
+    [viewportWidth]
+  );
+  const swipeTriggerDistance = React.useMemo(
+    () => Math.max(78, Math.min(150, viewportWidth * 0.22)),
+    [viewportWidth]
+  );
   const palette = isDarkReader ? darkReaderPalette : lightReaderPalette;
   const clampFontScale = React.useCallback((value: number) => {
     if (value < MIN_FONT_SCALE) return MIN_FONT_SCALE;
@@ -299,8 +310,23 @@ export function BookReaderScreen({
   ]);
 
   React.useEffect(() => {
+    const swipeDirection = pendingSwipeDirectionRef.current;
+    pendingSwipeDirectionRef.current = 0;
+
+    if (swipeDirection !== 0 && enableSwipeNavigation && Platform.OS !== "web") {
+      const entryOffset = -swipeDirection * Math.min(140, swipeMaxTranslate * 0.62);
+      swipeTranslateX.setValue(entryOffset);
+      Animated.timing(swipeTranslateX, {
+        toValue: 0,
+        duration: 210,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
     swipeTranslateX.setValue(0);
-  }, [chapter?.slug, swipeTranslateX]);
+  }, [chapter?.slug, enableSwipeNavigation, swipeMaxTranslate, swipeTranslateX]);
 
   const openLink = React.useCallback(async (href: string | undefined) => {
     const normalizedHref = normalizeRichTextHref(href);
@@ -791,53 +817,65 @@ export function BookReaderScreen({
   const panResponder = React.useMemo(() => {
     if (!enableSwipeNavigation || Platform.OS === "web") return null;
 
+    const settleToCenter = () => {
+      pendingSwipeDirectionRef.current = 0;
+      Animated.spring(swipeTranslateX, {
+        toValue: 0,
+        stiffness: 260,
+        damping: 28,
+        mass: 0.9,
+        useNativeDriver: true,
+      }).start(() => {
+        setIsSwipeActive(false);
+      });
+    };
+
     return PanResponder.create({
+      onPanResponderTerminationRequest: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 24 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.2,
+        Math.abs(gestureState.dx) > 16 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.6,
+      onPanResponderGrant: () => {
+        setIsSwipeActive(true);
+      },
       onPanResponderMove: (_, gestureState) => {
-        swipeTranslateX.setValue(gestureState.dx * 0.32);
+        const clampedDx = Math.max(-swipeMaxTranslate, Math.min(swipeMaxTranslate, gestureState.dx));
+        swipeTranslateX.setValue(clampedDx);
       },
       onPanResponderTerminate: () => {
-        Animated.spring(swipeTranslateX, {
-          toValue: 0,
-          tension: 52,
-          friction: 10,
-          useNativeDriver: true,
-        }).start();
+        settleToCenter();
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx <= -70 && canGoNext) {
+        if (gestureState.dx <= -swipeTriggerDistance && canGoNext) {
+          pendingSwipeDirectionRef.current = -1;
           Animated.timing(swipeTranslateX, {
-            toValue: -120,
-            duration: 120,
+            toValue: -swipeMaxTranslate,
+            duration: 190,
+            easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }).start(() => {
-            swipeTranslateX.setValue(0);
+            setIsSwipeActive(false);
             onNext();
           });
           return;
         }
-        if (gestureState.dx >= 70 && canGoPrevious) {
+        if (gestureState.dx >= swipeTriggerDistance && canGoPrevious) {
+          pendingSwipeDirectionRef.current = 1;
           Animated.timing(swipeTranslateX, {
-            toValue: 120,
-            duration: 120,
+            toValue: swipeMaxTranslate,
+            duration: 190,
+            easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }).start(() => {
-            swipeTranslateX.setValue(0);
+            setIsSwipeActive(false);
             onPrevious();
           });
           return;
         }
 
-        Animated.spring(swipeTranslateX, {
-          toValue: 0,
-          tension: 52,
-          friction: 10,
-          useNativeDriver: true,
-        }).start();
+        settleToCenter();
       },
     });
-  }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious, swipeTranslateX]);
+  }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious, swipeMaxTranslate, swipeTranslateX, swipeTriggerDistance]);
 
   const webSelectionHandlers =
     Platform.OS === "web"
@@ -956,6 +994,7 @@ export function BookReaderScreen({
               mode === "embedded" ? styles.contentScrollEmbedded : styles.contentScrollReader,
             ]}
             contentContainerStyle={styles.contentContainer}
+            scrollEnabled={!isSwipeActive}
             scrollEventThrottle={200}
             onLayout={(event) => {
               setViewportHeight(event.nativeEvent.layout.height);
