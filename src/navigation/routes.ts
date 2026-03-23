@@ -49,9 +49,9 @@ export const DESKTOP_NAV_ITEMS: RouteNavItem[] = [
 ];
 
 export const MOBILE_TAB_ITEMS: RouteNavItem[] = [
-  { route: "main", label: "Inicio", shortLabel: "Inicio", icon: "home-outline" },
   { route: "library", label: "Biblioteca", shortLabel: "Biblio", icon: "book-open-variant-outline" },
   { route: "caselaw", label: "Jurisprudencia", shortLabel: "Juris", icon: "scale-balance" },
   { route: "community", label: "Comunidade", shortLabel: "Comuni", icon: "account-group-outline" },
+  { route: "templatesBank", label: "Banco de pecas", shortLabel: "Pecas", icon: "file-document-outline" },
   { route: "course", label: "Curso", shortLabel: "Curso", icon: "school-outline" },
 ];

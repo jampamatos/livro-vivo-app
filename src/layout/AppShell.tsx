@@ -381,7 +381,26 @@ export function AppShell({
           },
         ]}
       >
-        <Text style={[styles.mobileTitle, { color: theme.colors.sidebarText }]}>{ROUTE_TITLES[route]}</Text>
+        <View style={styles.mobileTopBarLeading}>
+          {route !== "main" ? (
+            <Pressable
+              testID="shell-mobile-home"
+              style={[
+                styles.headerHomeButton,
+                {
+                  borderColor: theme.colors.sidebarBorder,
+                  backgroundColor: theme.colors.topBarBg,
+                },
+              ]}
+              onPress={() => onNavigate("main")}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar para inicio"
+            >
+              <ShellIcon name="home-outline" size={18} color={theme.colors.sidebarText} />
+            </Pressable>
+          ) : null}
+          <Text style={[styles.mobileTitle, { color: theme.colors.sidebarText }]}>{ROUTE_TITLES[route]}</Text>
+        </View>
         <View style={styles.mobileActions}>
           <Pressable
             testID="shell-mobile-account"
@@ -512,6 +531,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 10,
   },
+  mobileTopBarLeading: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1 },
   mobileTitle: {
     fontFamily: "Georgia",
     fontSize: 21,
@@ -519,6 +539,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   mobileActions: { flexDirection: "row", gap: 8 },
+  headerHomeButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   headerAccountButton: {
     borderWidth: 1,
     borderRadius: 999,
