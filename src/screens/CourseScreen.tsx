@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
@@ -8,13 +9,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
 import {
   CourseAsset,
+  CourseAssetType,
   CoursePost,
+  CoursePostType,
   LiveEvent,
+  LiveEventStatus,
+  LiveEventType,
   getCoursePost,
   listCourseAssets,
   listCoursePosts,
@@ -29,11 +35,71 @@ type Props = {
   onLogout: () => Promise<void> | void;
 };
 
+type FeedFilter = "all" | "lesson" | "blog" | "announcement" | "recording";
+
+type FeedItem =
+  | {
+      kind: "post";
+      id: string;
+      timestamp: number;
+      post: CoursePost;
+      assetCount: number;
+      relatedFinishedLive: LiveEvent | null;
+    }
+  | {
+      kind: "recording";
+      id: string;
+      timestamp: number;
+      live: LiveEvent;
+      relatedPost: CoursePost | null;
+      relatedAssetCount: number;
+    };
+
+type StatusUi = {
+  label: string;
+  tint: string;
+  bg: string;
+  border: string;
+};
+
+type FeedTypeUi = {
+  label: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+  tint: string;
+  bg: string;
+  border: string;
+};
+
+const FEED_FILTERS: FeedFilter[] = ["all", "lesson", "blog", "announcement", "recording"];
+
+function toTimestamp(value?: string | null) {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("pt-BR");
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 async function openExternalUrl(url: string) {
@@ -63,14 +129,108 @@ async function openExternalUrl(url: string) {
   }
 }
 
+function getLiveTypeLabel(type: LiveEventType) {
+  if (type === "mentoring") return "Mentoria";
+  if (type === "webinar") return "Webinar";
+  return "Aula ao vivo";
+}
+
+function getPostTypeUi(type: CoursePostType, isDark: boolean): FeedTypeUi {
+  if (type === "lesson") {
+    return isDark
+      ? { label: "Aula", icon: "school-outline", tint: "#F4D9A5", bg: "#312513", border: "#83602A" }
+      : { label: "Aula", icon: "school-outline", tint: "#B88938", bg: "#F8EFD9", border: "#E5C98F" };
+  }
+  if (type === "announcement") {
+    return isDark
+      ? { label: "Anúncio", icon: "bullhorn-outline", tint: "#E8D3A6", bg: "#30281A", border: "#8C7240" }
+      : { label: "Anúncio", icon: "bullhorn-outline", tint: "#83621E", bg: "#F7F0E0", border: "#E0CB9F" };
+  }
+  return isDark
+    ? { label: "Artigo", icon: "text-box-outline", tint: "#D0DBF4", bg: "#1F2940", border: "#4F658D" }
+    : { label: "Artigo", icon: "text-box-outline", tint: "#355A86", bg: "#EAF1F8", border: "#C5D4E7" };
+}
+
+function getRecordingTypeUi(isDark: boolean): FeedTypeUi {
+  return isDark
+    ? { label: "Gravação", icon: "play-circle-outline", tint: "#D5DDEA", bg: "#243042", border: "#5E6E88" }
+    : { label: "Gravação", icon: "play-circle-outline", tint: "#66758F", bg: "#EEF1F5", border: "#D3D9E3" };
+}
+
+function getLiveStatusUi(status: LiveEventStatus, isDark: boolean): StatusUi {
+  if (status === "live") {
+    return isDark
+      ? { label: "Ao vivo", tint: "#FFD5D2", bg: "#4B1F22", border: "#D95B61" }
+      : { label: "Ao vivo", tint: "#D93F46", bg: "#FFE8E6", border: "#F0B3B0" };
+  }
+
+  if (status === "scheduled") {
+    return isDark
+      ? { label: "Agendada", tint: "#F2DBAF", bg: "#362A16", border: "#8A6830" }
+      : { label: "Agendada", tint: "#B88938", bg: "#F8F0DE", border: "#E4C98E" };
+  }
+
+  return isDark
+    ? { label: "Gravação", tint: "#D5DDEA", bg: "#243042", border: "#5E6E88" }
+    : { label: "Gravação", tint: "#66758F", bg: "#EEF1F5", border: "#D3D9E3" };
+}
+
+function getDetailLiveAction(live: LiveEvent) {
+  if (live.status === "live" && live.meeting_url) {
+    return {
+      kind: "live" as const,
+      label: "Entrar ao vivo",
+      icon: "broadcast" as const,
+      url: live.meeting_url,
+    };
+  }
+
+  if (live.status === "finished" && live.recording_url) {
+    return {
+      kind: "recording" as const,
+      label: "Assistir gravação",
+      icon: "play-circle-outline" as const,
+      url: live.recording_url,
+    };
+  }
+
+  return null;
+}
+
+function getAssetTypeLabel(type: CourseAssetType) {
+  if (type === "pdf") return "PDF";
+  if (type === "checklist") return "Checklist";
+  if (type === "model") return "Modelo";
+  if (type === "video") return "Vídeo";
+  if (type === "link") return "Link";
+  return "Arquivo";
+}
+
+function getAssetIcon(type: CourseAssetType): React.ComponentProps<typeof MaterialCommunityIcons>["name"] {
+  if (type === "pdf") return "file-pdf-box";
+  if (type === "checklist") return "clipboard-check-outline";
+  if (type === "model") return "file-document-outline";
+  if (type === "video") return "video-outline";
+  if (type === "link") return "link-variant";
+  return "paperclip";
+}
+
+function matchesSearch(query: string, values: Array<string | null | undefined>) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return true;
+  const haystack = values.filter(Boolean).join(" ").toLowerCase();
+  return haystack.includes(normalizedQuery);
+}
+
 export function CourseScreen({ token }: Props) {
   const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-
   const [posts, setPosts] = React.useState<CoursePost[]>([]);
   const [assets, setAssets] = React.useState<CourseAsset[]>([]);
   const [lives, setLives] = React.useState<LiveEvent[]>([]);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [feedFilter, setFeedFilter] = React.useState<FeedFilter>("all");
 
   const [detailVisible, setDetailVisible] = React.useState(false);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -91,7 +251,7 @@ export function CourseScreen({ token }: Props) {
       setAssets(assetsRes);
       setLives(livesRes);
     } catch (e: any) {
-      setError(e?.message || "Não foi possível carregar o conteúdo de curso.");
+      setError(e?.message || "Não foi possível carregar o conteúdo do curso.");
       setPosts([]);
       setAssets([]);
       setLives([]);
@@ -104,11 +264,84 @@ export function CourseScreen({ token }: Props) {
     void fetchCourseData();
   }, [fetchCourseData]);
 
+  const upcomingLives = React.useMemo(() => {
+    return [...lives]
+      .filter((live) => live.status === "live" || live.status === "scheduled")
+      .sort((a, b) => {
+        if (a.status === "live" && b.status !== "live") return -1;
+        if (a.status !== "live" && b.status === "live") return 1;
+        return toTimestamp(a.starts_at) - toTimestamp(b.starts_at);
+      });
+  }, [lives]);
+
+  const combinedFeed = React.useMemo<FeedItem[]>(() => {
+    const postItems: FeedItem[] = posts.map((post) => {
+      const relatedAssets = assets.filter((asset) => asset.post === post.id);
+      const relatedFinishedLive =
+        lives
+          .filter((live) => live.post === post.id && live.status === "finished")
+          .sort((a, b) => toTimestamp(b.starts_at) - toTimestamp(a.starts_at))[0] || null;
+
+      return {
+        kind: "post",
+        id: `post-${post.id}`,
+        timestamp: toTimestamp(post.published_at || post.updated_at || post.created_at),
+        post,
+        assetCount: relatedAssets.length,
+        relatedFinishedLive,
+      };
+    });
+
+    const recordingItems: FeedItem[] = lives
+      .filter((live) => live.status === "finished")
+      .map((live) => {
+        const relatedPost = posts.find((post) => post.id === live.post) || null;
+        const relatedAssetCount = assets.filter((asset) => asset.post === live.post).length;
+        return {
+          kind: "recording",
+          id: `recording-${live.id}`,
+          timestamp: toTimestamp(live.starts_at || live.updated_at),
+          live,
+          relatedPost,
+          relatedAssetCount,
+        };
+      });
+
+    return [...postItems, ...recordingItems].sort((a, b) => b.timestamp - a.timestamp);
+  }, [assets, lives, posts]);
+
+  const filteredFeed = React.useMemo(() => {
+    return combinedFeed.filter((item) => {
+      if (feedFilter !== "all") {
+        if (feedFilter === "recording" && item.kind !== "recording") return false;
+        if (feedFilter !== "recording" && (item.kind !== "post" || item.post.post_type !== feedFilter)) return false;
+      }
+
+      if (item.kind === "recording") {
+        return matchesSearch(searchQuery, [
+          item.live.title,
+          item.live.description,
+          item.relatedPost?.title,
+          item.relatedPost?.excerpt,
+          ...(item.relatedPost?.tags ?? []),
+        ]);
+      }
+
+      return matchesSearch(searchQuery, [
+        item.post.title,
+        item.post.excerpt,
+        item.post.content_plain,
+        item.post.author_name,
+        ...(item.post.tags ?? []),
+      ]);
+    });
+  }, [combinedFeed, feedFilter, searchQuery]);
+
   const openPostDetail = React.useCallback(
     async (post: CoursePost) => {
       setSelectedPost(post);
-      setDetailError(null);
       setDetailVisible(true);
+      setDetailError(null);
       setDetailLoading(true);
 
       try {
@@ -125,24 +358,33 @@ export function CourseScreen({ token }: Props) {
 
   const closeDetail = React.useCallback(() => {
     setDetailVisible(false);
-    setDetailError(null);
     setDetailLoading(false);
+    setDetailError(null);
     setSelectedPost(null);
   }, []);
 
   const detailBlocks = React.useMemo(() => {
     return buildRichTextBlocks(selectedPost?.content_rich, selectedPost?.content_plain);
-  }, [selectedPost?.content_rich, selectedPost?.content_plain]);
+  }, [selectedPost?.content_plain, selectedPost?.content_rich]);
 
   const detailAssets = React.useMemo(() => {
     if (!selectedPost) return [];
     return assets.filter((asset) => asset.post === selectedPost.id);
   }, [assets, selectedPost]);
 
-  const detailLives = React.useMemo(() => {
-    if (!selectedPost) return [];
-    return lives.filter((live) => live.post === selectedPost.id);
+  const detailLive = React.useMemo(() => {
+    if (!selectedPost) return null;
+    return (
+      [...lives]
+        .filter((live) => live.post === selectedPost.id)
+        .sort((a, b) => toTimestamp(b.starts_at) - toTimestamp(a.starts_at))[0] || null
+    );
   }, [lives, selectedPost]);
+
+  const detailLiveAction = React.useMemo(() => {
+    if (!detailLive) return null;
+    return getDetailLiveAction(detailLive);
+  }, [detailLive]);
 
   const renderInline = React.useCallback(
     (inlines: RichInlineNode[], keyPrefix: string) => {
@@ -187,22 +429,10 @@ export function CourseScreen({ token }: Props) {
   );
 
   const renderBlock = React.useCallback(
-    (block: RichBlockNode, index: number, variant: "detail" | "live" = "detail") => {
-      const heading2Style = variant === "detail" ? styles.detailHeading2 : styles.liveHeading2;
-      const heading3Style = variant === "detail" ? styles.detailHeading3 : styles.liveHeading3;
-      const paragraphStyle = variant === "detail" ? styles.detailParagraph : styles.liveParagraph;
-      const quoteStyle = variant === "detail" ? styles.detailQuote : styles.liveQuote;
-      const listStyle = variant === "detail" ? styles.detailList : styles.liveList;
-      const listRowStyle = variant === "detail" ? styles.detailListRow : styles.liveListRow;
-      const listMarkerStyle = variant === "detail" ? styles.detailListMarker : styles.liveListMarker;
-
+    (block: RichBlockNode, index: number) => {
       if (block.type === "heading2") {
         return (
-          <Text
-            key={`block-${variant}-${index}`}
-            style={[heading2Style, { color: theme.colors.text }]}
-            accessibilityRole="header"
-          >
+          <Text key={`block-h2-${index}`} style={[styles.detailHeading2, { color: theme.colors.text }]}>
             {renderInline(block.inlines, `h2-${index}`)}
           </Text>
         );
@@ -210,11 +440,7 @@ export function CourseScreen({ token }: Props) {
 
       if (block.type === "heading3") {
         return (
-          <Text
-            key={`block-${variant}-${index}`}
-            style={[heading3Style, { color: theme.colors.text }]}
-            accessibilityRole="header"
-          >
+          <Text key={`block-h3-${index}`} style={[styles.detailHeading3, { color: theme.colors.text }]}>
             {renderInline(block.inlines, `h3-${index}`)}
           </Text>
         );
@@ -223,10 +449,13 @@ export function CourseScreen({ token }: Props) {
       if (block.type === "blockquote") {
         return (
           <View
-            key={`block-${variant}-${index}`}
-            style={[quoteStyle, { borderLeftColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted }]}
+            key={`block-quote-${index}`}
+            style={[
+              styles.detailQuote,
+              { borderLeftColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted },
+            ]}
           >
-            <Text style={[paragraphStyle, { color: theme.colors.text }]}>
+            <Text style={[styles.detailParagraph, { color: theme.colors.text }]}>
               {renderInline(block.inlines, `quote-${index}`)}
             </Text>
           </View>
@@ -235,13 +464,13 @@ export function CourseScreen({ token }: Props) {
 
       if (block.type === "list") {
         return (
-          <View key={`block-${variant}-${index}`} style={listStyle} accessibilityRole="list">
+          <View key={`block-list-${index}`} style={styles.detailList}>
             {block.items.map((item, itemIndex) => (
-              <View key={`item-${variant}-${index}-${itemIndex}`} style={listRowStyle}>
-                <Text style={[listMarkerStyle, { color: theme.colors.textMuted }]}>
+              <View key={`item-${index}-${itemIndex}`} style={styles.detailListRow}>
+                <Text style={[styles.detailListMarker, { color: theme.colors.textMuted }]}>
                   {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
                 </Text>
-                <Text style={[paragraphStyle, { color: theme.colors.text }]}>
+                <Text style={[styles.detailParagraph, { color: theme.colors.text }]}>
                   {renderInline(item, `li-${index}-${itemIndex}`)}
                 </Text>
               </View>
@@ -251,7 +480,7 @@ export function CourseScreen({ token }: Props) {
       }
 
       return (
-        <Text key={`block-${variant}-${index}`} style={[paragraphStyle, { color: theme.colors.text }]}>
+        <Text key={`block-p-${index}`} style={[styles.detailParagraph, { color: theme.colors.text }]}>
           {renderInline(block.inlines, `p-${index}`)}
         </Text>
       );
@@ -261,13 +490,10 @@ export function CourseScreen({ token }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <Text style={[styles.title, { color: theme.colors.text }]}>Curso</Text>
-      <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Feed de conteúdo, lives e gravações.</Text>
-
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando conteúdo…</Text>
+          <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando conteúdo...</Text>
         </View>
       ) : error ? (
         <View style={styles.center}>
@@ -288,289 +514,561 @@ export function CourseScreen({ token }: Props) {
           </Pressable>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content}>
-          <View
-            style={[
-              styles.section,
-              {
-                borderColor: theme.colors.border,
-                backgroundColor: theme.colors.surface,
-              },
-            ]}
-          >
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Lives e gravações</Text>
-            {lives.length === 0 ? (
-              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>
-                Sem eventos de live disponíveis no momento.
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.sectionHeaderRow}>
+            <MaterialCommunityIcons name="video-outline" size={17} color={theme.colors.accent} />
+            <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Ao vivo e próximas</Text>
+          </View>
+
+          {upcomingLives.length === 0 ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+              ]}
+            >
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Nenhuma live agendada agora</Text>
+              <Text style={[styles.emptyBody, { color: theme.colors.textMuted }]}>
+                As próximas aulas ao vivo aparecerão aqui.
               </Text>
-            ) : (
-              lives.map((live) => (
-                <View
-                  key={live.id}
-                  style={[
-                    styles.liveCard,
-                    {
-                      borderColor: theme.colors.border,
-                      backgroundColor: theme.colors.surfaceMuted,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.liveTitle, { color: theme.colors.text }]}>{live.title}</Text>
-                  <Text style={[styles.liveMeta, { color: theme.colors.textMuted }]}>
-                    {live.event_type} • {live.status}
-                  </Text>
-                  <Text style={[styles.liveMeta, { color: theme.colors.textMuted }]}>
-                    Início: {formatDateTime(live.starts_at)}
-                  </Text>
-                  {live.ends_at ? (
-                    <Text style={[styles.liveMeta, { color: theme.colors.textMuted }]}>
-                      Fim: {formatDateTime(live.ends_at)}
-                    </Text>
-                  ) : null}
-                  {live.description ? (
-                    <View style={styles.liveDescription}>
-                      {buildRichTextBlocks(live.description, live.description).map((block, blockIndex) =>
-                        renderBlock(block, blockIndex, "live")
+            </View>
+          ) : (
+            <View style={styles.liveGrid}>
+              {upcomingLives.map((live) => {
+                const statusUi = getLiveStatusUi(live.status, theme.isDark);
+                const liveTypeUi = getLiveTypeLabel(live.event_type);
+                return (
+                  <View
+                    key={live.id}
+                    style={[
+                      styles.liveCard,
+                      {
+                        borderColor: statusUi.border,
+                        backgroundColor: theme.colors.surface,
+                        ...theme.shadow.card,
+                      },
+                    ]}
+                  >
+                    <View style={styles.liveCardHeader}>
+                      <View style={styles.liveTitleRow}>
+                        <View style={[styles.liveIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                          <MaterialCommunityIcons
+                            name={live.status === "live" ? "broadcast" : "calendar-clock-outline"}
+                            size={18}
+                            color={statusUi.tint}
+                          />
+                        </View>
+                        <View style={styles.liveTitleMeta}>
+                          <Text style={[styles.liveCardTitle, { color: theme.colors.text }]} numberOfLines={2}>
+                            {live.title}
+                          </Text>
+                          <Text style={[styles.liveCardType, { color: theme.colors.textMuted }]}>{liveTypeUi}</Text>
+                        </View>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { borderColor: statusUi.border, backgroundColor: statusUi.bg },
+                        ]}
+                      >
+                        <Text style={[styles.statusBadgeText, { color: statusUi.tint }]}>{statusUi.label}</Text>
+                      </View>
+                    </View>
+
+                    {live.description ? (
+                      <Text style={[styles.liveCardDescription, { color: theme.colors.textMuted }]} numberOfLines={3}>
+                        {buildRichTextBlocks(live.description, live.description)
+                          .map((block) => block.type === "paragraph" ? block.inlines.map((item) => item.type === "text" ? item.text : "").join("") : "")
+                          .join(" ")
+                          .trim()}
+                      </Text>
+                    ) : null}
+
+                    <View style={styles.liveCardFooter}>
+                      <View style={styles.liveMetaRow}>
+                        <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.textMuted} />
+                        <Text style={[styles.liveMetaText, { color: theme.colors.textMuted }]}>
+                          {formatDateTime(live.starts_at)}
+                        </Text>
+                      </View>
+
+                      {live.status === "live" && live.meeting_url ? (
+                        <Pressable
+                          style={[
+                            styles.livePrimaryAction,
+                            { backgroundColor: theme.isDark ? "#E65F5F" : "#F4514F" },
+                          ]}
+                          onPress={() => {
+                            void openExternalUrl(live.meeting_url);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Entrar ao vivo em ${live.title}`}
+                        >
+                          <MaterialCommunityIcons name="broadcast" size={14} color="#F8FAFC" />
+                          <Text style={styles.livePrimaryActionText}>Entrar ao vivo</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.liveMetaRow}>
+                          <MaterialCommunityIcons name="calendar-blank-outline" size={14} color={theme.colors.accent} />
+                          <Text style={[styles.liveSoonText, { color: theme.colors.accent }]}>Em breve</Text>
+                        </View>
                       )}
                     </View>
-                  ) : null}
-                  <View style={styles.actionsRow}>
-                    {live.meeting_url ? (
-                      <Pressable
-                        style={[
-                          styles.actionBtn,
-                          {
-                            borderColor: theme.colors.primary,
-                            backgroundColor: theme.colors.primary,
-                          },
-                        ]}
-                        onPress={() => {
-                          void openExternalUrl(live.meeting_url);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Abrir live ${live.title}`}
-                      >
-                        <Text style={[styles.actionBtnText, { color: theme.colors.textInverse }]}>Abrir live</Text>
-                      </Pressable>
-                    ) : null}
-                    {live.recording_url ? (
-                      <Pressable
-                        style={[
-                          styles.actionBtn,
-                          {
-                            borderColor: theme.colors.primary,
-                            backgroundColor: theme.colors.primary,
-                          },
-                        ]}
-                        onPress={() => {
-                          void openExternalUrl(live.recording_url);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Abrir gravação ${live.title}`}
-                      >
-                        <Text style={[styles.actionBtnText, { color: theme.colors.textInverse }]}>
-                          Abrir gravação
-                        </Text>
-                      </Pressable>
-                    ) : null}
                   </View>
-                </View>
-              ))
-            )}
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.sectionHeaderRow}>
+            <MaterialCommunityIcons name="book-open-page-variant-outline" size={17} color={theme.colors.accent} />
+            <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Feed do curso</Text>
           </View>
 
           <View
             style={[
-              styles.section,
-              {
-                borderColor: theme.colors.border,
-                backgroundColor: theme.colors.surface,
-              },
+              styles.feedControls,
+              { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Feed de posts</Text>
-            {posts.length === 0 ? (
-              <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Sem posts publicados.</Text>
-            ) : (
-              posts.map((post) => (
+            <View
+              style={[
+                styles.searchBox,
+                { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+              ]}
+            >
+              <MaterialCommunityIcons name="magnify" size={18} color={theme.colors.textMuted} />
+              <TextInput
+                testID="course-feed-search"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Buscar no feed..."
+                style={[styles.searchInput, { color: theme.colors.text }]}
+                placeholderTextColor={theme.colors.textMuted}
+                returnKeyType="search"
+              />
+            </View>
+
+            <View style={[styles.filterRail, { backgroundColor: theme.colors.surfaceMuted }]}>
+              {FEED_FILTERS.map((filter) => {
+                const active = feedFilter === filter;
+                const label =
+                  filter === "all"
+                    ? "Tudo"
+                    : filter === "lesson"
+                      ? "Aulas"
+                      : filter === "blog"
+                        ? "Artigos"
+                        : filter === "announcement"
+                          ? "Anúncios"
+                          : "Gravações";
+                return (
+                  <Pressable
+                    key={filter}
+                    testID={`course-filter-${filter}`}
+                    style={[
+                      styles.filterChip,
+                      active
+                        ? { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }
+                        : null,
+                    ]}
+                    onPress={() => setFeedFilter(filter)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`Filtrar feed por ${label}`}
+                  >
+                    <Text style={[styles.filterChipText, { color: active ? theme.colors.text : theme.colors.textMuted }]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {filteredFeed.length === 0 ? (
+            <View
+              style={[
+                styles.emptyCard,
+                { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+              ]}
+            >
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Nenhum item no feed</Text>
+              <Text style={[styles.emptyBody, { color: theme.colors.textMuted }]}>
+                Ajuste a busca ou o filtro para encontrar aulas, artigos, anúncios e gravações.
+              </Text>
+            </View>
+          ) : (
+            filteredFeed.map((item) => {
+              if (item.kind === "recording") {
+                const typeUi = getRecordingTypeUi(theme.isDark);
+                const relatedLabel = item.relatedPost?.title || getLiveTypeLabel(item.live.event_type);
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.feedCard,
+                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                    ]}
+                  >
+                    <View style={styles.feedCardTop}>
+                      <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                        <MaterialCommunityIcons name={typeUi.icon} size={18} color={typeUi.tint} />
+                      </View>
+                      <View style={styles.feedMain}>
+                        <View style={styles.feedMetaRow}>
+                          <View
+                            style={[
+                              styles.typeBadge,
+                              { borderColor: typeUi.border, backgroundColor: typeUi.bg },
+                            ]}
+                          >
+                            <Text style={[styles.typeBadgeText, { color: typeUi.tint }]}>{typeUi.label}</Text>
+                          </View>
+                          <Text style={[styles.feedDateText, { color: theme.colors.textMuted }]}>
+                            {formatDate(item.live.starts_at)}
+                          </Text>
+                        </View>
+                        <Text style={[styles.feedTitle, { color: theme.colors.text }]}>{item.live.title}</Text>
+                        <Text style={[styles.feedAuthor, { color: theme.colors.textMuted }]}>{relatedLabel}</Text>
+                        {item.live.description ? (
+                          <Text style={[styles.feedExcerpt, { color: theme.colors.textMuted }]} numberOfLines={3}>
+                            {buildRichTextBlocks(item.live.description, item.live.description)
+                              .map((block) => block.type === "paragraph" ? block.inlines.map((inline) => inline.type === "text" ? inline.text : "").join("") : "")
+                              .join(" ")
+                              .trim()}
+                          </Text>
+                        ) : null}
+
+                        <View style={styles.feedActionsRow}>
+                          {item.live.recording_url ? (
+                            <Pressable
+                              style={[
+                                styles.ghostAction,
+                                { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
+                              ]}
+                              onPress={() => {
+                                void openExternalUrl(item.live.recording_url);
+                              }}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Assistir gravacao ${item.live.title}`}
+                            >
+                              <MaterialCommunityIcons name="play-circle-outline" size={16} color={theme.colors.text} />
+                              <Text style={[styles.ghostActionText, { color: theme.colors.text }]}>Assistir gravação</Text>
+                            </Pressable>
+                          ) : null}
+                          {item.relatedAssetCount > 0 ? (
+                            <Text style={[styles.feedLinkMeta, { color: theme.colors.accent }]}>
+                              {item.relatedAssetCount} material{item.relatedAssetCount > 1 ? "s" : ""} da aula
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }
+
+              const typeUi = getPostTypeUi(item.post.post_type, theme.isDark);
+              return (
                 <Pressable
-                  key={post.id}
+                  key={item.id}
                   style={[
-                    styles.postCard,
-                    {
-                      borderColor: theme.colors.border,
-                      backgroundColor: theme.colors.surfaceMuted,
-                    },
+                    styles.feedCard,
+                    { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
                   ]}
                   onPress={() => {
-                    void openPostDetail(post);
+                    void openPostDetail(item.post);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Abrir post do curso ${post.title}`}
+                  accessibilityLabel={`Abrir post do curso ${item.post.title}`}
                 >
-                  <Text style={[styles.postTitle, { color: theme.colors.text }]}>{post.title}</Text>
-                  <Text style={[styles.postMeta, { color: theme.colors.textMuted }]}>
-                    {post.author_name || "Autor convidado"} • {formatDateTime(post.published_at || post.created_at)}
-                  </Text>
-                  <Text style={[styles.postExcerpt, { color: theme.colors.text }]} numberOfLines={3}>
-                    {(post.excerpt || post.content_plain || "").trim()}
-                  </Text>
-                  {post.tags?.length ? (
-                    <Text style={[styles.postTags, { color: theme.colors.accent }]}>{post.tags.join(" • ")}</Text>
-                  ) : null}
+                  <View style={styles.feedCardTop}>
+                    <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                      <MaterialCommunityIcons name={typeUi.icon} size={18} color={typeUi.tint} />
+                    </View>
+                    <View style={styles.feedMain}>
+                      <View style={styles.feedMetaRow}>
+                        <View
+                          style={[
+                            styles.typeBadge,
+                            { borderColor: typeUi.border, backgroundColor: typeUi.bg },
+                          ]}
+                        >
+                          <Text style={[styles.typeBadgeText, { color: typeUi.tint }]}>{typeUi.label}</Text>
+                        </View>
+                        <Text style={[styles.feedDateText, { color: theme.colors.textMuted }]}>
+                          {formatDate(item.post.published_at || item.post.created_at)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.feedTitleRow}>
+                        <Text style={[styles.feedTitle, { color: theme.colors.text }]}>{item.post.title}</Text>
+                        <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textMuted} />
+                      </View>
+
+                      <Text style={[styles.feedAuthor, { color: theme.colors.textMuted }]}>
+                        por {item.post.author_name || "Equipe"}
+                      </Text>
+                      <Text style={[styles.feedExcerpt, { color: theme.colors.textMuted }]} numberOfLines={3}>
+                        {(item.post.excerpt || item.post.content_plain || "").trim()}
+                      </Text>
+
+                      <View style={styles.feedTagsRow}>
+                        {(item.post.tags || []).map((tag) => (
+                          <View
+                            key={`${item.id}-${tag}`}
+                            style={[
+                              styles.feedTagChip,
+                              { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                            ]}
+                          >
+                            <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+                          </View>
+                        ))}
+
+                        {item.assetCount > 0 ? (
+                          <Text style={[styles.feedLinkMeta, { color: theme.colors.accent }]}>
+                            {item.assetCount} anexo{item.assetCount > 1 ? "s" : ""}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
                 </Pressable>
-              ))
-            )}
-          </View>
+              );
+            })
+          )}
         </ScrollView>
       )}
 
       <Modal visible={detailVisible} animationType="slide" onRequestClose={closeDetail}>
-        <View style={[styles.modalContainer, { backgroundColor: theme.colors.bg }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Detalhe do post</Text>
+        <View style={[styles.detailScreen, { backgroundColor: theme.colors.bg }]}>
+          <ScrollView contentContainerStyle={styles.detailContent}>
             <Pressable
               testID="course-detail-close"
               onPress={closeDetail}
+              style={styles.detailBackAction}
               accessibilityRole="button"
-              accessibilityLabel="Fechar detalhe do post"
+              accessibilityLabel="Voltar ao curso"
             >
-              <Text style={[styles.closeText, { color: theme.colors.danger }]}>Fechar</Text>
+              <MaterialCommunityIcons name="arrow-left" size={16} color={theme.colors.textMuted} />
+              <Text style={[styles.detailBackText, { color: theme.colors.textMuted }]}>Voltar ao curso</Text>
             </Pressable>
-          </View>
 
-          {selectedPost ? (
-            <ScrollView contentContainerStyle={styles.modalContent}>
-              <Text style={[styles.detailPostTitle, { color: theme.colors.text }]}>{selectedPost.title}</Text>
-              <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
-                {selectedPost.author_name || "Autor convidado"} •{" "}
-                {formatDateTime(selectedPost.published_at || selectedPost.created_at)}
-              </Text>
-
-              {detailLoading ? (
-                <View style={styles.center}>
-                  <ActivityIndicator />
-                  <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Atualizando detalhe…</Text>
-                </View>
-              ) : null}
-
-              {detailError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{detailError}</Text> : null}
-
-              {detailBlocks.map((block, index) => renderBlock(block, index, "detail"))}
-
-              {detailAssets.length ? (
-                <View style={styles.detailSection}>
-                  <Text style={[styles.detailSectionTitle, { color: theme.colors.text }]}>Materiais do post</Text>
-                  {detailAssets.map((asset) => (
-                    <View
-                      key={asset.id}
+            {selectedPost ? (
+              <>
+                <View style={styles.detailHeroMeta}>
+                  <View
+                    style={[
+                      styles.typeBadge,
+                      {
+                        borderColor: getPostTypeUi(selectedPost.post_type, theme.isDark).border,
+                        backgroundColor: getPostTypeUi(selectedPost.post_type, theme.isDark).bg,
+                      },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.detailItem,
-                        {
-                          borderColor: theme.colors.border,
-                          backgroundColor: theme.colors.surface,
-                        },
+                        styles.typeBadgeText,
+                        { color: getPostTypeUi(selectedPost.post_type, theme.isDark).tint },
                       ]}
                     >
-                      <Text style={[styles.detailItemTitle, { color: theme.colors.text }]}>{asset.title}</Text>
-                      <Text style={[styles.detailItemMeta, { color: theme.colors.textMuted }]}>{asset.asset_type}</Text>
-                      {asset.description ? (
-                        <Text style={[styles.detailItemMeta, { color: theme.colors.textMuted }]}>{asset.description}</Text>
+                      {getPostTypeUi(selectedPost.post_type, theme.isDark).label}
+                    </Text>
+                  </View>
+                  <View style={styles.detailMetaDate}>
+                    <MaterialCommunityIcons name="calendar-blank-outline" size={15} color={theme.colors.textMuted} />
+                    <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
+                      {formatDate(selectedPost.published_at || selectedPost.created_at)}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={[styles.detailPostTitle, { color: theme.colors.text }]}>{selectedPost.title}</Text>
+                <Text style={[styles.detailPostAuthor, { color: theme.colors.textMuted }]}>
+                  por {selectedPost.author_name || "Equipe"}
+                </Text>
+
+                {detailLoading ? (
+                  <View style={styles.center}>
+                    <ActivityIndicator />
+                    <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Atualizando detalhe...</Text>
+                  </View>
+                ) : null}
+
+                {detailError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{detailError}</Text> : null}
+
+                {detailLive ? (
+                  <View
+                    style={[
+                      styles.detailLiveCard,
+                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                    ]}
+                  >
+                    <View style={styles.detailLiveHeader}>
+                      <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                        <MaterialCommunityIcons
+                          name={detailLive.status === "finished" ? "play-circle-outline" : "video-outline"}
+                          size={18}
+                          color={theme.colors.accent}
+                        />
+                      </View>
+                      <View style={styles.detailLiveMeta}>
+                        <Text style={[styles.detailLiveLabel, { color: theme.colors.accent }]}>
+                          {detailLive.status === "finished" ? "Gravação da aula" : "Live relacionada"}
+                        </Text>
+                        <Text style={[styles.detailLiveTitle, { color: theme.colors.text }]}>{detailLive.title}</Text>
+                        <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
+                          {formatDateTime(detailLive.starts_at)}
+                          {detailLive.ends_at ? ` • ${new Date(detailLive.ends_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.detailLiveActions}>
+                      {detailLive.status === "scheduled" ? (
+                        <View style={styles.liveMetaRow}>
+                          <MaterialCommunityIcons name="calendar-blank-outline" size={14} color={theme.colors.accent} />
+                          <Text style={[styles.liveSoonText, { color: theme.colors.accent }]}>Em breve</Text>
+                        </View>
                       ) : null}
-                      {asset.file_url ? (
+                      {detailLiveAction?.kind === "recording" ? (
                         <Pressable
                           style={[
-                            styles.actionBtn,
-                            {
-                              borderColor: theme.colors.primary,
-                              backgroundColor: theme.colors.primary,
-                            },
+                            styles.detailPrimaryAction,
+                            { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
                           ]}
                           onPress={() => {
-                            void openExternalUrl(asset.file_url);
+                            void openExternalUrl(detailLiveAction.url);
                           }}
                           accessibilityRole="button"
-                          accessibilityLabel={`Abrir material ${asset.title}`}
+                          accessibilityLabel={`Assistir gravação ${detailLive.title}`}
                         >
-                          <Text style={[styles.actionBtnText, { color: theme.colors.textInverse }]}>Abrir material</Text>
+                          <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
+                          <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
+                            {detailLiveAction.label}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {detailLiveAction?.kind === "live" ? (
+                        <Pressable
+                          style={[
+                            styles.detailPrimaryAction,
+                            { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                          ]}
+                          onPress={() => {
+                            void openExternalUrl(detailLiveAction.url);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Entrar ao vivo em ${detailLive.title}`}
+                        >
+                          <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
+                          <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
+                            {detailLiveAction.label}
+                          </Text>
                         </Pressable>
                       ) : null}
                     </View>
-                  ))}
-                </View>
-              ) : null}
+                  </View>
+                ) : null}
 
-              {detailLives.length ? (
-                <View style={styles.detailSection}>
-                  <Text style={[styles.detailSectionTitle, { color: theme.colors.text }]}>Lives relacionadas</Text>
-                  {detailLives.map((live) => (
-                    <View
-                      key={live.id}
-                      style={[
-                        styles.detailItem,
-                        {
-                          borderColor: theme.colors.border,
-                          backgroundColor: theme.colors.surface,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.detailItemTitle, { color: theme.colors.text }]}>{live.title}</Text>
-                      <Text style={[styles.detailItemMeta, { color: theme.colors.textMuted }]}>
-                        {live.status} • {formatDateTime(live.starts_at)}
-                      </Text>
-                      {live.description ? (
-                        <View style={styles.liveDescription}>
-                          {buildRichTextBlocks(live.description, live.description).map((block, blockIndex) =>
-                            renderBlock(block, blockIndex, "live")
-                          )}
-                        </View>
-                      ) : null}
-                      <View style={styles.actionsRow}>
-                        {live.meeting_url ? (
-                          <Pressable
-                            style={[
-                              styles.actionBtn,
-                              {
-                                borderColor: theme.colors.primary,
-                                backgroundColor: theme.colors.primary,
-                              },
-                            ]}
-                            onPress={() => {
-                              void openExternalUrl(live.meeting_url);
-                            }}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Abrir live ${live.title}`}
-                          >
-                            <Text style={[styles.actionBtnText, { color: theme.colors.textInverse }]}>Abrir live</Text>
-                          </Pressable>
-                        ) : null}
-                        {live.recording_url ? (
-                          <Pressable
-                            style={[
-                              styles.actionBtn,
-                              {
-                                borderColor: theme.colors.primary,
-                                backgroundColor: theme.colors.primary,
-                              },
-                            ]}
-                            onPress={() => {
-                              void openExternalUrl(live.recording_url);
-                            }}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Abrir gravação ${live.title}`}
-                          >
-                            <Text style={[styles.actionBtnText, { color: theme.colors.textInverse }]}>
-                              Abrir gravação
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
+                <View style={styles.detailRichText}>{detailBlocks.map((block, index) => renderBlock(block, index))}</View>
+
+                {detailAssets.length > 0 ? (
+                  <View style={styles.detailSection}>
+                    <View style={styles.sectionHeaderRow}>
+                      <MaterialCommunityIcons name="paperclip" size={17} color={theme.colors.accent} />
+                      <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Materiais anexos</Text>
                     </View>
-                  ))}
-                </View>
-              ) : null}
-            </ScrollView>
-          ) : null}
+
+                    <View style={styles.detailAssetList}>
+                      {detailAssets.map((asset) => (
+                        <View
+                          key={asset.id}
+                          style={[
+                            styles.detailAssetCard,
+                            { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                          ]}
+                        >
+                          <View style={styles.detailAssetHeader}>
+                            <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                              <MaterialCommunityIcons
+                                name={getAssetIcon(asset.asset_type)}
+                                size={18}
+                                color={theme.colors.accent}
+                              />
+                            </View>
+                            <View style={styles.detailAssetMeta}>
+                              <Text style={[styles.detailAssetTitle, { color: theme.colors.text }]}>{asset.title}</Text>
+                              {asset.description ? (
+                                <Text style={[styles.detailAssetDescription, { color: theme.colors.textMuted }]}>
+                                  {asset.description}
+                                </Text>
+                              ) : null}
+                              <View style={styles.detailAssetTags}>
+                                <View
+                                  style={[
+                                    styles.detailAssetTypeBadge,
+                                    { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border },
+                                  ]}
+                                >
+                                  <Text style={[styles.detailAssetTypeBadgeText, { color: theme.colors.accent }]}>
+                                    {getAssetTypeLabel(asset.asset_type)}
+                                  </Text>
+                                </View>
+                                {(asset.tags || []).map((tag) => (
+                                  <View
+                                    key={`${asset.id}-${tag}`}
+                                    style={[
+                                      styles.feedTagChip,
+                                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                                    ]}
+                                  >
+                                    <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            </View>
+
+                            {asset.file_url ? (
+                              <Pressable
+                                style={styles.detailAssetDownload}
+                                onPress={() => {
+                                  void openExternalUrl(asset.file_url);
+                                }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Baixar material ${asset.title}`}
+                              >
+                                <MaterialCommunityIcons name="download-outline" size={18} color={theme.colors.textMuted} />
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+
+                {selectedPost.tags?.length ? (
+                  <View style={styles.detailTagRow}>
+                    {selectedPost.tags.map((tag) => (
+                      <View
+                        key={`detail-tag-${tag}`}
+                        style={[
+                          styles.feedTagChip,
+                          { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                        ]}
+                      >
+                        <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -579,86 +1077,221 @@ export function CourseScreen({ token }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, paddingTop: 18 },
-  title: { marginTop: 4, fontSize: 30, fontWeight: "800", fontFamily: "Georgia" },
-  subtitle: { marginTop: 6, marginBottom: 14, fontSize: 14 },
-  content: { paddingBottom: 30, gap: 14 },
-  section: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    gap: 10,
-  },
-  sectionTitle: { fontSize: 18, fontWeight: "700" },
-  center: { alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16 },
+  content: { paddingBottom: 32, gap: 14 },
+  center: { alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 18 },
   muted: { fontSize: 13 },
   error: { fontSize: 13, textAlign: "center" },
   retryBtn: {
     marginTop: 6,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   retryBtnText: { fontSize: 13, fontWeight: "700" },
-  liveCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 5 },
-  liveTitle: { fontSize: 15, fontWeight: "700" },
-  liveMeta: { fontSize: 12 },
-  actionsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 4 },
-  actionBtn: {
+
+  sectionHeaderRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  sectionHeaderTitle: { fontSize: 18, fontWeight: "800", fontFamily: "Georgia" },
+
+  emptyCard: {
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 16,
+    padding: 18,
+    gap: 8,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: "800" },
+  emptyBody: { fontSize: 14, lineHeight: 22 },
+
+  liveGrid: { gap: 12 },
+  liveCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+  },
+  liveCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
+  liveTitleRow: { flexDirection: "row", gap: 10, flex: 1 },
+  liveIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveTitleMeta: { flex: 1, gap: 3 },
+  liveCardTitle: { fontSize: 16, fontWeight: "700", fontFamily: "Georgia", lineHeight: 24 },
+  liveCardType: { fontSize: 13, fontWeight: "500" },
+  statusBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
     paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  statusBadgeText: { fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  liveCardDescription: { fontSize: 14, lineHeight: 22 },
+  liveCardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" },
+  liveMetaRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveMetaText: { fontSize: 13, fontWeight: "500" },
+  liveSoonText: { fontSize: 13, fontWeight: "700" },
+  livePrimaryAction: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  livePrimaryActionText: { color: "#F8FAFC", fontSize: 13, fontWeight: "800" },
+
+  feedControls: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 12,
+  },
+  searchBox: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
+  filterRail: {
+    borderRadius: 14,
+    padding: 4,
+    flexDirection: "row",
+    gap: 4,
+    flexWrap: "wrap",
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: "transparent",
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 7,
   },
-  actionBtnText: { fontSize: 12, fontWeight: "700" },
-  postCard: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 5 },
-  postTitle: { fontSize: 16, fontWeight: "700" },
-  postMeta: { fontSize: 12 },
-  postExcerpt: { fontSize: 13, lineHeight: 19 },
-  postTags: { fontSize: 12, fontWeight: "700" },
+  filterChipText: { fontSize: 13, fontWeight: "700" },
 
-  modalContainer: { flex: 1, padding: 16, paddingTop: 18 },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    paddingBottom: 10,
+  feedCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 10,
   },
-  modalTitle: { fontSize: 22, fontWeight: "800", fontFamily: "Georgia" },
-  closeText: { fontSize: 13, fontWeight: "700" },
-  modalContent: { paddingBottom: 26, gap: 10 },
+  feedCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  feedIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  feedMain: { flex: 1, gap: 6 },
+  feedMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  typeBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  typeBadgeText: { fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  feedDateText: { fontSize: 12, fontWeight: "500" },
+  feedTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  feedTitle: { flex: 1, fontSize: 16, fontWeight: "700", fontFamily: "Georgia", lineHeight: 24 },
+  feedAuthor: { fontSize: 13, fontWeight: "500" },
+  feedExcerpt: { fontSize: 14, lineHeight: 22 },
+  feedTagsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" },
+  feedTagChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  feedTagText: { fontSize: 12, fontWeight: "500" },
+  feedLinkMeta: { fontSize: 12, fontWeight: "700" },
+  feedActionsRow: { flexDirection: "row", gap: 10, flexWrap: "wrap", alignItems: "center" },
+  ghostAction: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  ghostActionText: { fontSize: 13, fontWeight: "700" },
 
-  detailPostTitle: { fontSize: 22, fontWeight: "800", fontFamily: "Georgia" },
-  detailPostMeta: { fontSize: 12 },
+  detailScreen: { flex: 1 },
+  detailContent: { padding: 16, paddingTop: 18, paddingBottom: 32, gap: 14 },
+  detailBackAction: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
+  detailBackText: { fontSize: 14, fontWeight: "500" },
+  detailHeroMeta: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  detailMetaDate: { flexDirection: "row", alignItems: "center", gap: 6 },
+  detailPostTitle: { fontSize: 24, fontWeight: "800", fontFamily: "Georgia", lineHeight: 34 },
+  detailPostAuthor: { fontSize: 14, fontWeight: "500" },
+  detailPostMeta: { fontSize: 13, fontWeight: "500" },
+  detailLiveCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 12,
+  },
+  detailLiveHeader: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  detailLiveMeta: { flex: 1, gap: 4 },
+  detailLiveLabel: { fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
+  detailLiveTitle: { fontSize: 18, fontWeight: "700", fontFamily: "Georgia", lineHeight: 26 },
+  detailLiveActions: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  detailPrimaryAction: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  detailPrimaryActionText: { fontSize: 14, fontWeight: "800" },
+
+  detailRichText: { gap: 8 },
   detailInlineBase: {},
   detailInlineBold: { fontWeight: "700" },
   detailInlineItalic: { fontStyle: "italic" },
   detailInlineUnderline: { textDecorationLine: "underline" },
   detailInlineLink: { textDecorationLine: "underline" },
-  detailHeading2: { fontSize: 22, lineHeight: 31, fontWeight: "800", marginTop: 8 },
-  detailHeading3: { fontSize: 19, lineHeight: 28, fontWeight: "700", marginTop: 6 },
-  detailParagraph: { fontSize: 15, lineHeight: 24 },
-  detailQuote: {
-    borderLeftWidth: 3,
-    paddingLeft: 10,
-    marginVertical: 4,
-  },
+  detailHeading2: { fontSize: 20, lineHeight: 30, fontWeight: "800", marginTop: 8, fontFamily: "Georgia" },
+  detailHeading3: { fontSize: 18, lineHeight: 28, fontWeight: "700", marginTop: 6, fontFamily: "Georgia" },
+  detailParagraph: { fontSize: 15, lineHeight: 26 },
+  detailQuote: { borderLeftWidth: 3, paddingLeft: 10, marginVertical: 4 },
   detailList: { gap: 6 },
   detailListRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   detailListMarker: { marginTop: 2, fontSize: 14, fontWeight: "700" },
-  liveDescription: { marginTop: 4, gap: 4 },
-  liveParagraph: { fontSize: 13, lineHeight: 20 },
-  liveHeading2: { fontSize: 16, lineHeight: 23, fontWeight: "800", marginTop: 3 },
-  liveHeading3: { fontSize: 15, lineHeight: 22, fontWeight: "700", marginTop: 2 },
-  liveQuote: { borderLeftWidth: 2, paddingLeft: 8, marginVertical: 3 },
-  liveList: { gap: 4 },
-  liveListRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
-  liveListMarker: { marginTop: 2, fontSize: 12, fontWeight: "700" },
-  detailSection: { marginTop: 8, gap: 8 },
-  detailSectionTitle: { fontSize: 16, fontWeight: "800" },
-  detailItem: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 4 },
-  detailItemTitle: { fontSize: 14, fontWeight: "700" },
-  detailItemMeta: { fontSize: 12 },
+
+  detailSection: { gap: 10 },
+  detailAssetList: { gap: 10 },
+  detailAssetCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+  },
+  detailAssetHeader: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  detailAssetMeta: { flex: 1, gap: 3 },
+  detailAssetTitle: { fontSize: 16, fontWeight: "700" },
+  detailAssetDescription: { fontSize: 13, lineHeight: 20 },
+  detailAssetTags: { flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 4 },
+  detailAssetTypeBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  detailAssetTypeBadgeText: { fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  detailAssetDownload: {
+    padding: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailTagRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
 });
