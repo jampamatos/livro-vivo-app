@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,7 @@ import {
   ROUTE_TITLES,
 } from "../navigation/routes";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { sanitizeAvatarUrl } from "../utils/communityUi";
 
 type Props = {
   token: string;
@@ -21,12 +22,14 @@ type Props = {
   onOpenSearch: () => void;
   onOpenAccount: () => void;
   onLogout: () => void | Promise<void>;
+  accountRefreshSignal?: number;
 };
 
 type AccountQuickSummary = {
   name: string;
   email: string;
   profession: string;
+  avatarUrl: string | null;
   planLabel: string;
   planStatus: string;
 };
@@ -82,6 +85,7 @@ export function AppShell({
   onOpenSearch,
   onOpenAccount,
   onLogout,
+  accountRefreshSignal = 0,
 }: Props) {
   const { theme, toggleMode } = useAppTheme();
   const { width } = useWindowDimensions();
@@ -120,42 +124,51 @@ export function AppShell({
     setAccountMenuOpen(false);
   }, [route]);
 
+  const loadAccountSummary = React.useCallback(async (aliveRef?: { current: boolean }) => {
+    try {
+      setAccountSummaryLoading(true);
+      setAccountSummaryError(null);
+      const [profile, entitlements] = await Promise.all([getMeProfile(token), getMyEntitlements(token)]);
+      if (aliveRef && !aliveRef.current) return;
+
+      setAccountSummary({
+        name: profile?.name?.trim() || "Conta Livro Vivo",
+        email: profile?.email?.trim() || "-",
+        profession: profile?.profession?.trim() || "Profissão não informada",
+        avatarUrl: sanitizeAvatarUrl(profile?.avatar_url),
+        planLabel: formatTier(entitlements?.effective_tier),
+        planStatus: formatStatus(entitlements?.subscription?.status),
+      });
+    } catch {
+      if (aliveRef && !aliveRef.current) return;
+      setAccountSummaryError("Não foi possível carregar o resumo da conta.");
+    } finally {
+      if (aliveRef && !aliveRef.current) return;
+      setAccountSummaryLoading(false);
+    }
+  }, [token]);
+
   React.useEffect(() => {
-    if (!accountMenuOpen || accountSummary) return;
-
-    let alive = true;
-
-    (async () => {
-      try {
-        setAccountSummaryLoading(true);
-        setAccountSummaryError(null);
-        const [profile, entitlements] = await Promise.all([getMeProfile(token), getMyEntitlements(token)]);
-        if (!alive) return;
-
-        setAccountSummary({
-          name: profile?.name?.trim() || "Conta Livro Vivo",
-          email: profile?.email?.trim() || "-",
-          profession: profile?.profession?.trim() || "Profissão não informada",
-          planLabel: formatTier(entitlements?.effective_tier),
-          planStatus: formatStatus(entitlements?.subscription?.status),
-        });
-      } catch {
-        if (!alive) return;
-        setAccountSummaryError("Não foi possível carregar o resumo da conta.");
-      } finally {
-        if (!alive) return;
-        setAccountSummaryLoading(false);
-      }
-    })();
-
+    const aliveRef = { current: true };
+    void loadAccountSummary(aliveRef);
     return () => {
-      alive = false;
+      aliveRef.current = false;
     };
-  }, [accountMenuOpen, accountSummary, token]);
+  }, [loadAccountSummary, accountRefreshSignal]);
+
+  React.useEffect(() => {
+    if (!accountMenuOpen) return;
+    const aliveRef = { current: true };
+    void loadAccountSummary(aliveRef);
+    return () => {
+      aliveRef.current = false;
+    };
+  }, [accountMenuOpen, loadAccountSummary]);
 
   const accountDisplayName = accountSummary?.name || "Minha conta";
   const accountDisplayEmail = accountSummary?.email || "-";
   const accountDisplayProfession = accountSummary?.profession || "Profissão não informada";
+  const accountDisplayAvatarUrl = sanitizeAvatarUrl(accountSummary?.avatarUrl);
   const accountDisplayPlan = accountSummary
     ? `${accountSummary.planLabel} • ${accountSummary.planStatus}`
     : "Plano indisponível";
@@ -192,7 +205,11 @@ export function AppShell({
         >
           <View style={styles.accountIdentityRow}>
             <View style={[styles.accountAvatar, { backgroundColor: theme.colors.topBarBg }]}>
-              <Text style={[styles.accountAvatarText, { color: theme.colors.sidebarText }]}>{accountInitials}</Text>
+              {accountDisplayAvatarUrl ? (
+                <Image source={{ uri: accountDisplayAvatarUrl }} style={styles.accountAvatarImage} resizeMode="cover" />
+              ) : (
+                <Text style={[styles.accountAvatarText, { color: theme.colors.sidebarText }]}>{accountInitials}</Text>
+              )}
             </View>
             <View style={styles.accountIdentityMeta}>
               <Text style={[styles.accountName, { color: theme.colors.text }]} numberOfLines={1}>
@@ -357,7 +374,11 @@ export function AppShell({
               accessibilityRole="button"
               accessibilityLabel="Abrir menu da conta"
             >
-              <ShellIcon name="account-circle-outline" size={18} color={theme.colors.sidebarText} />
+              {accountDisplayAvatarUrl ? (
+                <Image source={{ uri: accountDisplayAvatarUrl }} style={styles.headerAvatarImage} resizeMode="cover" />
+              ) : (
+                <Text style={[styles.headerAvatarText, { color: theme.colors.sidebarText }]}>{accountInitials}</Text>
+              )}
             </Pressable>
           </View>
           <View style={styles.contentWrap}>{children}</View>
@@ -409,7 +430,11 @@ export function AppShell({
             accessibilityRole="button"
             accessibilityLabel="Abrir menu da conta"
           >
-            <ShellIcon name="account-circle-outline" size={18} color={theme.colors.sidebarText} />
+            {accountDisplayAvatarUrl ? (
+              <Image source={{ uri: accountDisplayAvatarUrl }} style={styles.headerAvatarImage} resizeMode="cover" />
+            ) : (
+              <Text style={[styles.headerAvatarText, { color: theme.colors.sidebarText }]}>{accountInitials}</Text>
+            )}
           </Pressable>
         </View>
       </View>
@@ -554,7 +579,10 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
   },
+  headerAvatarImage: { width: "100%", height: "100%" },
+  headerAvatarText: { fontSize: 12, fontWeight: "800" },
   accountMenuOverlay: {
     flex: 1,
     justifyContent: "flex-start",
@@ -590,7 +618,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
+  accountAvatarImage: { width: "100%", height: "100%" },
   accountAvatarText: {
     fontSize: 14,
     fontWeight: "800",

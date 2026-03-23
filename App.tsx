@@ -41,6 +41,7 @@ function AppRoot() {
   const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [session, setSession] = React.useState<AuthSession | null>(null);
+  const [accountRefreshSignal, setAccountRefreshSignal] = React.useState(0);
 
   const [route, setRoute] = React.useState<AppRoute>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
@@ -114,6 +115,7 @@ function AppRoot() {
   const handleAuthSuccess = async (newSession: AuthSession) => {
     await setAuthSession(newSession);
     setSession(newSession);
+    setAccountRefreshSignal((value) => value + 1);
     setLibraryOpenRequest(null);
     setRoute("main");
   };
@@ -282,6 +284,7 @@ function AppRoot() {
         token={token}
         onBack={navigateBack}
         onLogout={handleLogout}
+        onProfileUpdated={() => setAccountRefreshSignal((value) => value + 1)}
         pushStatusMessage={pushStatusMessage}
       />
     );
@@ -377,6 +380,7 @@ function AppRoot() {
       <AppShell
         token={token}
         route={route}
+        accountRefreshSignal={accountRefreshSignal}
         onNavigate={handleShellNavigate}
         onOpenSearch={() => setRoute("mainSearch")}
         onOpenAccount={() => setRoute("account")}

@@ -25,6 +25,10 @@ type ApiFetchOptions = {
   allowNoContent?: boolean;
 };
 
+function isFormDataBody(value: unknown): value is FormData {
+  return typeof FormData !== "undefined" && value instanceof FormData;
+}
+
 export function buildAuthHeader(token: string) : string {
   // JWT típico: "xxxxx.yyyyy.zzzzz"
   const parts = token.split(".");
@@ -96,8 +100,12 @@ export async function apiFetch<T>(
 
   let body: BodyInit | undefined;
   if (options.body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(options.body);
+    if (isFormDataBody(options.body)) {
+      body = options.body;
+    } else {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
   }
 
   const res = await fetch(url, {
@@ -119,8 +127,12 @@ export async function apiFetch<T>(
 
       let retryBody: BodyInit | undefined;
       if (options.body !== undefined) {
-        retryHeaders["Content-Type"] = "application/json";
-        retryBody = JSON.stringify(options.body);
+        if (isFormDataBody(options.body)) {
+          retryBody = options.body;
+        } else {
+          retryHeaders["Content-Type"] = "application/json";
+          retryBody = JSON.stringify(options.body);
+        }
       }
 
       let retryRes: Response;
