@@ -5,6 +5,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   Share,
@@ -24,6 +26,7 @@ import {
   type MeProfileResponse,
   type SubscriptionStatus,
   type SubscriptionTier,
+  type UpdateMeProfileAvatarCrop,
   type UpdateMeProfileAvatarUpload,
 } from "../api/entitlements";
 import {
@@ -42,6 +45,16 @@ import {
 import { ApiError } from "../api/http";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AppTheme } from "../theme/tokens";
+import {
+  AVATAR_CROP_MAX_ZOOM,
+  AVATAR_CROP_MIN_ZOOM,
+  buildAvatarCropSelection,
+  buildAvatarPreviewImageStyle,
+  clampAvatarCropOffsets,
+  getAvatarCropMetrics,
+  type AvatarCropDraft,
+  type AvatarCropSelection,
+} from "../utils/avatarCrop";
 import { sanitizeAvatarUrl } from "../utils/communityUi";
 
 type Props = {
@@ -68,6 +81,7 @@ type ProfileAvatarProps = {
   theme: AppTheme;
   name: string;
   avatarUrl?: string | null;
+  crop?: AvatarCropSelection | null;
   size?: number;
 };
 
@@ -76,7 +90,13 @@ type ProfileFormState = {
   profession: string;
   avatarPreviewUrl: string | null;
   avatarAsset: UpdateMeProfileAvatarUpload | null;
+  avatarCrop: AvatarCropSelection | null;
   avatarRemoved: boolean;
+};
+
+type AvatarCropperState = {
+  asset: UpdateMeProfileAvatarUpload;
+  draft: AvatarCropDraft;
 };
 
 type PlanOption = {
@@ -147,14 +167,22 @@ function getApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function PanelSectionLabel({ theme, children }: { theme: AppTheme; children: React.ReactNode }) {
   return <Text style={[styles.panelSectionLabel, { color: theme.colors.textMuted }]}>{children}</Text>;
 }
 
-function ProfileAvatar({ theme, name, avatarUrl, size = 68 }: ProfileAvatarProps) {
+function ProfileAvatar({ theme, name, avatarUrl, crop, size = 68 }: ProfileAvatarProps) {
   const safeAvatarUrl = sanitizeAvatarUrl(avatarUrl);
   const [imageFailed, setImageFailed] = React.useState(false);
   const showImage = Boolean(safeAvatarUrl) && !imageFailed;
+  const croppedPreviewStyle = React.useMemo(
+    () => (showImage && crop ? buildAvatarPreviewImageStyle(size, crop) : null),
+    [crop, showImage, size]
+  );
 
   React.useEffect(() => {
     setImageFailed(false);
@@ -175,8 +203,8 @@ function ProfileAvatar({ theme, name, avatarUrl, size = 68 }: ProfileAvatarProps
       {showImage ? (
         <Image
           source={{ uri: safeAvatarUrl! }}
-          style={styles.profileAvatarImage}
-          resizeMode="cover"
+          style={croppedPreviewStyle ? [styles.profileAvatarCroppedImage, croppedPreviewStyle] : styles.profileAvatarImage}
+          resizeMode={croppedPreviewStyle ? "stretch" : "cover"}
           onError={() => setImageFailed(true)}
         />
       ) : (
@@ -243,8 +271,10 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
     profession: "",
     avatarPreviewUrl: null,
     avatarAsset: null,
+    avatarCrop: null,
     avatarRemoved: false,
   });
+  const [avatarCropper, setAvatarCropper] = React.useState<AvatarCropperState | null>(null);
   const [profileSaving, setProfileSaving] = React.useState(false);
   const [profilePickerLoading, setProfilePickerLoading] = React.useState(false);
   const [profileMessage, setProfileMessage] = React.useState<string | null>(null);
@@ -296,6 +326,7 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
       profession: profile?.profession || "",
       avatarPreviewUrl: sanitizeAvatarUrl(profile?.avatar_url),
       avatarAsset: null,
+      avatarCrop: null,
       avatarRemoved: false,
     });
   }, [profile?.avatar_url, profile?.name, profile?.profession]);
@@ -305,6 +336,13 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
   const displayEmail = (profile?.email || "").trim() || "-";
   const displayAvatarUrl = sanitizeAvatarUrl(profile?.avatar_url);
   const isWidePlansLayout = width >= 920;
+  const avatarCropViewportSize = Math.min(Math.max(width - 72, 220), 340);
+  const avatarCropBaseOffsetRef = React.useRef({ x: 0, y: 0 });
+  const avatarCropDraftRef = React.useRef<AvatarCropDraft | null>(null);
+
+  React.useEffect(() => {
+    avatarCropDraftRef.current = avatarCropper?.draft ?? null;
+  }, [avatarCropper]);
 
   const togglePreference = React.useCallback(
     async (field: NotificationPreferenceField) => {
@@ -391,6 +429,93 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
     setDeletingData(false);
   }, [deleteConfirmation, deleteReason, deletingData, onLogout, token]);
 
+  const handleCropZoom = React.useCallback(
+    (delta: number) => {
+      setAvatarCropper((current) => {
+        if (!current) return current;
+        const nextZoom = clampNumber(current.draft.zoom + delta, AVATAR_CROP_MIN_ZOOM, AVATAR_CROP_MAX_ZOOM);
+        const nextDraft = { ...current.draft, zoom: nextZoom };
+        const clamped = clampAvatarCropOffsets(nextDraft, avatarCropViewportSize);
+        return {
+          ...current,
+          draft: {
+            ...nextDraft,
+            offsetX: clamped.x,
+            offsetY: clamped.y,
+          },
+        };
+      });
+    },
+    [avatarCropViewportSize]
+  );
+
+  const handleConfirmAvatarCrop = React.useCallback(() => {
+    if (!avatarCropper) return;
+
+    const crop = buildAvatarCropSelection(avatarCropper.draft, avatarCropViewportSize);
+    setProfileForm((prev) => ({
+      ...prev,
+      avatarPreviewUrl: avatarCropper.asset.uri,
+      avatarAsset: avatarCropper.asset,
+      avatarCrop: crop,
+      avatarRemoved: false,
+    }));
+    setAvatarCropper(null);
+  }, [avatarCropViewportSize, avatarCropper]);
+
+  const handleCancelAvatarCrop = React.useCallback(() => {
+    setAvatarCropper(null);
+  }, []);
+
+  const avatarCropPanResponder = React.useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => Boolean(avatarCropDraftRef.current),
+        onStartShouldSetPanResponderCapture: () => Boolean(avatarCropDraftRef.current),
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Boolean(avatarCropDraftRef.current) && (Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2),
+        onMoveShouldSetPanResponderCapture: (_, gestureState) =>
+          Boolean(avatarCropDraftRef.current) && (Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2),
+        onPanResponderGrant: () => {
+          avatarCropBaseOffsetRef.current = {
+            x: avatarCropDraftRef.current?.offsetX ?? 0,
+            y: avatarCropDraftRef.current?.offsetY ?? 0,
+          };
+        },
+        onPanResponderMove: (_, gestureState) => {
+          setAvatarCropper((current) => {
+            if (!current) return current;
+            const nextDraft = {
+              ...current.draft,
+              offsetX: avatarCropBaseOffsetRef.current.x + gestureState.dx,
+              offsetY: avatarCropBaseOffsetRef.current.y + gestureState.dy,
+            };
+            const clamped = clampAvatarCropOffsets(nextDraft, avatarCropViewportSize);
+            return {
+              ...current,
+              draft: {
+                ...nextDraft,
+                offsetX: clamped.x,
+                offsetY: clamped.y,
+              },
+            };
+          });
+        },
+        onPanResponderTerminationRequest: () => false,
+      }),
+    [avatarCropViewportSize]
+  );
+
+  const avatarCropMetrics = React.useMemo(() => {
+    if (!avatarCropper) return null;
+    return getAvatarCropMetrics(
+      avatarCropper.draft.imageWidth,
+      avatarCropper.draft.imageHeight,
+      avatarCropViewportSize,
+      avatarCropper.draft.zoom
+    );
+  }, [avatarCropViewportSize, avatarCropper]);
+
   const handleSaveProfile = React.useCallback(async () => {
     if (profileSaving) return;
     setProfileError(null);
@@ -402,6 +527,15 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
         name: profileForm.name.trim(),
         profession: profileForm.profession.trim(),
         ...(profileForm.avatarAsset ? { avatar: profileForm.avatarAsset } : {}),
+        ...(profileForm.avatarAsset && profileForm.avatarCrop
+          ? {
+              avatar_crop: {
+                x: profileForm.avatarCrop.x,
+                y: profileForm.avatarCrop.y,
+                size: profileForm.avatarCrop.size,
+              } satisfies UpdateMeProfileAvatarCrop,
+            }
+          : {}),
         ...(profileForm.avatarRemoved ? { avatar_clear: true } : {}),
       };
 
@@ -414,7 +548,16 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
     } finally {
       setProfileSaving(false);
     }
-  }, [onProfileUpdated, profileForm.avatarAsset, profileForm.avatarRemoved, profileForm.name, profileForm.profession, profileSaving, token]);
+  }, [
+    onProfileUpdated,
+    profileForm.avatarAsset,
+    profileForm.avatarCrop,
+    profileForm.avatarRemoved,
+    profileForm.name,
+    profileForm.profession,
+    profileSaving,
+    token,
+  ]);
 
   const handlePickProfileAvatar = React.useCallback(async () => {
     if (profilePickerLoading) return;
@@ -432,8 +575,7 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.85,
         selectionLimit: 1,
       });
@@ -443,17 +585,26 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
       }
 
       const asset = result.assets[0];
-      setProfileForm((prev) => ({
-        ...prev,
-        avatarPreviewUrl: asset.uri,
-        avatarAsset: {
+      if (!asset.width || !asset.height) {
+        setProfileError("Não foi possível identificar o tamanho da imagem selecionada.");
+        return;
+      }
+
+      setAvatarCropper({
+        asset: {
           uri: asset.uri,
           name: asset.fileName ?? `avatar-${Date.now()}.jpg`,
           type: asset.mimeType ?? "image/jpeg",
           file: asset.file ?? null,
         },
-        avatarRemoved: false,
-      }));
+        draft: {
+          imageWidth: asset.width,
+          imageHeight: asset.height,
+          zoom: 1,
+          offsetX: 0,
+          offsetY: 0,
+        },
+      });
     } catch {
       setProfileError("Não foi possível abrir a galeria agora.");
     } finally {
@@ -468,6 +619,7 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
       ...prev,
       avatarPreviewUrl: null,
       avatarAsset: null,
+      avatarCrop: null,
       avatarRemoved: Boolean(displayAvatarUrl),
     }));
   }, [displayAvatarUrl]);
@@ -669,12 +821,13 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
         ]}
         >
         <View style={styles.profileEditorHeader}>
-          <ProfileAvatar
-            theme={theme}
-            name={profileForm.name || displayName}
-            avatarUrl={profileForm.avatarPreviewUrl}
-            size={84}
-          />
+        <ProfileAvatar
+          theme={theme}
+          name={profileForm.name || displayName}
+          avatarUrl={profileForm.avatarPreviewUrl}
+          crop={profileForm.avatarCrop}
+          size={84}
+        />
           <View style={styles.profileEditorCopy}>
             <Text style={[styles.profilePreviewName, { color: theme.colors.text }]}>
               {(profileForm.name || "").trim() || "Nome não informado"}
@@ -1453,6 +1606,112 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
           renderActivePanel()
         )}
       </ScrollView>
+
+      <Modal
+        visible={Boolean(avatarCropper)}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelAvatarCrop}
+      >
+        <View style={[styles.cropperBackdrop, { backgroundColor: theme.colors.overlay }]}>
+          <View
+            style={[
+              styles.cropperCard,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surface,
+                ...theme.shadow.card,
+              },
+            ]}
+            testID="account-avatar-cropper"
+          >
+            <Text style={[styles.cropperTitle, { color: theme.colors.text }]}>Ajustar foto</Text>
+            <Text style={[styles.cropperSubtitle, { color: theme.colors.textMuted }]}>
+              Arraste para enquadrar e use o zoom para aproximar o rosto.
+            </Text>
+
+            <View
+              style={[
+                styles.cropperViewport,
+                {
+                  width: avatarCropViewportSize,
+                  height: avatarCropViewportSize,
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.surfaceMuted,
+                },
+              ]}
+              {...avatarCropPanResponder.panHandlers}
+            >
+              {avatarCropper && avatarCropMetrics ? (
+                <Image
+                  source={{ uri: avatarCropper.asset.uri }}
+                  style={[
+                    styles.cropperImage,
+                    {
+                      width: avatarCropMetrics.displayWidth,
+                      height: avatarCropMetrics.displayHeight,
+                      left: (avatarCropViewportSize - avatarCropMetrics.displayWidth) / 2,
+                      top: (avatarCropViewportSize - avatarCropMetrics.displayHeight) / 2,
+                      transform: [
+                        { translateX: avatarCropper.draft.offsetX },
+                        { translateY: avatarCropper.draft.offsetY },
+                      ],
+                    },
+                  ]}
+                  resizeMode="stretch"
+                />
+              ) : null}
+              <View pointerEvents="none" style={[styles.cropperOverlayRing, { borderColor: theme.colors.accent }]} />
+            </View>
+
+            <View style={styles.cropperToolbar}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Diminuir zoom da foto"
+                testID="account-avatar-crop-zoom-out"
+                onPress={() => handleCropZoom(-0.15)}
+                style={[styles.cropperZoomAction, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted }]}
+                disabled={!avatarCropper}
+              >
+                <MaterialCommunityIcons name="minus" size={18} color={theme.colors.text} />
+              </Pressable>
+              <Text style={[styles.cropperZoomText, { color: theme.colors.textMuted }]}>
+                {avatarCropper ? `${Math.round(avatarCropper.draft.zoom * 100)}%` : "100%"}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Aumentar zoom da foto"
+                testID="account-avatar-crop-zoom-in"
+                onPress={() => handleCropZoom(0.15)}
+                style={[styles.cropperZoomAction, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted }]}
+                disabled={!avatarCropper}
+              >
+                <MaterialCommunityIcons name="plus" size={18} color={theme.colors.text} />
+              </Pressable>
+            </View>
+
+            <View style={styles.cropperActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar ajuste da foto"
+                onPress={handleCancelAvatarCrop}
+                style={[styles.cropperSecondaryAction, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted }]}
+              >
+                <Text style={[styles.cropperSecondaryActionText, { color: theme.colors.text }]}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Usar foto recortada"
+                testID="account-avatar-crop-confirm"
+                onPress={handleConfirmAvatarCrop}
+                style={[styles.cropperPrimaryAction, { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary }]}
+              >
+                <Text style={[styles.cropperPrimaryActionText, { color: theme.colors.textInverse }]}>Usar foto</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1478,6 +1737,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   profileAvatarImage: { width: "100%", height: "100%" },
+  profileAvatarCroppedImage: { position: "absolute" },
   profileAvatarText: { fontSize: 24, fontWeight: "800" },
   heroCopy: { flex: 1, gap: 4 },
   heroName: { fontSize: 28, fontWeight: "800", fontFamily: "Georgia" },
@@ -1514,6 +1774,58 @@ const styles = StyleSheet.create({
   menuTitle: { fontSize: 17, fontWeight: "800" },
   menuSubtitle: { fontSize: 13, lineHeight: 19 },
   menuDivider: { height: 1, marginLeft: 66 },
+
+  cropperBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  cropperCard: { width: "100%", maxWidth: 420, borderWidth: 1, borderRadius: 22, padding: 18, gap: 14 },
+  cropperTitle: { fontSize: 24, fontWeight: "800", fontFamily: "Georgia" },
+  cropperSubtitle: { fontSize: 14, lineHeight: 22 },
+  cropperViewport: {
+    alignSelf: "center",
+    borderWidth: 1,
+    borderRadius: 24,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cropperImage: { position: "absolute" },
+  cropperOverlayRing: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2,
+    borderRadius: 24,
+  },
+  cropperToolbar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14 },
+  cropperZoomAction: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cropperZoomText: { fontSize: 14, fontWeight: "700", minWidth: 64, textAlign: "center" },
+  cropperActions: { flexDirection: "row", gap: 10 },
+  cropperSecondaryAction: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cropperSecondaryActionText: { fontSize: 15, fontWeight: "700" },
+  cropperPrimaryAction: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cropperPrimaryActionText: { fontSize: 15, fontWeight: "800" },
 
   sectionBackAction: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
   sectionBackText: { fontSize: 14, fontWeight: "500" },
