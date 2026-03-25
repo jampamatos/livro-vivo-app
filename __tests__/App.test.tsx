@@ -111,22 +111,12 @@ jest.mock("../src/screens/MainSearchScreen", () => {
   const { View, Text, Pressable } = require("react-native");
   return {
     MainSearchScreen: ({
-      onBack,
-      onLogout,
       onOpenResult,
     }: {
-      onBack: () => void;
-      onLogout: () => void;
       onOpenResult: (result: any) => void;
     }) => (
       <View>
         <Text>MainSearchScreen</Text>
-        <Pressable testID="search-back" onPress={onBack}>
-          <Text>Back</Text>
-        </Pressable>
-        <Pressable testID="search-logout" onPress={onLogout}>
-          <Text>Logout</Text>
-        </Pressable>
         <Pressable
           testID="search-open-library-result"
           onPress={() =>
@@ -307,17 +297,12 @@ jest.mock("../src/screens/CommunityNewPostScreen", () => {
   const { View, Text, Pressable } = require("react-native");
   return {
     CommunityNewPostScreen: ({
-      onBack,
       onCreated,
     }: {
-      onBack: () => void;
       onCreated: (post: { id: number; title: string }) => void;
     }) => (
       <View>
         <Text>CommunityNewPostScreen</Text>
-        <Pressable testID="community-new-back" onPress={onBack}>
-          <Text>BackToFeed</Text>
-        </Pressable>
         <Pressable testID="community-created" onPress={() => onCreated({ id: 10, title: "Criado" })}>
           <Text>Created</Text>
         </Pressable>

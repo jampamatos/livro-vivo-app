@@ -294,8 +294,6 @@ function AppRoot() {
     content = (
       <MainSearchScreen
         token={token}
-        onBack={navigateBack}
-        onLogout={handleLogout}
         onOpenResult={handleOpenGlobalSearchResult}
       />
     );
@@ -329,8 +327,6 @@ function AppRoot() {
     content = (
       <CommunityNewPostScreen
         token={token}
-        onBack={navigateBack}
-        onLogout={handleLogout}
         onCreated={(post) => {
           setSelectedPost(post);
           setRoute("communityPost");
