@@ -108,7 +108,12 @@ describe("MainScreen", () => {
       offset: 0,
       results: [],
     });
-    listCommunityPostsMock.mockResolvedValue([]);
+    listCommunityPostsMock.mockResolvedValue({
+      count: 0,
+      limit: 20,
+      offset: 0,
+      results: [],
+    });
     listCoursePostsMock.mockResolvedValue([]);
     listLiveEventsMock.mockResolvedValue([]);
     listTemplatePiecesMock.mockResolvedValue([]);

@@ -32,9 +32,15 @@ describe("api/community", () => {
   });
 
   it("listCommunityPosts chama /community/posts/ com token", async () => {
-    apiFetchMock.mockResolvedValueOnce([]);
+    apiFetchMock.mockResolvedValueOnce({ count: 0, limit: 20, offset: 0, results: [] });
     await listCommunityPosts("t123");
     expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/", { token: "t123" });
+  });
+
+  it("listCommunityPosts monta querystring de paginação e categoria", async () => {
+    apiFetchMock.mockResolvedValueOnce({ count: 0, limit: 10, offset: 20, results: [] });
+    await listCommunityPosts("t123", { category: 7, limit: 10, offset: 20 });
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/posts/?category=7&limit=10&offset=20", { token: "t123" });
   });
 
   it("createCommunityPost faz POST em /community/posts/ com body", async () => {
@@ -48,9 +54,15 @@ describe("api/community", () => {
   });
 
   it("listCommunityComments chama /community/comments/?post=ID", async () => {
-    apiFetchMock.mockResolvedValueOnce([]);
+    apiFetchMock.mockResolvedValueOnce({ count: 0, limit: 20, offset: 0, results: [] });
     await listCommunityComments("t123", 99);
     expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/?post=99", { token: "t123" });
+  });
+
+  it("listCommunityComments monta paginação do post", async () => {
+    apiFetchMock.mockResolvedValueOnce({ count: 0, limit: 10, offset: 20, results: [] });
+    await listCommunityComments("t123", 99, { limit: 10, offset: 20 });
+    expect(apiFetchMock).toHaveBeenCalledWith("/community/comments/?post=99&limit=10&offset=20", { token: "t123" });
   });
 
   it("listCommunityMentionCandidates chama endpoint de mencoes por post", async () => {
