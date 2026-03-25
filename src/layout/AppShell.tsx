@@ -120,6 +120,11 @@ export function AppShell({
     toggleMode();
   }, [closeAccountMenu, toggleMode]);
 
+  const logoutFromMenu = React.useCallback(() => {
+    closeAccountMenu();
+    void Promise.resolve(onLogout());
+  }, [closeAccountMenu, onLogout]);
+
   React.useEffect(() => {
     setAccountMenuOpen(false);
   }, [route]);
@@ -284,6 +289,24 @@ export function AppShell({
               {theme.isDark ? "Modo claro" : "Modo escuro"}
             </Text>
           </Pressable>
+
+          {!isDesktopWeb ? (
+            <Pressable
+              style={[
+                styles.accountMenuAction,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: theme.isDark ? "#251922" : "#FFF2F0",
+                },
+              ]}
+              onPress={logoutFromMenu}
+              accessibilityRole="button"
+              accessibilityLabel="Sair da conta"
+            >
+              <ShellIcon name="logout-variant" size={18} color={theme.colors.danger} />
+              <Text style={[styles.accountMenuActionText, { color: theme.colors.danger }]}>Sair da conta</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Modal>

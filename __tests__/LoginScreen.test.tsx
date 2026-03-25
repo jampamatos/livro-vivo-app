@@ -2,12 +2,17 @@ import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { LoginScreen } from "../src/screens/LoginScreen";
+import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 describe("LoginScreen a11y baseline", () => {
   it("expõe labels semânticos nos controles principais de autenticação", async () => {
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
-      tree = renderer.create(<LoginScreen onAuthSuccess={jest.fn()} />);
+      tree = renderer.create(
+        <AppThemeProvider>
+          <LoginScreen onAuthSuccess={jest.fn()} />
+        </AppThemeProvider>
+      );
     });
 
     expect(tree!.root.findByProps({ testID: "login-email-input" }).props.accessibilityLabel).toBe("E-mail");

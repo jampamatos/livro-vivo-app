@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -175,6 +176,12 @@ function getLiveStatusUi(status: LiveEventStatus, isDark: boolean): StatusUi {
     : { label: "Gravação", tint: "#66758F", bg: "#EEF1F5", border: "#D3D9E3" };
 }
 
+function getLivePriority(status: LiveEventStatus) {
+  if (status === "live") return 0;
+  if (status === "scheduled") return 1;
+  return 2;
+}
+
 function getDetailLiveAction(live: LiveEvent) {
   if (live.status === "live" && live.meeting_url) {
     return {
@@ -224,6 +231,8 @@ function matchesSearch(query: string, values: Array<string | null | undefined>) 
 
 export function CourseScreen({ token }: Props) {
   const { theme } = useAppTheme();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 980;
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [posts, setPosts] = React.useState<CoursePost[]>([]);
@@ -268,8 +277,8 @@ export function CourseScreen({ token }: Props) {
     return [...lives]
       .filter((live) => live.status === "live" || live.status === "scheduled")
       .sort((a, b) => {
-        if (a.status === "live" && b.status !== "live") return -1;
-        if (a.status !== "live" && b.status === "live") return 1;
+        const priorityDiff = getLivePriority(a.status) - getLivePriority(b.status);
+        if (priorityDiff !== 0) return priorityDiff;
         return toTimestamp(a.starts_at) - toTimestamp(b.starts_at);
       });
   }, [lives]);
@@ -535,30 +544,58 @@ export function CourseScreen({ token }: Props) {
           ) : (
             <View style={styles.liveGrid}>
               {upcomingLives.map((live) => {
+                const isLiveNow = live.status === "live";
                 const statusUi = getLiveStatusUi(live.status, theme.isDark);
                 const liveTypeUi = getLiveTypeLabel(live.event_type);
+                const liveCardShadow = isLiveNow
+                  ? {
+                      shadowColor: statusUi.border,
+                      shadowOpacity: theme.isDark ? 0.32 : 0.16,
+                      shadowRadius: isWide ? 20 : 14,
+                      shadowOffset: { width: 0, height: 8 },
+                      elevation: theme.isDark ? 10 : 6,
+                    }
+                  : theme.shadow.card;
+                const liveCardBg = isLiveNow
+                  ? theme.isDark
+                    ? "#1A2236"
+                    : "#FFF3F2"
+                  : theme.colors.surface;
+                const liveCardBorder = isLiveNow ? statusUi.border : theme.colors.border;
+                const liveIconBg = isLiveNow
+                  ? theme.isDark
+                    ? "#2C1E23"
+                    : "#FFE9E7"
+                  : theme.colors.surfaceMuted;
                 return (
                   <View
                     key={live.id}
+                    testID={`course-upcoming-card-${live.id}`}
                     style={[
                       styles.liveCard,
                       {
-                        borderColor: statusUi.border,
-                        backgroundColor: theme.colors.surface,
-                        ...theme.shadow.card,
+                        borderColor: liveCardBorder,
+                        backgroundColor: liveCardBg,
+                        ...liveCardShadow,
                       },
                     ]}
                   >
                     <View style={styles.liveCardHeader}>
                       <View style={styles.liveTitleRow}>
-                        <View style={[styles.liveIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
+                        <View style={[styles.liveIconBadge, { backgroundColor: liveIconBg }]}>
                           <MaterialCommunityIcons
-                            name={live.status === "live" ? "broadcast" : "calendar-clock-outline"}
+                            name={isLiveNow ? "broadcast" : "calendar-clock-outline"}
                             size={18}
                             color={statusUi.tint}
                           />
                         </View>
                         <View style={styles.liveTitleMeta}>
+                          {isLiveNow ? (
+                            <View style={styles.liveSignalRow}>
+                              <View style={[styles.liveSignalDot, { backgroundColor: statusUi.tint }]} />
+                              <Text style={[styles.liveSignalText, { color: statusUi.tint }]}>Ao vivo agora</Text>
+                            </View>
+                          ) : null}
                           <Text style={[styles.liveCardTitle, { color: theme.colors.text }]} numberOfLines={2}>
                             {live.title}
                           </Text>
@@ -593,11 +630,12 @@ export function CourseScreen({ token }: Props) {
                         </Text>
                       </View>
 
-                      {live.status === "live" && live.meeting_url ? (
+                      {isLiveNow && live.meeting_url ? (
                         <Pressable
                           style={[
                             styles.livePrimaryAction,
-                            { backgroundColor: theme.isDark ? "#E65F5F" : "#F4514F" },
+                            styles.livePrimaryActionLive,
+                            { backgroundColor: theme.isDark ? "#F06464" : "#F4514F" },
                           ]}
                           onPress={() => {
                             void openExternalUrl(live.meeting_url);
@@ -1119,6 +1157,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   liveTitleMeta: { flex: 1, gap: 3 },
+  liveSignalRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 2 },
+  liveSignalDot: { width: 8, height: 8, borderRadius: 999 },
+  liveSignalText: { fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
   liveCardTitle: { fontSize: 16, fontWeight: "700", fontFamily: "Georgia", lineHeight: 24 },
   liveCardType: { fontSize: 13, fontWeight: "500" },
   statusBadge: {
@@ -1140,6 +1181,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
+  },
+  livePrimaryActionLive: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
   livePrimaryActionText: { color: "#F8FAFC", fontSize: 13, fontWeight: "800" },
 

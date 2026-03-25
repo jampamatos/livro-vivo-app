@@ -152,4 +152,31 @@ describe("CourseScreen a11y baseline", () => {
       "button"
     );
   });
+
+  it("mantém lives ao vivo acima das agendadas na seção de destaque", async () => {
+    listCoursePostsMock.mockResolvedValueOnce([makePost()]);
+    listCourseAssetsMock.mockResolvedValueOnce([]);
+    listLiveEventsMock.mockResolvedValueOnce([
+      makeLive({ id: 31, title: "Live agendada", status: "scheduled", starts_at: "2026-03-01T09:00:00Z" }),
+      makeLive({ id: 32, title: "Live ao vivo", status: "live", starts_at: "2026-03-09T20:00:00Z" }),
+    ]);
+    getCoursePostMock.mockResolvedValueOnce(makePost());
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+        </AppThemeProvider>
+      );
+    });
+    await flushEffects();
+
+    const orderedCards = tree!.root
+      .findAll((node: any) => typeof node.props?.testID === "string" && node.props.testID.startsWith("course-upcoming-card-"))
+      .map((node: any) => node.props.testID)
+      .filter((value: string, index: number, array: string[]) => array.indexOf(value) === index);
+
+    expect(orderedCards).toEqual(["course-upcoming-card-32", "course-upcoming-card-31"]);
+  });
 });
