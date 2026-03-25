@@ -1,8 +1,10 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
+import { ScrollView } from "react-native";
 
 import { CommunityPostScreen } from "../src/screens/CommunityPostScreen";
 import {
+  CommunityComment,
   CommunityPost,
   createCommunityComment,
   createCommunityReport,
@@ -74,6 +76,20 @@ function buildPost(overrides: Partial<CommunityPost> = {}): CommunityPost {
   };
 }
 
+function buildComment(overrides: Partial<CommunityComment> = {}): CommunityComment {
+  return {
+    id: 1,
+    post: 7,
+    author: 2,
+    author_display: "Comentador",
+    body: "Comentario de teste",
+    moderation_state: "active",
+    created_at: "2026-03-03T10:00:00Z",
+    updated_at: "2026-03-03T10:00:00Z",
+    ...overrides,
+  };
+}
+
 describe("CommunityPostScreen", () => {
   beforeEach(() => {
     createCommunityCommentMock.mockReset();
@@ -100,7 +116,7 @@ describe("CommunityPostScreen", () => {
 
   it("carrega o detalhe com estado de follow atualizado", async () => {
     getCommunityPostMock.mockResolvedValueOnce(buildPost({ is_following: true }));
-    listCommunityCommentsMock.mockResolvedValueOnce([]);
+    listCommunityCommentsMock.mockResolvedValueOnce({ count: 0, limit: 20, offset: 0, results: [] });
 
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
@@ -119,7 +135,7 @@ describe("CommunityPostScreen", () => {
 
     const json = JSON.stringify(tree!.toJSON());
     expect(getCommunityPostMock).toHaveBeenCalledWith("token-ok", 7);
-    expect(listCommunityCommentsMock).toHaveBeenCalledWith("token-ok", 7);
+    expect(listCommunityCommentsMock).toHaveBeenCalledWith("token-ok", 7, { limit: 20, offset: 0 });
     expect(listCommunityMentionCandidatesMock).toHaveBeenCalledWith("token-ok", 7);
     expect(getMeProfileMock).toHaveBeenCalledWith("token-ok");
     expect(json).toContain("Comentarios");
@@ -130,7 +146,7 @@ describe("CommunityPostScreen", () => {
 
   it("permite seguir e deixar de seguir o post pelo detalhe", async () => {
     getCommunityPostMock.mockResolvedValueOnce(buildPost({ is_following: false }));
-    listCommunityCommentsMock.mockResolvedValueOnce([]);
+    listCommunityCommentsMock.mockResolvedValueOnce({ count: 0, limit: 20, offset: 0, results: [] });
     followCommunityPostMock.mockResolvedValueOnce(buildPost({ is_following: true }));
     unfollowCommunityPostMock.mockResolvedValueOnce(buildPost({ is_following: false }));
 
@@ -168,5 +184,57 @@ describe("CommunityPostScreen", () => {
     expect(tree!.root.findByProps({ testID: "community-post-follow-toggle" }).props.accessibilityState.checked).toBe(
       false
     );
+  });
+
+  it("carrega mais comentarios automaticamente ao chegar no fim da rolagem", async () => {
+    getCommunityPostMock.mockResolvedValueOnce(buildPost({ is_following: false, comments_count: 22 }));
+    listCommunityCommentsMock
+      .mockResolvedValueOnce({
+        count: 22,
+        limit: 20,
+        offset: 0,
+        results: Array.from({ length: 20 }, (_, index) =>
+          buildComment({
+            id: index + 1,
+            body: `Comentario ${index + 1}`,
+            created_at: `2026-03-03T10:${String(index).padStart(2, "0")}:00Z`,
+            updated_at: `2026-03-03T10:${String(index).padStart(2, "0")}:00Z`,
+          })
+        ),
+      })
+      .mockResolvedValueOnce({
+        count: 22,
+        limit: 20,
+        offset: 20,
+        results: [
+          buildComment({ id: 21, body: "Comentario 21", created_at: "2026-03-03T10:21:00Z", updated_at: "2026-03-03T10:21:00Z" }),
+          buildComment({ id: 22, body: "Comentario 22", created_at: "2026-03-03T10:22:00Z", updated_at: "2026-03-03T10:22:00Z" }),
+        ],
+      });
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CommunityPostScreen token="token-ok" post={buildPost()} onBack={jest.fn()} onLogout={jest.fn()} />
+        </AppThemeProvider>
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      tree!.root.findByType(ScrollView).props.onScroll({
+        nativeEvent: {
+          contentOffset: { y: 680, x: 0 },
+          contentSize: { height: 1000, width: 320 },
+          layoutMeasurement: { height: 200, width: 320 },
+        },
+      });
+    });
+    await flushEffects();
+
+    expect(listCommunityCommentsMock).toHaveBeenNthCalledWith(2, "token-ok", 7, { limit: 20, offset: 20 });
+    const json = JSON.stringify(tree!.toJSON());
+    expect(json).toContain("Comentario 22");
   });
 });

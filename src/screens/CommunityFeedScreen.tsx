@@ -21,7 +21,6 @@ import {
   followCommunityPost,
   likeCommunityPost,
   listCommunityCategories,
-  listCommunityComments,
   listCommunityPosts,
   unfollowCommunityPost,
   unlikeCommunityPost,
@@ -36,10 +35,10 @@ import {
   toInitials,
   toSafeBool,
   toSafeCount,
-  toTimestamp,
 } from "../utils/communityUi";
 
 const LIST_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
+const POSTS_PAGE_SIZE = 20;
 
 function moderationLabel(state?: ModerationState) {
   if (state === "removed") return "REMOVIDO";
@@ -82,8 +81,13 @@ type Props = {
 export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) {
   const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [categoryName, setCategoryName] = React.useState("Geral");
+  const [categoryId, setCategoryId] = React.useState<number | null>(null);
+  const [postsTotalCount, setPostsTotalCount] = React.useState(0);
+  const [hasMorePosts, setHasMorePosts] = React.useState(false);
 
   const [posts, setPosts] = React.useState<CommunityPost[]>([]);
   const [followPendingByPost, setFollowPendingByPost] = React.useState<Record<number, boolean>>({});
@@ -127,7 +131,19 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
     Alert.alert(alertTitle, message);
   }, []);
 
-  const load = React.useCallback(async () => {
+  const normalizePost = React.useCallback(
+    (post: CommunityPost): CommunityPost => ({
+      ...post,
+      likes_count: toSafeCount(post.likes_count),
+      liked_by_me: toSafeBool(post.liked_by_me),
+      comments_count: toSafeCount(post.comments_count),
+      last_comment_at: post.last_comment_at ?? null,
+      is_following: toSafeBool(post.is_following),
+    }),
+    []
+  );
+
+  const loadInitial = React.useCallback(async () => {
     setError(null);
     setLoading(true);
 
@@ -138,58 +154,66 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
         cats[0] ??
         null;
       setCategoryName((geral?.name || "Geral").trim() || "Geral");
+      const nextCategoryId = geral?.id ?? null;
+      setCategoryId(nextCategoryId);
 
-      const allPosts = await listCommunityPosts(token);
-      const filtered = geral
-        ? allPosts.filter((p) => (p.category?.id ?? null) === geral.id)
-        : allPosts;
-
-      const commentsMeta = await Promise.allSettled(
-        filtered.map(async (post) => {
-          const list = await listCommunityComments(token, post.id);
-          const ordered = [...list].sort((a, b) => toTimestamp(a.created_at) - toTimestamp(b.created_at));
-          const last = ordered.length > 0 ? ordered[ordered.length - 1] : null;
-          return {
-            postId: post.id,
-            commentsCount: ordered.length,
-            lastCommentAt: last?.created_at ?? null,
-          };
-        })
-      );
-
-      const byPostId = new Map<number, { commentsCount: number; lastCommentAt: string | null }>();
-      commentsMeta.forEach((entry) => {
-        if (entry.status === "fulfilled") {
-          byPostId.set(entry.value.postId, {
-            commentsCount: entry.value.commentsCount,
-            lastCommentAt: entry.value.lastCommentAt,
-          });
-        }
+      const response = await listCommunityPosts(token, {
+        ...(nextCategoryId != null ? { category: nextCategoryId } : {}),
+        limit: POSTS_PAGE_SIZE,
+        offset: 0,
       });
 
-      const hydrated = filtered.map((post) => {
-        const computed = byPostId.get(post.id);
-        return {
-          ...post,
-          likes_count: toSafeCount(post.likes_count),
-          liked_by_me: toSafeBool(post.liked_by_me),
-          comments_count: computed?.commentsCount ?? toSafeCount(post.comments_count),
-          last_comment_at: computed?.lastCommentAt ?? post.last_comment_at ?? null,
-          is_following: toSafeBool(post.is_following),
-        } as CommunityPost;
-      });
-
-      setPosts(hydrated);
+      setPosts(response.results.map(normalizePost));
+      setPostsTotalCount(response.count);
+      setHasMorePosts(response.offset + response.results.length < response.count);
     } catch (e: any) {
       setError(e?.message ?? "Falha ao carregar comunidade.");
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [normalizePost, token]);
+
+  const loadMore = React.useCallback(async () => {
+    if (loading || loadingMore || !hasMorePosts) return;
+    setLoadingMore(true);
+
+    try {
+      const response = await listCommunityPosts(token, {
+        ...(categoryId != null ? { category: categoryId } : {}),
+        limit: POSTS_PAGE_SIZE,
+        offset: posts.length,
+      });
+
+      setPosts((current) => {
+        const seen = new Set(current.map((item) => item.id));
+        const merged = [...current];
+        response.results.forEach((item) => {
+          if (seen.has(item.id)) return;
+          merged.push(normalizePost(item));
+        });
+        return merged;
+      });
+      setPostsTotalCount(response.count);
+      setHasMorePosts(response.offset + response.results.length < response.count);
+    } catch (e: any) {
+      setError(e?.message ?? "Falha ao carregar mais posts.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [categoryId, hasMorePosts, loading, loadingMore, normalizePost, posts.length, token]);
+
+  const refresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadInitial();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadInitial]);
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    void loadInitial();
+  }, [loadInitial]);
 
   const setPostPatch = React.useCallback((postId: number, patch: Partial<CommunityPost>) => {
     setPosts((current) =>
@@ -307,7 +331,7 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
         <View style={styles.headerRow}>
           <View style={styles.headerInfo}>
             <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
-              {categoryName} • {posts.length} discussoes ativas
+              {categoryName} • {postsTotalCount} discussoes ativas
             </Text>
           </View>
           <Pressable
@@ -330,7 +354,7 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
         <View style={styles.center}>
           <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text>
           <Pressable
-            onPress={() => void load()}
+            onPress={() => void loadInitial()}
             style={[styles.retryBtn, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}
             accessibilityRole="button"
           >
@@ -342,6 +366,10 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
           data={posts}
           keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.list}
+          onEndReached={() => void loadMore()}
+          onEndReachedThreshold={0.35}
+          refreshing={refreshing}
+          onRefresh={() => void refresh()}
           renderItem={({ item }) => {
             const authorName = sanitizeAuthorDisplay(item.author_display, "Usuario");
             const postAge = formatRelativeTime(item.created_at);
@@ -492,6 +520,13 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
               <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Sem posts ainda.</Text>
             </View>
           }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.loadingMore}>
+                <ActivityIndicator />
+              </View>
+            ) : null
+          }
         />
       )}
 
@@ -572,6 +607,7 @@ const styles = StyleSheet.create({
   error: { textAlign: "center" },
   retryBtn: { paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderRadius: 8 },
   retryText: { fontWeight: "600" },
+  loadingMore: { paddingVertical: 12, alignItems: "center" },
 
   card: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 10 },
   statusBadge: {

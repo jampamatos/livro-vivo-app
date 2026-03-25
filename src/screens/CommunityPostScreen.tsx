@@ -6,6 +6,8 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -43,10 +45,11 @@ import {
   toInitials,
   toSafeBool,
   toSafeCount,
-  toTimestamp,
 } from "../utils/communityUi";
 
 const SCROLL_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
+const COMMENTS_PAGE_SIZE = 20;
+const COMMENTS_AUTOLOAD_THRESHOLD = 160;
 
 function moderationLabel(state?: ModerationState) {
   if (state === "removed") return "REMOVIDO";
@@ -103,6 +106,10 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
 
   const [currentPost, setCurrentPost] = React.useState<CommunityPost>(post);
   const [comments, setComments] = React.useState<CommunityComment[]>([]);
+  const [commentsTotalCount, setCommentsTotalCount] = React.useState(toSafeCount(post.comments_count));
+  const [hasMoreComments, setHasMoreComments] = React.useState(false);
+  const [loadingMoreComments, setLoadingMoreComments] = React.useState(false);
+  const loadingMoreCommentsRef = React.useRef(false);
   const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [followUpdating, setFollowUpdating] = React.useState(false);
@@ -177,29 +184,29 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
     setError(null);
     setLoading(true);
     try {
-      const [postDetail, list, mentionCandidates] = await Promise.all([
+      const [postDetail, commentsPage, mentionCandidates] = await Promise.all([
         getCommunityPost(token, post.id),
-        listCommunityComments(token, post.id),
+        listCommunityComments(token, post.id, { limit: COMMENTS_PAGE_SIZE, offset: 0 }),
         listCommunityMentionCandidates(token, post.id).catch(() => []),
       ]);
-      const orderedComments = [...list].sort((a, b) => toTimestamp(a.created_at) - toTimestamp(b.created_at));
-      const lastComment = orderedComments.length > 0 ? orderedComments[orderedComments.length - 1] : null;
 
       setCurrentPost({
         ...postDetail,
         likes_count: toSafeCount(postDetail.likes_count),
         liked_by_me: toSafeBool(postDetail.liked_by_me),
-        comments_count: orderedComments.length,
-        last_comment_at: lastComment?.created_at ?? postDetail.last_comment_at ?? null,
+        comments_count: toSafeCount(postDetail.comments_count),
+        last_comment_at: postDetail.last_comment_at ?? null,
         is_following: toSafeBool(postDetail.is_following),
       });
       setComments(
-        orderedComments.map((item) => ({
+        commentsPage.results.map((item) => ({
           ...item,
           likes_count: toSafeCount(item.likes_count),
           liked_by_me: toSafeBool(item.liked_by_me),
         }))
       );
+      setCommentsTotalCount(commentsPage.count);
+      setHasMoreComments(commentsPage.offset + commentsPage.results.length < commentsPage.count);
       setMentionDirectory(mentionCandidates);
     } catch (e: any) {
       setError(e?.message ?? "Falha ao carregar este post.");
@@ -211,6 +218,52 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  const loadMoreComments = React.useCallback(async () => {
+    if (loading || loadingMoreCommentsRef.current || !hasMoreComments) return;
+    loadingMoreCommentsRef.current = true;
+    setLoadingMoreComments(true);
+    try {
+      const commentsPage = await listCommunityComments(token, post.id, {
+        limit: COMMENTS_PAGE_SIZE,
+        offset: comments.length,
+      });
+
+      setComments((current) => {
+        const seen = new Set(current.map((item) => item.id));
+        const merged = [...current];
+        commentsPage.results.forEach((item) => {
+          if (seen.has(item.id)) return;
+          merged.push({
+            ...item,
+            likes_count: toSafeCount(item.likes_count),
+            liked_by_me: toSafeBool(item.liked_by_me),
+          });
+        });
+        return merged;
+      });
+      setCommentsTotalCount(commentsPage.count);
+      setHasMoreComments(commentsPage.offset + commentsPage.results.length < commentsPage.count);
+    } catch (e: any) {
+      setError(e?.message ?? "Falha ao carregar mais comentarios.");
+    } finally {
+      loadingMoreCommentsRef.current = false;
+      setLoadingMoreComments(false);
+    }
+  }, [comments.length, hasMoreComments, loading, post.id, token]);
+
+  const handleCommentsScroll = React.useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (loading || loadingMoreCommentsRef.current || !hasMoreComments) return;
+
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      if (distanceFromBottom <= COMMENTS_AUTOLOAD_THRESHOLD) {
+        void loadMoreComments();
+      }
+    },
+    [hasMoreComments, loadMoreComments, loading]
+  );
 
   const showAlert = React.useCallback((alertTitle: string, message: string) => {
     if (Platform.OS === "web" && typeof globalThis.alert === "function") {
@@ -422,7 +475,7 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
   }, [closeReport, reportReason, reportTarget, showAlert, token]);
 
   const postAuthorName = sanitizeAuthorDisplay(currentPost.author_display, "Usuario");
-  const commentsCount = comments.length;
+  const commentsCount = Math.max(commentsTotalCount, toSafeCount(currentPost.comments_count));
   const postLikesCount = toSafeCount(currentPost.likes_count);
   const postLikedByMe = toSafeBool(currentPost.liked_by_me);
   const postFollowing = toSafeBool(currentPost.is_following);
@@ -446,6 +499,8 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        onScroll={handleCommentsScroll}
+        scrollEventThrottle={16}
       >
         {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
 
@@ -758,6 +813,11 @@ export function CommunityPostScreen({ token, post, onBack }: Props) {
                 </View>
               );
             })}
+            {loadingMoreComments ? (
+              <View style={styles.loadingMoreComments}>
+                <ActivityIndicator />
+              </View>
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -943,6 +1003,7 @@ const styles = StyleSheet.create({
   commentCard: { borderWidth: 1, borderRadius: 14, padding: 10, gap: 7 },
   commentBody: { fontSize: 16, lineHeight: 25 },
   commentFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  loadingMoreComments: { paddingVertical: 14, alignItems: "center", justifyContent: "center" },
 
   modalBackdrop: {
     flex: 1,

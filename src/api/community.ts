@@ -64,14 +64,30 @@ export type MentionCandidate = {
   avatar_url?: string | null;
 };
 
+export type CommunityListResponse<T> = {
+  count: number;
+  limit: number;
+  offset: number;
+  results: T[];
+};
+
 // GET /community/categories/
 export function listCommunityCategories(token: string) {
     return apiFetch<CommunityCategory[]>("/community/categories/", { token });
 }
 
-// GET /communitu/posts (ideal: filtrar por category_id no backend; se não tiver a gente filtra no frontend)
-export function listCommunityPosts(token: string) {
-    return apiFetch<CommunityPost[]>("/community/posts/", { token });
+export function listCommunityPosts(
+  token: string,
+  params: { category?: number | null; limit?: number; offset?: number } = {}
+) {
+    const qs = new URLSearchParams();
+    if (params.category != null) qs.set("category", String(params.category));
+    if (params.limit != null) qs.set("limit", String(params.limit));
+    if (params.offset != null) qs.set("offset", String(params.offset));
+
+    const suffix = qs.toString();
+    const path = suffix ? `/community/posts/?${suffix}` : "/community/posts/";
+    return apiFetch<CommunityListResponse<CommunityPost>>(path, { token });
 }
 
 export function getCommunityPost(token: string, postId: number) {
@@ -90,9 +106,16 @@ export function createCommunityPost(
     });
 }
 
-// GET /community/comments/?post=123
-export function listCommunityComments(token: string, postId: number) {
-    return apiFetch<CommunityComment[]>(`/community/comments/?post=${postId}`, { token });
+export function listCommunityComments(
+  token: string,
+  postId: number,
+  params: { limit?: number; offset?: number } = {}
+) {
+    const qs = new URLSearchParams();
+    qs.set("post", String(postId));
+    if (params.limit != null) qs.set("limit", String(params.limit));
+    if (params.offset != null) qs.set("offset", String(params.offset));
+    return apiFetch<CommunityListResponse<CommunityComment>>(`/community/comments/?${qs.toString()}`, { token });
 }
 
 export function listCommunityMentionCandidates(token: string, postId: number, query?: string) {

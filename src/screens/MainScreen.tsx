@@ -496,7 +496,8 @@ export function MainScreen({
       const books = booksSettled.status === "fulfilled" ? booksSettled.value.books : [];
       const caseLawResults = caselawSettled.status === "fulfilled" ? caselawSettled.value.results : [];
       const caseLawCount = caselawSettled.status === "fulfilled" ? caselawSettled.value.count : 0;
-      const communityPosts = communitySettled.status === "fulfilled" ? communitySettled.value : [];
+      const communityPosts = communitySettled.status === "fulfilled" ? communitySettled.value.results : [];
+      const communityPostsCount = communitySettled.status === "fulfilled" ? communitySettled.value.count : 0;
       const templates = templatesSettled.status === "fulfilled" ? templatesSettled.value : [];
       const coursePosts = coursePostsSettled.status === "fulfilled" ? coursePostsSettled.value : [];
       const lives = livesSettled.status === "fulfilled" ? livesSettled.value : [];
@@ -508,7 +509,7 @@ export function MainScreen({
         booksCount: books.length,
         booksLastUpdated,
         caseLawCount,
-        communityPostsCount: communityPosts.length,
+        communityPostsCount,
         templatesCount: templates.length,
         coursePostsCount: coursePosts.length,
         nextLive: pickNextLive(lives),
