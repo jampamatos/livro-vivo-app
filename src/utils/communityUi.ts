@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "../config/api";
+
 export function toTimestamp(value?: string | null): number {
   if (!value) return 0;
   const parsed = Date.parse(value);
@@ -70,9 +72,34 @@ export function sanitizeAuthorDisplay(value: string | undefined | null, fallback
   return normalized;
 }
 
+const SAFE_AVATAR_SCHEMES = new Set(["http:", "https:"]);
+
+function hasControlChars(value: string): boolean {
+  return /[\u0000-\u001F\u007F]/.test(value);
+}
+
 export function sanitizeAvatarUrl(value: string | undefined | null): string | null {
   const normalized = (value || "").trim();
-  return normalized || null;
+  if (!normalized || hasControlChars(normalized)) return null;
+
+  const compact = normalized.replace(/\s+/g, "");
+  if (!compact) return null;
+
+  if (compact.startsWith("//")) {
+    return `https:${compact}`;
+  }
+
+  if (compact.startsWith("/")) {
+    return `${API_BASE_URL}${compact}`;
+  }
+
+  const schemeMatch = compact.match(/^([a-z][a-z0-9+.-]*):/i);
+  if (!schemeMatch) return null;
+
+  const scheme = `${schemeMatch[1].toLowerCase()}:`;
+  if (!SAFE_AVATAR_SCHEMES.has(scheme)) return null;
+
+  return compact;
 }
 
 export function toInitials(name: string): string {

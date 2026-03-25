@@ -76,7 +76,7 @@ describe("TemplatesBankScreen", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <TemplatesBankScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <TemplatesBankScreen token="token-ok" />
         </AppThemeProvider>
       );
     });
@@ -148,7 +148,7 @@ describe("TemplatesBankScreen", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <TemplatesBankScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <TemplatesBankScreen token="token-ok" />
         </AppThemeProvider>
       );
     });

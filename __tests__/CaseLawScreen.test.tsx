@@ -26,7 +26,9 @@ describe("CaseLawScreen a11y baseline", () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
@@ -57,7 +59,7 @@ describe("CaseLawScreen a11y baseline", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CaseLawScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <CaseLawScreen token="token-ok" />
         </AppThemeProvider>
       );
     });

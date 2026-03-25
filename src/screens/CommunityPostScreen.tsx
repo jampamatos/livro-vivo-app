@@ -96,7 +96,6 @@ type Props = {
   token: string;
   post: CommunityPost;
   onBack: () => void;
-  onLogout: () => void;
 };
 
 export function CommunityPostScreen({ token, post, onBack }: Props) {

@@ -2,9 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
-  Linking,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,12 +26,11 @@ import {
   listLiveEvents,
 } from "../api/courses";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
+import { openExternalUrl } from "../utils/externalUrl";
+import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
 type Props = {
   token: string;
-  onBack: () => void;
-  onLogout: () => Promise<void> | void;
 };
 
 type FeedFilter = "all" | "lesson" | "blog" | "announcement" | "recording";
@@ -101,33 +98,6 @@ function formatDate(value?: string | null) {
     month: "long",
     year: "numeric",
   });
-}
-
-async function openExternalUrl(url: string) {
-  if (!url) return;
-  const normalized = normalizeRichTextHref(url);
-  if (!normalized || normalized.startsWith("#")) return;
-
-  if (Platform.OS === "web") {
-    const webWindow = (globalThis as any).window;
-    if (webWindow && typeof webWindow.open === "function") {
-      const opened = webWindow.open(normalized, "_blank", "noopener,noreferrer");
-      if (opened && typeof opened === "object") {
-        try {
-          opened.opener = null;
-        } catch {
-          // ignore
-        }
-      }
-      return;
-    }
-  }
-
-  try {
-    await Linking.openURL(normalized);
-  } catch {
-    // no-op
-  }
 }
 
 function getLiveTypeLabel(type: LiveEventType) {

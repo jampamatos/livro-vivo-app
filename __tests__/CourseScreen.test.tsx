@@ -80,7 +80,7 @@ describe("CourseScreen a11y baseline", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <CourseScreen token="token-ok" />
         </AppThemeProvider>
       );
     });
@@ -101,7 +101,7 @@ describe("CourseScreen a11y baseline", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <CourseScreen token="token-ok" />
         </AppThemeProvider>
       );
     });
@@ -137,7 +137,7 @@ describe("CourseScreen a11y baseline", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <CourseScreen token="token-ok" />
         </AppThemeProvider>
       );
     });
@@ -166,7 +166,7 @@ describe("CourseScreen a11y baseline", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CourseScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} />
+          <CourseScreen token="token-ok" />
         </AppThemeProvider>
       );
     });

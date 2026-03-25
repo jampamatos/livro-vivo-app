@@ -72,8 +72,6 @@ function AuthorAvatar({ name, avatarUrl, textColor, backgroundColor }: AuthorAva
 
 type Props = {
   token: string;
-  onBack: () => void;
-  onLogout: () => void;
   onOpenPost: (post: CommunityPost) => void;
   onCreatePost: () => void;
 };

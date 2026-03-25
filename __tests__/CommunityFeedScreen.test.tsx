@@ -57,7 +57,9 @@ describe("CommunityFeedScreen", () => {
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
@@ -89,7 +91,7 @@ describe("CommunityFeedScreen", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CommunityFeedScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} onOpenPost={jest.fn()} onCreatePost={jest.fn()} />
+          <CommunityFeedScreen token="token-ok" onOpenPost={jest.fn()} onCreatePost={jest.fn()} />
         </AppThemeProvider>
       );
     });
@@ -158,7 +160,7 @@ describe("CommunityFeedScreen", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CommunityFeedScreen token="token-ok" onBack={jest.fn()} onLogout={jest.fn()} onOpenPost={jest.fn()} onCreatePost={jest.fn()} />
+          <CommunityFeedScreen token="token-ok" onOpenPost={jest.fn()} onCreatePost={jest.fn()} />
         </AppThemeProvider>
       );
     });

@@ -1,8 +1,9 @@
 import React from "react";
-import { Animated, Easing, Linking, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import type { BookChapter } from "../api/books";
-import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
+import { openExternalUrl } from "../utils/externalUrl";
+import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
 type ReaderFocus = {
   query: string;
@@ -329,29 +330,7 @@ export function BookReaderScreen({
   }, [chapter?.slug, enableSwipeNavigation, swipeMaxTranslate, swipeTranslateX]);
 
   const openLink = React.useCallback(async (href: string | undefined) => {
-    const normalizedHref = normalizeRichTextHref(href);
-    if (!normalizedHref || normalizedHref.startsWith("#")) return;
-
-    if (Platform.OS === "web") {
-      const webWindow = (globalThis as any).window;
-      if (webWindow && typeof webWindow.open === "function") {
-        const opened = webWindow.open(normalizedHref, "_blank", "noopener,noreferrer");
-        if (opened && typeof opened === "object") {
-          try {
-            opened.opener = null;
-          } catch {
-            // ignore
-          }
-        }
-        return;
-      }
-    }
-
-    try {
-      await Linking.openURL(normalizedHref);
-    } catch {
-      // no-op
-    }
+    await openExternalUrl(href);
   }, []);
 
   const scaled = React.useCallback(

@@ -126,7 +126,6 @@ describe("CommunityPostScreen", () => {
             token="token-ok"
             post={buildPost()}
             onBack={jest.fn()}
-            onLogout={jest.fn()}
           />
         </AppThemeProvider>
       );
@@ -158,7 +157,6 @@ describe("CommunityPostScreen", () => {
             token="token-ok"
             post={buildPost()}
             onBack={jest.fn()}
-            onLogout={jest.fn()}
           />
         </AppThemeProvider>
       );
@@ -216,7 +214,7 @@ describe("CommunityPostScreen", () => {
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
-          <CommunityPostScreen token="token-ok" post={buildPost()} onBack={jest.fn()} onLogout={jest.fn()} />
+          <CommunityPostScreen token="token-ok" post={buildPost()} onBack={jest.fn()} />
         </AppThemeProvider>
       );
     });

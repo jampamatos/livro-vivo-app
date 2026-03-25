@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Clipboard,
   FlatList,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -17,12 +16,11 @@ import {
 
 import { CaseLaw, CaseLawAnchor, searchCaseLaw } from "../api/caselaw";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { RichBlockNode, RichInlineNode, buildRichTextBlocks, normalizeRichTextHref } from "../utils/richText";
+import { openExternalUrl } from "../utils/externalUrl";
+import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
 type Props = {
   token: string;
-  onBack: () => void;
-  onLogout: () => void;
 };
 
 function formatDateBR(iso: string) {
@@ -48,26 +46,7 @@ function getEmentaPlain(caselaw: CaseLaw | null): string {
 }
 
 async function openUrl(url: string) {
-  if (!url) return;
-  const normalized = normalizeRichTextHref(url);
-  if (!normalized || normalized.startsWith("#")) return;
-
-  if (Platform.OS === "web") {
-    const webWindow = (globalThis as any).window;
-    if (webWindow && typeof webWindow.open === "function") {
-      const opened = webWindow.open(normalized, "_blank", "noopener,noreferrer");
-      if (opened && typeof opened === "object") {
-        try {
-          opened.opener = null;
-        } catch {
-          // ignore
-        }
-      }
-      return;
-    }
-  }
-
-  await Linking.openURL(normalized);
+  await openExternalUrl(url);
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {

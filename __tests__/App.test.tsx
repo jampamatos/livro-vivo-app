@@ -222,40 +222,14 @@ jest.mock("../src/screens/LibraryScreen", () => {
 
 jest.mock("../src/screens/CourseScreen", () => {
   const ReactLocal = require("react");
-  const { View, Text, Pressable } = require("react-native");
-  return {
-    CourseScreen: ({
-      onBack,
-    }: {
-      onBack: () => void;
-    }) => (
-      <View>
-        <Text>CourseScreen</Text>
-        <Pressable testID="course-back" onPress={onBack}>
-          <Text>BackToMain</Text>
-        </Pressable>
-      </View>
-    ),
-  };
+  const { View, Text } = require("react-native");
+  return { CourseScreen: () => <View><Text>CourseScreen</Text></View> };
 });
 
 jest.mock("../src/screens/TemplatesBankScreen", () => {
   const ReactLocal = require("react");
-  const { View, Text, Pressable } = require("react-native");
-  return {
-    TemplatesBankScreen: ({
-      onBack,
-    }: {
-      onBack: () => void;
-    }) => (
-      <View>
-        <Text>TemplatesBankScreen</Text>
-        <Pressable testID="templates-back" onPress={onBack}>
-          <Text>BackToMain</Text>
-        </Pressable>
-      </View>
-    ),
-  };
+  const { View, Text } = require("react-native");
+  return { TemplatesBankScreen: () => <View><Text>TemplatesBankScreen</Text></View> };
 });
 
 jest.mock("../src/screens/CommunityFeedScreen", () => {
@@ -263,24 +237,14 @@ jest.mock("../src/screens/CommunityFeedScreen", () => {
   const { View, Text, Pressable } = require("react-native");
   return {
     CommunityFeedScreen: ({
-      onBack,
-      onLogout,
       onOpenPost,
       onCreatePost,
     }: {
-      onBack: () => void;
-      onLogout: () => void;
       onOpenPost: (post: { id: number; title: string }) => void;
       onCreatePost: () => void;
     }) => (
       <View>
         <Text>CommunityFeedScreen</Text>
-        <Pressable testID="community-back" onPress={onBack}>
-          <Text>Back</Text>
-        </Pressable>
-        <Pressable testID="community-logout" onPress={onLogout}>
-          <Text>Logout</Text>
-        </Pressable>
         <Pressable testID="community-open-post" onPress={() => onOpenPost({ id: 9, title: "Post de teste" })}>
           <Text>OpenPost</Text>
         </Pressable>
@@ -650,7 +614,9 @@ describe("App", () => {
     await pressByTestId(tree, "main-open-course");
     expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
 
-    await pressByTestId(tree, "course-back");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
@@ -666,7 +632,9 @@ describe("App", () => {
     await pressByTestId(tree, "main-open-templates-bank");
     expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
 
-    await pressByTestId(tree, "templates-back");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
@@ -695,17 +663,23 @@ describe("App", () => {
 
     await pressByTestId(tree, "main-open-course");
     expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
-    await pressByTestId(tree, "course-back");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
 
     await pressByTestId(tree, "main-open-templates-bank");
     expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
-    await pressByTestId(tree, "templates-back");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
 
     await pressByTestId(tree, "main-open-community");
     expect(JSON.stringify(tree.toJSON())).toContain("CommunityFeedScreen");
-    await pressByTestId(tree, "community-back");
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
 
     await pressByTestId(tree, "main-open-account");

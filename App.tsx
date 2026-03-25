@@ -46,6 +46,7 @@ function AppRoot() {
   const [route, setRoute] = React.useState<AppRoute>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
   const [libraryOpenRequest, setLibraryOpenRequest] = React.useState<LibraryOpenRequest | null>(null);
+  const resolvedRoute = route === "communityPost" && !selectedPost ? "community" : route;
   const openMainFromNotification = React.useCallback(() => {
     setSelectedPost(null);
     setLibraryOpenRequest(null);
@@ -111,6 +112,12 @@ function AppRoot() {
 
     return () => subscription.remove();
   }, [loading, navigateBack, session]);
+
+  React.useEffect(() => {
+    if (route !== resolvedRoute) {
+      setRoute(resolvedRoute);
+    }
+  }, [resolvedRoute, route]);
 
   const handleAuthSuccess = async (newSession: AuthSession) => {
     await setAuthSession(newSession);
@@ -255,7 +262,7 @@ function AppRoot() {
 
   let content: React.ReactNode;
 
-  if (route === "main") {
+  if (resolvedRoute === "main") {
     content = (
       <MainScreen
         token={token}
@@ -278,7 +285,7 @@ function AppRoot() {
     );
   }
 
-  if (route === "account") {
+  if (resolvedRoute === "account") {
     content = (
       <AccountScreen
         token={token}
@@ -288,16 +295,16 @@ function AppRoot() {
         pushStatusMessage={pushStatusMessage}
       />
     );
-  } else if (route === "caselaw") {
-    content = <CaseLawScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
-  } else if (route === "mainSearch") {
+  } else if (resolvedRoute === "caselaw") {
+    content = <CaseLawScreen token={token} />;
+  } else if (resolvedRoute === "mainSearch") {
     content = (
       <MainSearchScreen
         token={token}
         onOpenResult={handleOpenGlobalSearchResult}
       />
     );
-  } else if (route === "library") {
+  } else if (resolvedRoute === "library") {
     content = (
       <LibraryScreen
         token={token}
@@ -306,16 +313,14 @@ function AppRoot() {
         initialOpenRequest={libraryOpenRequest}
       />
     );
-  } else if (route === "course") {
-    content = <CourseScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
-  } else if (route === "templatesBank") {
-    content = <TemplatesBankScreen token={token} onBack={navigateBack} onLogout={handleLogout} />;
-  } else if (route === "community") {
+  } else if (resolvedRoute === "course") {
+    content = <CourseScreen token={token} />;
+  } else if (resolvedRoute === "templatesBank") {
+    content = <TemplatesBankScreen token={token} />;
+  } else if (resolvedRoute === "community") {
     content = (
       <CommunityFeedScreen
         token={token}
-        onBack={navigateBack}
-        onLogout={handleLogout}
         onOpenPost={(post) => {
           setSelectedPost(post);
           setRoute("communityPost");
@@ -323,7 +328,7 @@ function AppRoot() {
         onCreatePost={() => setRoute("communityNewPost")}
       />
     );
-  } else if (route === "communityNewPost") {
+  } else if (resolvedRoute === "communityNewPost") {
     content = (
       <CommunityNewPostScreen
         token={token}
@@ -333,18 +338,12 @@ function AppRoot() {
         }}
       />
     );
-  } else if (route === "communityPost") {
-    if (!selectedPost) {
-      setRoute("community");
-      return null;
-    }
-
+  } else if (resolvedRoute === "communityPost" && selectedPost) {
     content = (
       <CommunityPostScreen
         token={token}
         post={selectedPost}
         onBack={navigateBack}
-        onLogout={handleLogout}
       />
     );
   } else {
@@ -375,7 +374,7 @@ function AppRoot() {
       <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
       <AppShell
         token={token}
-        route={route}
+        route={resolvedRoute}
         accountRefreshSignal={accountRefreshSignal}
         onNavigate={handleShellNavigate}
         onOpenSearch={() => setRoute("mainSearch")}
