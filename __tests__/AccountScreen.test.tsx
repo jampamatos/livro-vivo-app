@@ -189,6 +189,8 @@ describe("AccountScreen", () => {
           fileName: "novo-avatar.jpg",
           mimeType: "image/jpeg",
           file: undefined,
+          width: 800,
+          height: 600,
         },
       ],
     });
@@ -209,6 +211,11 @@ describe("AccountScreen", () => {
       tree.root.findByProps({ testID: "account-profile-avatar-pick" }).props.onPress();
       await Promise.resolve();
     });
+    await flushEffects();
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "account-avatar-crop-confirm" }).props.onPress();
+    });
 
     await act(async () => {
       tree.root.findByProps({ testID: "account-profile-save" }).props.onPress();
@@ -224,6 +231,11 @@ describe("AccountScreen", () => {
         name: "novo-avatar.jpg",
         type: "image/jpeg",
         file: null,
+      },
+      avatar_crop: {
+        x: 100,
+        y: 0,
+        size: 600,
       },
     });
     expect(JSON.stringify(tree.toJSON())).toContain("Perfil atualizado com sucesso.");

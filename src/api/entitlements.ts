@@ -19,11 +19,18 @@ export type UpdateMeProfileAvatarUpload = {
   file?: File | null;
 };
 
+export type UpdateMeProfileAvatarCrop = {
+  x: number;
+  y: number;
+  size: number;
+};
+
 export type UpdateMeProfilePayload = {
   name?: string;
   profession?: string;
   avatar_url?: string | null;
   avatar?: UpdateMeProfileAvatarUpload | null;
+  avatar_crop?: UpdateMeProfileAvatarCrop | null;
   avatar_clear?: boolean;
 };
 
@@ -105,6 +112,12 @@ function buildProfileFormData(payload: UpdateMeProfilePayload) {
         type: payload.avatar.type ?? "image/jpeg",
       } as unknown as Blob);
     }
+  }
+
+  if (payload.avatar_crop) {
+    formData.append("avatar_crop_x", String(payload.avatar_crop.x));
+    formData.append("avatar_crop_y", String(payload.avatar_crop.y));
+    formData.append("avatar_crop_size", String(payload.avatar_crop.size));
   }
 
   return formData;
