@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,12 +23,10 @@ const FORM_BOTTOM_GUTTER = Platform.OS === "android" ? 88 : 32;
 
 type Props = {
   token: string;
-  onBack: () => void;
-  onLogout: () => void;
   onCreated: (post: CommunityPost) => void;
 };
 
-export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: Props) {
+export function CommunityNewPostScreen({ token, onCreated }: Props) {
   const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -95,85 +94,98 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
-      <View style={styles.topbar}>
-        <Pressable
-          onPress={onBack}
-          style={[styles.topBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
-        >
-          <Text style={[styles.topBtnText, { color: theme.colors.text }]}>Voltar</Text>
-        </Pressable>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Novo Post</Text>
-        <Pressable
-          onPress={onLogout}
-          style={[styles.topBtn, { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface }]}
-        >
-          <Text style={[styles.topBtnText, { color: theme.colors.danger }]}>Sair</Text>
-        </Pressable>
-      </View>
-
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
+          <Text style={[styles.loadingText, { color: theme.colors.textMuted }]}>Preparando formulário…</Text>
+        </View>
+      ) : error && !category ? (
+        <View style={[styles.stateCard, { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.stateTitle, { color: theme.colors.text }]}>Não foi possível preparar o post</Text>
+          <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text>
+          <Pressable
+            testID="community-new-post-retry"
+            onPress={() => void load()}
+            style={[styles.retryBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted }]}
+          >
+            <Text style={[styles.retryBtnText, { color: theme.colors.text }]}>Tentar novamente</Text>
+          </Pressable>
         </View>
       ) : (
-        <>
-          {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
-          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
-            Categoria: {category ? category.name : "Sem categoria"}
-          </Text>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.form}
-          >
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Título do post"
-              style={[
-                styles.input,
-                {
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.surface,
-                  color: theme.colors.text,
-                },
-              ]}
-              placeholderTextColor={theme.colors.textMuted}
-              maxLength={120}
-            />
-            <TextInput
-              value={body}
-              onChangeText={setBody}
-              placeholder="Escreva o conteúdo do post…"
-              style={[
-                styles.input,
-                styles.bodyInput,
-                {
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.surface,
-                  color: theme.colors.text,
-                },
-              ]}
-              placeholderTextColor={theme.colors.textMuted}
-              multiline
-            />
-            <Pressable
-              onPress={handleCreate}
-              disabled={sending}
-              style={[
-                styles.submitBtn,
-                {
-                  borderColor: theme.colors.primary,
-                  backgroundColor: theme.colors.primary,
-                },
-                sending && styles.submitBtnDisabled,
-              ]}
-            >
-              <Text style={[styles.submitText, { color: theme.colors.textInverse }]}>
-                {sending ? "Publicando…" : "Publicar"}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.keyboardWrap}
+        >
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+            <View style={[styles.contextCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+              <Text style={[styles.contextTitle, { color: theme.colors.text }]}>
+                Publicar em {category ? category.name : "Sem categoria"}
               </Text>
-            </Pressable>
-          </KeyboardAvoidingView>
-        </>
+              <Text style={[styles.contextBody, { color: theme.colors.textMuted }]}>
+                Seu post aparece no feed da comunidade e pode receber comentários, curtidas e denúncias.
+              </Text>
+            </View>
+
+            {error ? (
+              <View style={[styles.inlineErrorCard, { borderColor: theme.colors.danger, backgroundColor: theme.colors.surface }]}>
+                <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.form}>
+              <TextInput
+                testID="community-new-post-title"
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Título do post"
+                style={[
+                  styles.input,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                    color: theme.colors.text,
+                  },
+                ]}
+                placeholderTextColor={theme.colors.textMuted}
+                maxLength={120}
+              />
+              <TextInput
+                testID="community-new-post-body"
+                value={body}
+                onChangeText={setBody}
+                placeholder="Escreva o conteúdo do post…"
+                style={[
+                  styles.input,
+                  styles.bodyInput,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                    color: theme.colors.text,
+                  },
+                ]}
+                placeholderTextColor={theme.colors.textMuted}
+                multiline
+              />
+              <Pressable
+                testID="community-new-post-submit"
+                onPress={handleCreate}
+                disabled={sending}
+                style={[
+                  styles.submitBtn,
+                  {
+                    borderColor: theme.colors.primary,
+                    backgroundColor: theme.colors.primary,
+                  },
+                  sending && styles.submitBtnDisabled,
+                ]}
+              >
+                <Text style={[styles.submitText, { color: theme.colors.textInverse }]}>
+                  {sending ? "Publicando…" : "Publicar"}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </View>
   );
@@ -181,20 +193,29 @@ export function CommunityNewPostScreen({ token, onBack, onLogout, onCreated }: P
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
-  topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  title: { fontSize: 18, fontWeight: "700", fontFamily: "Georgia" },
-
-  topBtn: { paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, borderRadius: 8 },
-  topBtnText: { fontSize: 12, fontWeight: "700" },
-
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  error: {},
-  subtitle: { fontSize: 13 },
-
-  form: { gap: 10, paddingBottom: FORM_BOTTOM_GUTTER },
-  input: { borderWidth: 1, borderRadius: 12, padding: 10, minHeight: 44 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  loadingText: { fontSize: 13 },
+  stateCard: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 12 },
+  stateTitle: { fontSize: 18, fontWeight: "800" },
+  error: { fontSize: 13, lineHeight: 20 },
+  retryBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  retryBtnText: { fontWeight: "800" },
+  keyboardWrap: { flex: 1 },
+  scrollContent: { gap: 14, paddingBottom: FORM_BOTTOM_GUTTER },
+  contextCard: { borderWidth: 1, borderRadius: 20, padding: 16, gap: 6 },
+  contextTitle: { fontSize: 17, fontWeight: "800" },
+  contextBody: { fontSize: 13, lineHeight: 20 },
+  inlineErrorCard: { borderWidth: 1, borderRadius: 16, padding: 14 },
+  form: { gap: 10 },
+  input: { borderWidth: 1, borderRadius: 14, padding: 12, minHeight: 48 },
   bodyInput: { minHeight: 140, textAlignVertical: "top" },
-  submitBtn: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+  submitBtn: { borderWidth: 1, borderRadius: 14, paddingVertical: 13, alignItems: "center" },
   submitBtnDisabled: { opacity: 0.6 },
   submitText: { fontWeight: "700" },
 });
