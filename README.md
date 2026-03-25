@@ -7,17 +7,17 @@ Cliente Expo/React Native do Livro Vivo.
 Implementado e ativo em `main`:
 
 - Login/registro com JWT, refresh silencioso e logout.
-- Persistencia de sessao com `expo-secure-store`.
-- Main/Home com gating por tier (`essential` / `professional`) e bloqueios de moderacao.
-- Biblioteca chapter-first (sumario, leitura, busca por capitulo, progresso e cache offline parcial).
-- Reader com rich text semantico, ajuste de fonte, links seguros e baseline de acessibilidade.
-- Anotacoes por selecao de texto (cor, nota, exclusao) com sync em API.
-- Jurisprudencia com busca/filtros, detalhe formatado, copia de ementa e abertura do acordao.
+- Persistencia de sessao nativa com `expo-secure-store`; na web a sessao fica apenas em memoria.
+- Shell principal com gating por tier (`essential` / `professional`) e bloqueios de moderacao.
+- Biblioteca chapter-first com sumario, leitura, busca por capitulo, progresso local e cache offline parcial.
+- Reader com rich text semantico, ajuste de fonte, anotacoes por selecao de texto e abertura segura de links externos.
+- Busca global unificada entre biblioteca, jurisprudencia e comunidade, com roteamento direto para o destino correto.
+- Jurisprudencia com busca, filtros, detalhe formatado, copia de ementa e abertura do acordao.
 - Curso Profissional com feed de posts, detalhe rich text, materiais e lives/gravacoes.
 - Banco de Pecas Profissional com lista, detalhe e download seguro via token temporario.
 - Comunidade com feed, detalhe, novo post, comentario, denuncia e follow/unfollow de posts para notificacoes.
-- Minha Conta com perfil, assinatura, resumo de moderacao da conta, preferencias de notificacao e estado do push no dispositivo.
-- Banner in-app e groundwork de push nativo com Expo Notifications.
+- Minha Conta com perfil, assinatura, resumo de moderacao, preferencias de notificacao, estado do push e fluxo LGPD (exportacao/exclusao).
+- Banner in-app, registro de device para push nativo e endurecimento defensivo de URLs remotas no cliente.
 
 ## Stack
 
@@ -118,6 +118,12 @@ npm run test:critical-routes
 npm run gate:predeploy
 ```
 
+### Auditoria de dependencias
+
+```bash
+npm audit --audit-level=low
+```
+
 ### Typecheck
 
 ```bash
@@ -138,27 +144,13 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 
 ## Estrutura principal
 
-- `src/api/`: `auth`, `books`, `annotations`, `caselaw`, `community`, `courses`, `entitlements`, `notifications`, `templatesBank`
-- `src/screens/`:
-  - `LoginScreen`
-  - `MainScreen`
-  - `LibraryScreen`
-  - `BookReaderScreen`
-  - `CaseLawScreen`
-  - `CourseScreen`
-  - `TemplatesBankScreen`
-  - `CommunityFeedScreen`, `CommunityPostScreen`, `CommunityNewPostScreen`
-  - `AccountScreen`
-- `src/notifications/`:
-  - `push.ts`
-  - `useNotificationCenter.ts`
-- `src/storage/`:
-  - `chapterCache.ts`
-  - `readingProgress.ts`
-  - `tokenStorage.ts`
-- `src/utils/`:
-  - `richText.ts`
-  - `colors.ts`
+- `src/api/`: `auth`, `books`, `annotations`, `caselaw`, `community`, `courses`, `entitlements`, `notifications`, `privacy`, `search`, `templatesBank`
+- `src/auth/`: `tokenStorage`, `sessionBus`
+- `src/layout/`: `AppShell`
+- `src/screens/`: `LoginScreen`, `MainScreen`, `MainSearchScreen`, `LibraryScreen`, `BookReaderScreen`, `CaseLawScreen`, `CourseScreen`, `TemplatesBankScreen`, `CommunityFeedScreen`, `CommunityPostScreen`, `CommunityNewPostScreen`, `AccountScreen`
+- `src/notifications/`: `push.ts`, `useNotificationCenter.ts`
+- `src/storage/`: `chapterCache.ts`, `readingProgress.ts`
+- `src/utils/`: `avatarCrop`, `communityUi`, `externalUrl`, `richText`
 
 ## Integracao de API usada hoje
 
@@ -168,6 +160,8 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 - `POST /auth/logout/`
 - `GET /me/`
 - `GET /me/entitlements/`
+- `GET /me/data-export/`
+- `POST /me/data-erasure/`
 - `GET /me/notifications/`
 - `POST /me/notifications/:dispatch_id/ack/`
 - `POST /me/notifications/in-app/consume-latest/`
@@ -182,6 +176,7 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 - `POST /annotations/`
 - `PATCH /annotations/:id/`
 - `DELETE /annotations/:id/`
+- `GET /search/global/?q=...`
 - `GET /caselaw/?q=...&court=...`
 - `GET /courses/posts/`
 - `GET /courses/posts/:id/`
@@ -201,13 +196,15 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 ## Fluxos principais
 
 - Leitura: abertura por livro e versao atual, navegacao por capitulo, busca por trecho, progresso local e anotacoes sincronizadas.
+- Busca global: consulta unica em biblioteca, jurisprudencia e comunidade com deep-link para o modulo correto.
 - Conteudo Profissional: acesso a Curso e Banco de Pecas com gating consistente por tier.
 - Comunidade e notificacoes: follow de posts, banner in-app, preferencias por categoria e registro de device para push nativo.
+- Privacidade/LGPD: exportacao de dados, solicitacao de exclusao e encerramento de sessao apos fluxo destrutivo.
 
 ## Limites conhecidos
 
-- Busca global unificada cross-modulo ainda nao existe no app.
-- LGPD (exportacao/exclusao de dados) ainda nao existe no produto.
+- Busca global hoje cobre biblioteca, jurisprudencia e comunidade; curso e banco de pecas ainda nao entram no indice.
+- Na web, a sessao nao persiste apos hard refresh; por decisao de seguranca, os tokens ficam apenas em memoria.
 - Offline de autenticacao completa ainda nao esta fechado: o app depende de sessao valida e dados previamente sincronizados.
 - Push nativo depende de dispositivo fisico e `EXPO_PUBLIC_EAS_PROJECT_ID`; sem isso o app continua com banner in-app, mas sem registro nativo.
 - A auditoria formal de a11y das rotas criticas ainda nao foi concluida.

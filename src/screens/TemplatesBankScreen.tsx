@@ -2,8 +2,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
-  Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,12 +19,10 @@ import {
 } from "../api/templatesBank";
 import { ApiError } from "../api/http";
 import { useAppTheme } from "../theme/ThemeProvider";
-import { normalizeRichTextHref } from "../utils/richText";
+import { openExternalUrl } from "../utils/externalUrl";
 
 type Props = {
   token: string;
-  onBack: () => void;
-  onLogout: () => Promise<void> | void;
 };
 
 type FilterCategory = "all" | TemplateCategory;
@@ -67,33 +63,6 @@ function formatFileSize(bytes?: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-async function openExternalUrl(url: string) {
-  if (!url) return;
-  const normalized = normalizeRichTextHref(url);
-  if (!normalized || normalized.startsWith("#")) return;
-
-  if (Platform.OS === "web") {
-    const webWindow = (globalThis as any).window;
-    if (webWindow && typeof webWindow.open === "function") {
-      const opened = webWindow.open(normalized, "_blank", "noopener,noreferrer");
-      if (opened && typeof opened === "object") {
-        try {
-          opened.opener = null;
-        } catch {
-          // ignore
-        }
-      }
-      return;
-    }
-  }
-
-  try {
-    await Linking.openURL(normalized);
-  } catch {
-    // no-op
-  }
 }
 
 function normalizeApiError(error: unknown, fallback: string) {
