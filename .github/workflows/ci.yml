@@ -29,16 +29,7 @@ jobs:
         run: npm run typecheck
 
       - name: Critical routes regression gate
-        run: >
-          npm test -- --runInBand --ci
-          __tests__/App.test.tsx
-          __tests__/MainScreen.test.tsx
-          __tests__/AccountScreen.test.tsx
-          __tests__/CommunityPostScreen.test.tsx
-          __tests__/LoginScreen.test.tsx
-          __tests__/CaseLawScreen.test.tsx
-          __tests__/CourseScreen.test.tsx
-          __tests__/TemplatesBankScreen.test.tsx
+        run: npm run test:critical-routes
 
       - name: Run tests
         run: npm test -- --runInBand --ci

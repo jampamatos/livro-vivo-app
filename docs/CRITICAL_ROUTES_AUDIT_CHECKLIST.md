@@ -27,6 +27,14 @@ Fechar baseline de acessibilidade e regressao funcional nas rotas criticas antes
 
 ```bash
 npm run typecheck
-npm test -- --runInBand --ci __tests__/App.test.tsx __tests__/MainScreen.test.tsx __tests__/AccountScreen.test.tsx __tests__/CommunityPostScreen.test.tsx __tests__/LoginScreen.test.tsx __tests__/CaseLawScreen.test.tsx __tests__/CourseScreen.test.tsx __tests__/TemplatesBankScreen.test.tsx
+npm run test:critical-routes
 npm test -- --runInBand --ci
+```
+
+## CI
+
+O gate de regressao critica do app fica em `.github/workflows/ci.yml` e usa o mesmo comando versionado localmente:
+
+```bash
+npm run test:critical-routes
 ```

@@ -106,6 +106,18 @@ npx expo start --dev-client
 npm test -- --runInBand --ci
 ```
 
+### Gate critico de rotas
+
+```bash
+npm run test:critical-routes
+```
+
+### Gate local pre-deploy
+
+```bash
+npm run gate:predeploy
+```
+
 ### Typecheck
 
 ```bash
@@ -206,6 +218,7 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 
 - `npm ci`
 - `npm run typecheck`
+- `npm run test:critical-routes`
 - `npm test -- --runInBand --ci`
 - validacao de release config
 - export web de sanity
@@ -214,4 +227,4 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 
 As pendencias pre-deploy estao em:
 
-- `docs/BACKLOG_EXECUTAVEL_2026-02-25.md`
+- `docs/BACKLOG_EXECUTAVEL_2026-03-09.md`
