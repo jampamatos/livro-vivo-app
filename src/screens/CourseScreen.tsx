@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
-  Modal,
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -199,6 +199,26 @@ function matchesSearch(query: string, values: Array<string | null | undefined>) 
   return haystack.includes(normalizedQuery);
 }
 
+function getEstimatedReadMinutes(text?: string | null) {
+  const words = (text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  return Math.max(1, Math.ceil(words / 220));
+}
+
+function getPostLead(post: CoursePost | null) {
+  if (!post) return "";
+
+  const excerpt = (post.excerpt || "").trim();
+  if (excerpt) return excerpt;
+
+  const plain = (post.content_plain || "").replace(/\s+/g, " ").trim();
+  if (!plain) return "Leitura editorial do módulo de cursos.";
+  if (plain.length <= 180) return plain;
+  return `${plain.slice(0, 177).trimEnd()}...`;
+}
+
 export function CourseScreen({ token }: Props) {
   const { theme } = useAppTheme();
   const { width } = useWindowDimensions();
@@ -211,7 +231,6 @@ export function CourseScreen({ token }: Props) {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [feedFilter, setFeedFilter] = React.useState<FeedFilter>("all");
 
-  const [detailVisible, setDetailVisible] = React.useState(false);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState<string | null>(null);
   const [selectedPost, setSelectedPost] = React.useState<CoursePost | null>(null);
@@ -319,7 +338,6 @@ export function CourseScreen({ token }: Props) {
   const openPostDetail = React.useCallback(
     async (post: CoursePost) => {
       setSelectedPost(post);
-      setDetailVisible(true);
       setDetailError(null);
       setDetailLoading(true);
 
@@ -336,11 +354,21 @@ export function CourseScreen({ token }: Props) {
   );
 
   const closeDetail = React.useCallback(() => {
-    setDetailVisible(false);
     setDetailLoading(false);
     setDetailError(null);
     setSelectedPost(null);
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedPost) return undefined;
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      closeDetail();
+      return true;
+    });
+
+    return () => subscription.remove();
+  }, [closeDetail, selectedPost]);
 
   const detailBlocks = React.useMemo(() => {
     return buildRichTextBlocks(selectedPost?.content_rich, selectedPost?.content_plain);
@@ -364,6 +392,24 @@ export function CourseScreen({ token }: Props) {
     if (!detailLive) return null;
     return getDetailLiveAction(detailLive);
   }, [detailLive]);
+
+  const detailTypeUi = React.useMemo(() => {
+    if (!selectedPost) return null;
+    return getPostTypeUi(selectedPost.post_type, theme.isDark);
+  }, [selectedPost, theme.isDark]);
+
+  const detailLead = React.useMemo(() => {
+    return getPostLead(selectedPost);
+  }, [selectedPost]);
+
+  const detailReadMinutes = React.useMemo(() => {
+    return getEstimatedReadMinutes(selectedPost?.content_plain);
+  }, [selectedPost?.content_plain]);
+
+  const detailShellMaxWidth = isWide ? 760 : 680;
+  const detailHeroBg = theme.isDark ? "#0F182A" : "#FCF8F0";
+  const detailReadingBg = theme.isDark ? "#101A2D" : "#FFFCF7";
+  const detailMutedSurface = theme.isDark ? "#172235" : "#F7F2E8";
 
   const renderInline = React.useCallback(
     (inlines: RichInlineNode[], keyPrefix: string) => {
@@ -411,7 +457,10 @@ export function CourseScreen({ token }: Props) {
     (block: RichBlockNode, index: number) => {
       if (block.type === "heading2") {
         return (
-          <Text key={`block-h2-${index}`} style={[styles.detailHeading2, { color: theme.colors.text }]}>
+          <Text
+            key={`block-h2-${index}`}
+            style={[styles.detailHeading2, isWide ? styles.detailHeading2Wide : null, { color: theme.colors.text }]}
+          >
             {renderInline(block.inlines, `h2-${index}`)}
           </Text>
         );
@@ -419,7 +468,10 @@ export function CourseScreen({ token }: Props) {
 
       if (block.type === "heading3") {
         return (
-          <Text key={`block-h3-${index}`} style={[styles.detailHeading3, { color: theme.colors.text }]}>
+          <Text
+            key={`block-h3-${index}`}
+            style={[styles.detailHeading3, isWide ? styles.detailHeading3Wide : null, { color: theme.colors.text }]}
+          >
             {renderInline(block.inlines, `h3-${index}`)}
           </Text>
         );
@@ -434,7 +486,7 @@ export function CourseScreen({ token }: Props) {
               { borderLeftColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted },
             ]}
           >
-            <Text style={[styles.detailParagraph, { color: theme.colors.text }]}>
+            <Text style={[styles.detailParagraph, isWide ? styles.detailParagraphWide : null, { color: theme.colors.text }]}>
               {renderInline(block.inlines, `quote-${index}`)}
             </Text>
           </View>
@@ -449,7 +501,9 @@ export function CourseScreen({ token }: Props) {
                 <Text style={[styles.detailListMarker, { color: theme.colors.textMuted }]}>
                   {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
                 </Text>
-                <Text style={[styles.detailParagraph, { color: theme.colors.text }]}>
+                <Text
+                  style={[styles.detailParagraph, isWide ? styles.detailParagraphWide : null, { color: theme.colors.text }]}
+                >
                   {renderInline(item, `li-${index}-${itemIndex}`)}
                 </Text>
               </View>
@@ -459,13 +513,324 @@ export function CourseScreen({ token }: Props) {
       }
 
       return (
-        <Text key={`block-p-${index}`} style={[styles.detailParagraph, { color: theme.colors.text }]}>
+        <Text
+          key={`block-p-${index}`}
+          style={[styles.detailParagraph, isWide ? styles.detailParagraphWide : null, { color: theme.colors.text }]}
+        >
           {renderInline(block.inlines, `p-${index}`)}
         </Text>
       );
     },
-    [renderInline, theme.colors.borderStrong, theme.colors.surfaceMuted, theme.colors.text, theme.colors.textMuted]
+    [isWide, renderInline, theme.colors.borderStrong, theme.colors.surfaceMuted, theme.colors.text, theme.colors.textMuted]
   );
+
+  if (selectedPost && detailTypeUi) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
+        <ScrollView contentContainerStyle={styles.detailContent} keyboardShouldPersistTaps="handled">
+          <View style={[styles.detailShell, { maxWidth: detailShellMaxWidth }]}>
+            <Pressable
+              testID="course-detail-close"
+              onPress={closeDetail}
+              style={styles.detailBackAction}
+              accessibilityRole="button"
+              accessibilityLabel="Voltar ao curso"
+            >
+              <MaterialCommunityIcons name="arrow-left" size={16} color={theme.colors.textMuted} />
+              <Text style={[styles.detailBackText, { color: theme.colors.textMuted }]}>Voltar ao curso</Text>
+            </Pressable>
+
+            <View
+              style={[
+                styles.detailHeroCard,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: detailHeroBg,
+                  ...theme.shadow.card,
+                },
+              ]}
+            >
+              <View style={styles.detailHeroMeta}>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    {
+                      borderColor: detailTypeUi.border,
+                      backgroundColor: detailTypeUi.bg,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.typeBadgeText, { color: detailTypeUi.tint }]}>{detailTypeUi.label}</Text>
+                </View>
+                <View style={styles.detailMetaDate}>
+                  <MaterialCommunityIcons name="calendar-blank-outline" size={15} color={theme.colors.textMuted} />
+                  <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
+                    {formatDate(selectedPost.published_at || selectedPost.created_at)}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={[styles.detailPostTitle, isWide ? styles.detailPostTitleWide : null, { color: theme.colors.text }]}>
+                {selectedPost.title}
+              </Text>
+
+              <View style={styles.detailUtilityRow}>
+                <View
+                  style={[
+                    styles.detailUtilityChip,
+                    { borderColor: theme.colors.borderStrong, backgroundColor: detailMutedSurface },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="clock-time-four-outline" size={14} color={theme.colors.accent} />
+                  <Text style={[styles.detailUtilityText, { color: theme.colors.textMuted }]}>
+                    {detailReadMinutes} min de leitura
+                  </Text>
+                </View>
+
+                {detailAssets.length > 0 ? (
+                  <View
+                    style={[
+                      styles.detailUtilityChip,
+                      { borderColor: theme.colors.borderStrong, backgroundColor: detailMutedSurface },
+                    ]}
+                  >
+                    <MaterialCommunityIcons name="paperclip" size={14} color={theme.colors.accent} />
+                    <Text style={[styles.detailUtilityText, { color: theme.colors.textMuted }]}>
+                      {detailAssets.length} anexo{detailAssets.length > 1 ? "s" : ""}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {detailLive ? (
+                  <View
+                    style={[
+                      styles.detailUtilityChip,
+                      { borderColor: theme.colors.borderStrong, backgroundColor: detailMutedSurface },
+                    ]}
+                  >
+                    <MaterialCommunityIcons name="video-outline" size={14} color={theme.colors.accent} />
+                    <Text style={[styles.detailUtilityText, { color: theme.colors.textMuted }]}>
+                      {detailLive.status === "finished" ? "Gravação relacionada" : "Live relacionada"}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <View
+                style={[
+                  styles.detailAuthorCard,
+                  { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                ]}
+              >
+                <View style={[styles.detailAuthorIcon, { backgroundColor: detailMutedSurface }]}>
+                  <MaterialCommunityIcons name={detailTypeUi.icon} size={18} color={detailTypeUi.tint} />
+                </View>
+                <View style={styles.detailAuthorBody}>
+                  <Text style={[styles.detailAuthorName, { color: theme.colors.text }]}>
+                    {selectedPost.author_name || "Equipe Livro Vivo"}
+                  </Text>
+                  <Text style={[styles.detailAuthorLead, { color: theme.colors.textMuted }]}>{detailLead}</Text>
+                </View>
+              </View>
+            </View>
+
+            {detailLive ? (
+              <View
+                style={[
+                  styles.detailLiveCard,
+                  {
+                    borderColor: theme.colors.border,
+                    backgroundColor: theme.colors.surface,
+                    ...theme.shadow.card,
+                  },
+                ]}
+              >
+                <View style={styles.detailLiveHeader}>
+                  <View style={[styles.feedIconBadge, { backgroundColor: detailMutedSurface }]}>
+                    <MaterialCommunityIcons
+                      name={detailLive.status === "finished" ? "play-circle-outline" : "video-outline"}
+                      size={18}
+                      color={theme.colors.accent}
+                    />
+                  </View>
+                  <View style={styles.detailLiveMeta}>
+                    <Text style={[styles.detailLiveLabel, { color: theme.colors.accent }]}>
+                      {detailLive.status === "finished" ? "Gravação da aula" : "Live relacionada"}
+                    </Text>
+                    <Text style={[styles.detailLiveTitle, { color: theme.colors.text }]}>{detailLive.title}</Text>
+                    <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
+                      {formatDateTime(detailLive.starts_at)}
+                      {detailLive.ends_at
+                        ? ` • ${new Date(detailLive.ends_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                        : ""}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailLiveActions}>
+                  {detailLive.status === "scheduled" ? (
+                    <View style={styles.liveMetaRow}>
+                      <MaterialCommunityIcons name="calendar-blank-outline" size={14} color={theme.colors.accent} />
+                      <Text style={[styles.liveSoonText, { color: theme.colors.accent }]}>Em breve</Text>
+                    </View>
+                  ) : null}
+                  {detailLiveAction?.kind === "recording" ? (
+                    <Pressable
+                      style={[
+                        styles.detailPrimaryAction,
+                        { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
+                      ]}
+                      onPress={() => {
+                        void openExternalUrl(detailLiveAction.url);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Assistir gravação ${detailLive.title}`}
+                    >
+                      <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
+                      <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
+                        {detailLiveAction.label}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {detailLiveAction?.kind === "live" ? (
+                    <Pressable
+                      style={[
+                        styles.detailPrimaryAction,
+                        { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                      ]}
+                      onPress={() => {
+                        void openExternalUrl(detailLiveAction.url);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Entrar ao vivo em ${detailLive.title}`}
+                    >
+                      <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
+                      <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
+                        {detailLiveAction.label}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+
+            <View
+              style={[
+                styles.detailReadingCard,
+                {
+                  borderColor: theme.colors.border,
+                  backgroundColor: detailReadingBg,
+                  ...theme.shadow.card,
+                },
+              ]}
+            >
+              {detailLoading ? (
+                <View style={styles.center}>
+                  <ActivityIndicator />
+                  <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Atualizando detalhe...</Text>
+                </View>
+              ) : null}
+
+              {detailError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{detailError}</Text> : null}
+
+              <View style={styles.detailRichText}>{detailBlocks.map((block, index) => renderBlock(block, index))}</View>
+            </View>
+
+            {detailAssets.length > 0 ? (
+              <View style={styles.detailSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <MaterialCommunityIcons name="paperclip" size={17} color={theme.colors.accent} />
+                  <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Materiais de apoio</Text>
+                </View>
+
+                <View style={styles.detailAssetList}>
+                  {detailAssets.map((asset) => (
+                    <View
+                      key={asset.id}
+                      style={[
+                        styles.detailAssetCard,
+                        {
+                          borderColor: theme.colors.border,
+                          backgroundColor: theme.colors.surface,
+                          ...theme.shadow.card,
+                        },
+                      ]}
+                    >
+                      <View style={styles.detailAssetHeader}>
+                        <View style={[styles.feedIconBadge, { backgroundColor: detailMutedSurface }]}>
+                          <MaterialCommunityIcons name={getAssetIcon(asset.asset_type)} size={18} color={theme.colors.accent} />
+                        </View>
+                        <View style={styles.detailAssetMeta}>
+                          <Text style={[styles.detailAssetTitle, { color: theme.colors.text }]}>{asset.title}</Text>
+                          {asset.description ? (
+                            <Text style={[styles.detailAssetDescription, { color: theme.colors.textMuted }]}>
+                              {asset.description}
+                            </Text>
+                          ) : null}
+                          <View style={styles.detailAssetTags}>
+                            <View
+                              style={[
+                                styles.detailAssetTypeBadge,
+                                { backgroundColor: detailMutedSurface, borderColor: theme.colors.border },
+                              ]}
+                            >
+                              <Text style={[styles.detailAssetTypeBadgeText, { color: theme.colors.accent }]}>
+                                {getAssetTypeLabel(asset.asset_type)}
+                              </Text>
+                            </View>
+                            {(asset.tags || []).map((tag) => (
+                              <View
+                                key={`${asset.id}-${tag}`}
+                                style={[
+                                  styles.feedTagChip,
+                                  { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                                ]}
+                              >
+                                <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+
+                        {asset.file_url ? (
+                          <Pressable
+                            style={styles.detailAssetDownload}
+                            onPress={() => {
+                              void openExternalUrl(asset.file_url);
+                            }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Baixar material ${asset.title}`}
+                          >
+                            <MaterialCommunityIcons name="download-outline" size={18} color={theme.colors.textMuted} />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {selectedPost.tags?.length ? (
+              <View style={styles.detailTagRow}>
+                {selectedPost.tags.map((tag) => (
+                  <View
+                    key={`detail-tag-${tag}`}
+                    style={[
+                      styles.feedTagChip,
+                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                    ]}
+                  >
+                    <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
@@ -586,7 +951,11 @@ export function CourseScreen({ token }: Props) {
                     {live.description ? (
                       <Text style={[styles.liveCardDescription, { color: theme.colors.textMuted }]} numberOfLines={3}>
                         {buildRichTextBlocks(live.description, live.description)
-                          .map((block) => block.type === "paragraph" ? block.inlines.map((item) => item.type === "text" ? item.text : "").join("") : "")
+                          .map((block) =>
+                            block.type === "paragraph"
+                              ? block.inlines.map((item) => (item.type === "text" ? item.text : "")).join("")
+                              : ""
+                          )
                           .join(" ")
                           .trim()}
                       </Text>
@@ -677,9 +1046,7 @@ export function CourseScreen({ token }: Props) {
                     testID={`course-filter-${filter}`}
                     style={[
                       styles.filterChip,
-                      active
-                        ? { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }
-                        : null,
+                      active ? { backgroundColor: theme.colors.surface, borderColor: theme.colors.border } : null,
                     ]}
                     onPress={() => setFeedFilter(filter)}
                     accessibilityRole="button"
@@ -743,7 +1110,11 @@ export function CourseScreen({ token }: Props) {
                         {item.live.description ? (
                           <Text style={[styles.feedExcerpt, { color: theme.colors.textMuted }]} numberOfLines={3}>
                             {buildRichTextBlocks(item.live.description, item.live.description)
-                              .map((block) => block.type === "paragraph" ? block.inlines.map((inline) => inline.type === "text" ? inline.text : "").join("") : "")
+                              .map((block) =>
+                                block.type === "paragraph"
+                                  ? block.inlines.map((inline) => (inline.type === "text" ? inline.text : "")).join("")
+                                  : ""
+                              )
                               .join(" ")
                               .trim()}
                           </Text>
@@ -850,235 +1221,6 @@ export function CourseScreen({ token }: Props) {
           )}
         </ScrollView>
       )}
-
-      <Modal visible={detailVisible} animationType="slide" onRequestClose={closeDetail}>
-        <View style={[styles.detailScreen, { backgroundColor: theme.colors.bg }]}>
-          <ScrollView contentContainerStyle={styles.detailContent}>
-            <Pressable
-              testID="course-detail-close"
-              onPress={closeDetail}
-              style={styles.detailBackAction}
-              accessibilityRole="button"
-              accessibilityLabel="Voltar ao curso"
-            >
-              <MaterialCommunityIcons name="arrow-left" size={16} color={theme.colors.textMuted} />
-              <Text style={[styles.detailBackText, { color: theme.colors.textMuted }]}>Voltar ao curso</Text>
-            </Pressable>
-
-            {selectedPost ? (
-              <>
-                <View style={styles.detailHeroMeta}>
-                  <View
-                    style={[
-                      styles.typeBadge,
-                      {
-                        borderColor: getPostTypeUi(selectedPost.post_type, theme.isDark).border,
-                        backgroundColor: getPostTypeUi(selectedPost.post_type, theme.isDark).bg,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.typeBadgeText,
-                        { color: getPostTypeUi(selectedPost.post_type, theme.isDark).tint },
-                      ]}
-                    >
-                      {getPostTypeUi(selectedPost.post_type, theme.isDark).label}
-                    </Text>
-                  </View>
-                  <View style={styles.detailMetaDate}>
-                    <MaterialCommunityIcons name="calendar-blank-outline" size={15} color={theme.colors.textMuted} />
-                    <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
-                      {formatDate(selectedPost.published_at || selectedPost.created_at)}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={[styles.detailPostTitle, { color: theme.colors.text }]}>{selectedPost.title}</Text>
-                <Text style={[styles.detailPostAuthor, { color: theme.colors.textMuted }]}>
-                  por {selectedPost.author_name || "Equipe"}
-                </Text>
-
-                {detailLoading ? (
-                  <View style={styles.center}>
-                    <ActivityIndicator />
-                    <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Atualizando detalhe...</Text>
-                  </View>
-                ) : null}
-
-                {detailError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{detailError}</Text> : null}
-
-                {detailLive ? (
-                  <View
-                    style={[
-                      styles.detailLiveCard,
-                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-                    ]}
-                  >
-                    <View style={styles.detailLiveHeader}>
-                      <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
-                        <MaterialCommunityIcons
-                          name={detailLive.status === "finished" ? "play-circle-outline" : "video-outline"}
-                          size={18}
-                          color={theme.colors.accent}
-                        />
-                      </View>
-                      <View style={styles.detailLiveMeta}>
-                        <Text style={[styles.detailLiveLabel, { color: theme.colors.accent }]}>
-                          {detailLive.status === "finished" ? "Gravação da aula" : "Live relacionada"}
-                        </Text>
-                        <Text style={[styles.detailLiveTitle, { color: theme.colors.text }]}>{detailLive.title}</Text>
-                        <Text style={[styles.detailPostMeta, { color: theme.colors.textMuted }]}>
-                          {formatDateTime(detailLive.starts_at)}
-                          {detailLive.ends_at ? ` • ${new Date(detailLive.ends_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.detailLiveActions}>
-                      {detailLive.status === "scheduled" ? (
-                        <View style={styles.liveMetaRow}>
-                          <MaterialCommunityIcons name="calendar-blank-outline" size={14} color={theme.colors.accent} />
-                          <Text style={[styles.liveSoonText, { color: theme.colors.accent }]}>Em breve</Text>
-                        </View>
-                      ) : null}
-                      {detailLiveAction?.kind === "recording" ? (
-                        <Pressable
-                          style={[
-                            styles.detailPrimaryAction,
-                            { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
-                          ]}
-                          onPress={() => {
-                            void openExternalUrl(detailLiveAction.url);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Assistir gravação ${detailLive.title}`}
-                        >
-                          <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
-                          <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
-                            {detailLiveAction.label}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                      {detailLiveAction?.kind === "live" ? (
-                        <Pressable
-                          style={[
-                            styles.detailPrimaryAction,
-                            { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-                          ]}
-                          onPress={() => {
-                            void openExternalUrl(detailLiveAction.url);
-                          }}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Entrar ao vivo em ${detailLive.title}`}
-                        >
-                          <MaterialCommunityIcons name={detailLiveAction.icon} size={16} color={theme.colors.textInverse} />
-                          <Text style={[styles.detailPrimaryActionText, { color: theme.colors.textInverse }]}>
-                            {detailLiveAction.label}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-                  </View>
-                ) : null}
-
-                <View style={styles.detailRichText}>{detailBlocks.map((block, index) => renderBlock(block, index))}</View>
-
-                {detailAssets.length > 0 ? (
-                  <View style={styles.detailSection}>
-                    <View style={styles.sectionHeaderRow}>
-                      <MaterialCommunityIcons name="paperclip" size={17} color={theme.colors.accent} />
-                      <Text style={[styles.sectionHeaderTitle, { color: theme.colors.text }]}>Materiais anexos</Text>
-                    </View>
-
-                    <View style={styles.detailAssetList}>
-                      {detailAssets.map((asset) => (
-                        <View
-                          key={asset.id}
-                          style={[
-                            styles.detailAssetCard,
-                            { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-                          ]}
-                        >
-                          <View style={styles.detailAssetHeader}>
-                            <View style={[styles.feedIconBadge, { backgroundColor: theme.colors.surfaceMuted }]}>
-                              <MaterialCommunityIcons
-                                name={getAssetIcon(asset.asset_type)}
-                                size={18}
-                                color={theme.colors.accent}
-                              />
-                            </View>
-                            <View style={styles.detailAssetMeta}>
-                              <Text style={[styles.detailAssetTitle, { color: theme.colors.text }]}>{asset.title}</Text>
-                              {asset.description ? (
-                                <Text style={[styles.detailAssetDescription, { color: theme.colors.textMuted }]}>
-                                  {asset.description}
-                                </Text>
-                              ) : null}
-                              <View style={styles.detailAssetTags}>
-                                <View
-                                  style={[
-                                    styles.detailAssetTypeBadge,
-                                    { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border },
-                                  ]}
-                                >
-                                  <Text style={[styles.detailAssetTypeBadgeText, { color: theme.colors.accent }]}>
-                                    {getAssetTypeLabel(asset.asset_type)}
-                                  </Text>
-                                </View>
-                                {(asset.tags || []).map((tag) => (
-                                  <View
-                                    key={`${asset.id}-${tag}`}
-                                    style={[
-                                      styles.feedTagChip,
-                                      { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-                                    ]}
-                                  >
-                                    <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
-                                  </View>
-                                ))}
-                              </View>
-                            </View>
-
-                            {asset.file_url ? (
-                              <Pressable
-                                style={styles.detailAssetDownload}
-                                onPress={() => {
-                                  void openExternalUrl(asset.file_url);
-                                }}
-                                accessibilityRole="button"
-                                accessibilityLabel={`Baixar material ${asset.title}`}
-                              >
-                                <MaterialCommunityIcons name="download-outline" size={18} color={theme.colors.textMuted} />
-                              </Pressable>
-                            ) : null}
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ) : null}
-
-                {selectedPost.tags?.length ? (
-                  <View style={styles.detailTagRow}>
-                    {selectedPost.tags.map((tag) => (
-                      <View
-                        key={`detail-tag-${tag}`}
-                        style={[
-                          styles.feedTagChip,
-                          { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-                        ]}
-                      >
-                        <Text style={[styles.feedTagText, { color: theme.colors.textMuted }]}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </>
-            ) : null}
-          </ScrollView>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -1239,19 +1381,55 @@ const styles = StyleSheet.create({
   },
   ghostActionText: { fontSize: 13, fontWeight: "700" },
 
-  detailScreen: { flex: 1 },
-  detailContent: { padding: 16, paddingTop: 18, paddingBottom: 32, gap: 14 },
-  detailBackAction: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
+  detailContent: { paddingBottom: 40, gap: 18 },
+  detailShell: { width: "100%", alignSelf: "center", gap: 16 },
+  detailBackAction: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 2 },
   detailBackText: { fontSize: 14, fontWeight: "500" },
+  detailHeroCard: {
+    borderWidth: 1,
+    borderRadius: 28,
+    paddingHorizontal: 22,
+    paddingVertical: 22,
+    gap: 16,
+  },
   detailHeroMeta: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
   detailMetaDate: { flexDirection: "row", alignItems: "center", gap: 6 },
-  detailPostTitle: { fontSize: 24, fontWeight: "800", fontFamily: "Georgia", lineHeight: 34 },
-  detailPostAuthor: { fontSize: 14, fontWeight: "500" },
+  detailPostTitle: { fontSize: 34, fontWeight: "800", fontFamily: "Georgia", lineHeight: 44 },
+  detailPostTitleWide: { fontSize: 52, lineHeight: 62 },
   detailPostMeta: { fontSize: 13, fontWeight: "500" },
+  detailUtilityRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  detailUtilityChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  detailUtilityText: { fontSize: 12, fontWeight: "700" },
+  detailAuthorCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+  detailAuthorIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailAuthorBody: { flex: 1, gap: 4 },
+  detailAuthorName: { fontSize: 17, fontWeight: "700" },
+  detailAuthorLead: { fontSize: 14, lineHeight: 22 },
   detailLiveCard: {
     borderWidth: 1,
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 22,
+    padding: 16,
     gap: 12,
   },
   detailLiveHeader: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
@@ -1270,26 +1448,36 @@ const styles = StyleSheet.create({
   },
   detailPrimaryActionText: { fontSize: 14, fontWeight: "800" },
 
-  detailRichText: { gap: 8 },
+  detailReadingCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+    gap: 16,
+  },
+  detailRichText: { gap: 12 },
   detailInlineBase: {},
   detailInlineBold: { fontWeight: "700" },
   detailInlineItalic: { fontStyle: "italic" },
   detailInlineUnderline: { textDecorationLine: "underline" },
   detailInlineLink: { textDecorationLine: "underline" },
-  detailHeading2: { fontSize: 20, lineHeight: 30, fontWeight: "800", marginTop: 8, fontFamily: "Georgia" },
-  detailHeading3: { fontSize: 18, lineHeight: 28, fontWeight: "700", marginTop: 6, fontFamily: "Georgia" },
-  detailParagraph: { fontSize: 15, lineHeight: 26 },
-  detailQuote: { borderLeftWidth: 3, paddingLeft: 10, marginVertical: 4 },
-  detailList: { gap: 6 },
+  detailHeading2: { fontSize: 28, lineHeight: 38, fontWeight: "800", marginTop: 16, fontFamily: "Georgia" },
+  detailHeading2Wide: { fontSize: 34, lineHeight: 44 },
+  detailHeading3: { fontSize: 22, lineHeight: 32, fontWeight: "700", marginTop: 10, fontFamily: "Georgia" },
+  detailHeading3Wide: { fontSize: 26, lineHeight: 38 },
+  detailParagraph: { fontSize: 17, lineHeight: 31 },
+  detailParagraphWide: { fontSize: 18, lineHeight: 34 },
+  detailQuote: { borderLeftWidth: 3, paddingLeft: 14, paddingVertical: 6, marginVertical: 8 },
+  detailList: { gap: 10 },
   detailListRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  detailListMarker: { marginTop: 2, fontSize: 14, fontWeight: "700" },
+  detailListMarker: { marginTop: 3, fontSize: 15, fontWeight: "700" },
 
   detailSection: { gap: 10 },
   detailAssetList: { gap: 10 },
   detailAssetCard: {
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 18,
+    padding: 14,
   },
   detailAssetHeader: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   detailAssetMeta: { flex: 1, gap: 3 },
@@ -1308,5 +1496,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  detailTagRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  detailTagRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 2 },
 });
