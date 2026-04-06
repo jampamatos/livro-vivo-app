@@ -402,7 +402,7 @@ describe("LibraryScreen reader toolbar", () => {
     expect(tree.root.findAllByProps({ testID: "reader-search-clear" })).toHaveLength(0);
   });
 
-  it("abre o modal de criação sem repetir o trecho selecionado", async () => {
+  it("abre um único modal de criação no mobile, com ajuste de trecho e nota", async () => {
     const tree = await renderReader();
     await openReaderToolbar(tree);
 
@@ -416,14 +416,10 @@ describe("LibraryScreen reader toolbar", () => {
     });
     await flushEffects();
 
-    await act(async () => {
-      (await waitForNode(tree, { testID: "annotation-native-draft-action" })).props.onPress();
-    });
-    await flushEffects();
-
     expect(tree.root.findByProps({ testID: "annotation-create-modal" })).toBeTruthy();
+    expect(tree.root.findByProps({ testID: "annotation-native-selection-input" })).toBeTruthy();
     expect(tree.root.findByProps({ testID: "annotation-create-note-input" })).toBeTruthy();
-    expect(JSON.stringify(tree.toJSON())).not.toContain("TRECHO-QUE-NAO-DEVE-APARECER");
+    expect(tree.root.findAllByProps({ testID: "annotation-native-selection-modal" })).toHaveLength(0);
   });
 
   it("abre a nota do destaque sem repetir o trecho e permite editar", async () => {

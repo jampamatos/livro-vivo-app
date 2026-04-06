@@ -253,6 +253,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [annotationsSyncError, setAnnotationsSyncError] = React.useState<string | null>(null);
   const [annotationDraft, setAnnotationDraft] = React.useState<AnnotationDraft | null>(null);
   const [pendingNativeDraft, setPendingNativeDraft] = React.useState<AnnotationDraft | null>(null);
+  const [nativeSelectionRange, setNativeSelectionRange] = React.useState({ start: 0, end: 0 });
   const [annotationDraftNote, setAnnotationDraftNote] = React.useState("");
   const [annotationDraftColor, setAnnotationDraftColor] = React.useState("yellow");
   const [annotationSaving, setAnnotationSaving] = React.useState(false);
@@ -588,6 +589,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setAnnotationsLoading(false);
       setAnnotationDraft(null);
       setPendingNativeDraft(null);
+      setNativeSelectionRange({ start: 0, end: 0 });
       setAnnotationDraftNote("");
       setAnnotationDraftColor("yellow");
       setAnnotationSaving(false);
@@ -799,6 +801,26 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setReaderFocus(null);
   }, [resetSearch]);
 
+  const nativeSelectionBounds = React.useMemo(() => {
+    if (!pendingNativeDraft) return null;
+    const max = pendingNativeDraft.excerpt.length;
+    const rawStart = Math.max(0, Math.min(nativeSelectionRange.start, nativeSelectionRange.end));
+    const rawEnd = Math.max(rawStart, Math.max(nativeSelectionRange.start, nativeSelectionRange.end));
+    return {
+      start: Math.min(rawStart, max),
+      end: Math.min(rawEnd, max),
+      max,
+    };
+  }, [nativeSelectionRange.end, nativeSelectionRange.start, pendingNativeDraft]);
+
+  const nativeSelectionLength =
+    nativeSelectionBounds == null ? 0 : Math.max(0, nativeSelectionBounds.end - nativeSelectionBounds.start);
+
+  const closeNativeSelectionComposer = React.useCallback(() => {
+    setPendingNativeDraft(null);
+    setNativeSelectionRange({ start: 0, end: 0 });
+  }, []);
+
   const renderAnnotationColorChips = React.useCallback(
     (
       selectedColor: string,
@@ -951,6 +973,46 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     () => getAnnotationModalTone(annotationDetailColor, theme.isDark),
     [annotationDetailColor, theme.isDark]
   );
+  const resolvedCreateDraft = React.useMemo(() => {
+    if (Platform.OS === "web") {
+      return annotationDraft;
+    }
+
+    if (!pendingNativeDraft || !nativeSelectionBounds) {
+      return null;
+    }
+
+    const rawSelection = pendingNativeDraft.excerpt.slice(
+      nativeSelectionBounds.start,
+      nativeSelectionBounds.end
+    );
+    const trimmedSelection = rawSelection.trim();
+    if (trimmedSelection.length < 2) {
+      return null;
+    }
+
+    const leadingTrim = rawSelection.length - rawSelection.trimStart().length;
+    const trailingTrim = rawSelection.length - rawSelection.trimEnd().length;
+    const finalStart = nativeSelectionBounds.start + leadingTrim;
+    const finalEnd = nativeSelectionBounds.end - trailingTrim;
+
+    if (finalEnd - finalStart < 2) {
+      return null;
+    }
+
+    return {
+      ...pendingNativeDraft,
+      excerpt: pendingNativeDraft.excerpt.slice(finalStart, finalEnd),
+      startOffset: pendingNativeDraft.startOffset + finalStart,
+      endOffset: pendingNativeDraft.startOffset + finalEnd,
+      selector: {
+        ...pendingNativeDraft.selector,
+        source: "native-selection-modal",
+        block_start_offset: pendingNativeDraft.startOffset,
+        block_end_offset: pendingNativeDraft.endOffset,
+      },
+    };
+  }, [annotationDraft, nativeSelectionBounds, pendingNativeDraft]);
   const selectedAnnotationHasNote = !!selectedAnnotation?.note?.trim();
   const showingSelectedAnnotationEditor = annotationEditing || !selectedAnnotationHasNote;
 
@@ -969,17 +1031,18 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, [selectedAnnotation]);
 
   const saveAnnotationDraft = React.useCallback(async () => {
-    if (!openBook || !annotationDraft) return;
+    const draftToSave = Platform.OS === "web" ? annotationDraft : resolvedCreateDraft;
+    if (!openBook || !draftToSave) return;
     setAnnotationSaving(true);
     setAnnotationsSyncError(null);
     try {
       await createAnnotation(token, {
         book_version: openBook.version.id,
-        chapter: annotationDraft.chapterId,
-        selector: annotationDraft.selector,
-        start_offset: annotationDraft.startOffset,
-        end_offset: annotationDraft.endOffset,
-        excerpt: annotationDraft.excerpt,
+        chapter: draftToSave.chapterId,
+        selector: draftToSave.selector,
+        start_offset: draftToSave.startOffset,
+        end_offset: draftToSave.endOffset,
+        excerpt: draftToSave.excerpt,
         note: annotationDraftNote.trim(),
         color: annotationDraftColor,
       });
@@ -1001,6 +1064,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     formatAnnotationError,
     loadAnnotations,
     openBook,
+    resolvedCreateDraft,
     token,
   ]);
 
@@ -1156,6 +1220,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setAnnotationsLoading(false);
     setAnnotationDraft(null);
     setPendingNativeDraft(null);
+    setNativeSelectionRange({ start: 0, end: 0 });
     setAnnotationDraftNote("");
     setAnnotationDraftColor("yellow");
     setAnnotationSaving(false);
@@ -1249,6 +1314,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               if (!next) {
                 setAnnotationDraft(null);
                 setPendingNativeDraft(null);
+                setNativeSelectionRange({ start: 0, end: 0 });
               }
               return next;
             });
@@ -1395,35 +1461,8 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   ? "Carregando anotações..."
                   : Platform.OS === "web"
                     ? "Selecione um trecho com o mouse para criar destaque."
-                    : "Toque e segure para preparar um trecho, depois confirme para anotar."}
+                    : "Toque em um parágrafo para abrir a seleção do trecho e ajuste pelas alças."}
               </Text>
-            </View>
-          ) : null}
-
-          {pendingNativeDraft && Platform.OS !== "web" ? (
-            <View
-              style={[
-                styles.nativeDraftBanner,
-                {
-                  borderColor: readerUi.draftBorder,
-                  backgroundColor: readerUi.draftBg,
-                },
-              ]}
-            >
-              <Text style={[styles.nativeDraftTitle, { color: readerUi.draftTitle }]}>Trecho preparado</Text>
-              <Text style={[styles.nativeDraftExcerpt, { color: readerUi.draftText }]} numberOfLines={2}>
-                "{pendingNativeDraft.excerpt}"
-              </Text>
-              <Pressable
-                testID="annotation-native-draft-action"
-                style={[styles.nativeDraftAction, { backgroundColor: readerUi.draftActionBg }]}
-                onPress={() => {
-                  setAnnotationDraft(pendingNativeDraft);
-                  setPendingNativeDraft(null);
-                }}
-              >
-                <Text style={[styles.nativeDraftActionText, { color: readerUi.draftActionText }]}>Anotar trecho selecionado</Text>
-              </Pressable>
             </View>
           ) : null}
 
@@ -1688,6 +1727,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   return;
                 }
                 setPendingNativeDraft(draft);
+                setNativeSelectionRange({ start: 0, end: draft.excerpt.length });
               }}
             />
           </View>
@@ -1752,12 +1792,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </View>
 
         <Modal
-          visible={!!annotationDraft}
+          visible={Platform.OS === "web" ? !!annotationDraft : !!pendingNativeDraft}
           transparent
           animationType="fade"
           onRequestClose={() => {
             if (!annotationSaving) {
               setAnnotationDraft(null);
+              closeNativeSelectionComposer();
             }
           }}
         >
@@ -1772,6 +1813,51 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ]}
               testID="annotation-create-modal"
             >
+              {Platform.OS !== "web" && pendingNativeDraft ? (
+                <>
+                  <Text style={[styles.annotationSelectionTitle, { color: readerUi.modalTitle }]}>
+                    Ajuste o trecho
+                  </Text>
+                  <Text style={[styles.annotationSelectionSubtitle, { color: readerUi.modalMuted }]}>
+                    Selecione no texto abaixo e já salve o destaque com a cor e a nota.
+                  </Text>
+
+                  <TextInput
+                    testID="annotation-native-selection-input"
+                    value={pendingNativeDraft.excerpt}
+                    multiline
+                    autoFocus
+                    editable
+                    selectTextOnFocus
+                    contextMenuHidden={false}
+                    showSoftInputOnFocus={false}
+                    onChangeText={() => {}}
+                    selection={nativeSelectionBounds ?? { start: 0, end: 0 }}
+                    onSelectionChange={(event) => {
+                      setNativeSelectionRange({
+                        start: event.nativeEvent.selection.start,
+                        end: event.nativeEvent.selection.end ?? event.nativeEvent.selection.start,
+                      });
+                    }}
+                    selectionColor="#9ec5fe"
+                    style={[
+                      styles.annotationSelectionInput,
+                      {
+                        borderColor: readerUi.modalInputBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                        color: readerUi.modalInputText,
+                      },
+                    ]}
+                  />
+
+                  <Text style={[styles.annotationSelectionMeta, { color: readerUi.modalMuted }]}>
+                    {nativeSelectionLength >= 2
+                      ? `${nativeSelectionLength} caracteres selecionados`
+                      : "Selecione ao menos 2 caracteres"}
+                  </Text>
+                </>
+              ) : null}
+
               {renderAnnotationColorChips(
                 annotationDraftColor,
                 (color) => setAnnotationDraftColor(color),
@@ -1800,7 +1886,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   testID="annotation-create-cancel"
                   onPress={() => {
                     setAnnotationDraft(null);
-                    setPendingNativeDraft(null);
+                    closeNativeSelectionComposer();
                   }}
                   disabled={annotationSaving}
                   style={[
@@ -1818,13 +1904,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   onPress={() => {
                     void saveAnnotationDraft();
                   }}
-                  disabled={annotationSaving}
+                  disabled={annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)}
                   style={[
                     styles.annotationModalSave,
                     {
                       backgroundColor: readerUi.modalPrimaryBg,
                     },
-                    annotationSaving ? styles.annotationModalButtonDisabled : null,
+                    annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)
+                      ? styles.annotationModalButtonDisabled
+                      : null,
                   ]}
                 >
                   <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
@@ -2398,25 +2486,6 @@ const styles = StyleSheet.create({
   },
   annotationModeTitle: { fontSize: 12, fontWeight: "700", color: "#47380d" },
   annotationModeSubtitle: { fontSize: 12, color: "#5a4a15" },
-  nativeDraftBanner: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#c9c3b6",
-    backgroundColor: "#efede6",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  nativeDraftTitle: { fontSize: 12, fontWeight: "700", color: "#1d1d1d" },
-  nativeDraftExcerpt: { fontSize: 12, color: "#3b3b3b" },
-  nativeDraftAction: {
-    alignSelf: "flex-start",
-    borderRadius: 8,
-    backgroundColor: "#111",
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-  },
-  nativeDraftActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   readerSearchBanner: {
     borderRadius: 12,
     borderWidth: 1,
@@ -2548,6 +2617,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#f6f3ea",
     padding: 14,
     gap: 10,
+  },
+  annotationSelectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  annotationSelectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  annotationSelectionInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 180,
+    maxHeight: 320,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlignVertical: "top",
+  },
+  annotationSelectionMeta: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   annotationColorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   annotationColorChip: {
