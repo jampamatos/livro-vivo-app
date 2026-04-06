@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "../src/config/api";
-import { sanitizeAvatarUrl, splitTextWithMentions } from "../src/utils/communityUi";
+import { formatRelativeTime, sanitizeAvatarUrl, splitTextWithMentions } from "../src/utils/communityUi";
 
 describe("splitTextWithMentions", () => {
   it("destaca trechos iniciados com arroba", () => {
@@ -48,5 +48,14 @@ describe("sanitizeAvatarUrl", () => {
     expect(sanitizeAvatarUrl("javascript:alert(1)")).toBeNull();
     expect(sanitizeAvatarUrl("data:text/html;base64,abc")).toBeNull();
     expect(sanitizeAvatarUrl("ftp://example.com/avatar.png")).toBeNull();
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("usa acentuação correta nas mensagens relativas", () => {
+    const now = Date.UTC(2026, 3, 6, 12, 0, 0);
+
+    expect(formatRelativeTime(new Date(now - 2 * 60 * 1000).toISOString(), now)).toBe("2 minutos atrás");
+    expect(formatRelativeTime(new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString(), now)).toBe("1 mês atrás");
   });
 });

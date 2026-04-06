@@ -22,7 +22,7 @@ export async function openExternalUrl(value: string | undefined | null): Promise
   if (!normalized) return false;
 
   if (Platform.OS === "web") {
-    const webWindow = (globalThis as any).window;
+    const webWindow = typeof window !== "undefined" ? window : undefined;
     if (webWindow && typeof webWindow.open === "function") {
       const opened = webWindow.open(normalized, "_blank", "noopener,noreferrer");
       if (opened && typeof opened === "object") {

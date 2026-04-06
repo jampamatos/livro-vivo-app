@@ -9,6 +9,10 @@ jest.mock("../src/utils/externalUrl", () => ({
   openExternalUrl: jest.fn().mockResolvedValue(undefined),
 }));
 
+const externalUrlMock = jest.requireMock("../src/utils/externalUrl") as {
+  openExternalUrl: jest.Mock;
+};
+
 const chapter = {
   id: 1,
   book_version: 101,
@@ -225,5 +229,37 @@ describe("BookReaderScreen", () => {
     expect(setStringSpy).toHaveBeenCalledWith(
       "Trecho selecionado.\n\nLIVRO VIVO. Introdução. In: LIVRO VIVO. Manual. Versão 2. 2026."
     );
+  });
+
+  it("bloqueia navegação externa direta no WebView e delega a abertura ao handler seguro", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapter}
+          loading={false}
+          error={null}
+          focus={null}
+          mode="reader"
+          showHeader={false}
+          showControls={false}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+
+    expect(webView.props.onShouldStartLoadWithRequest({ url: "about:blank" })).toBe(true);
+    expect(webView.props.onShouldStartLoadWithRequest({ url: "https://example.com/malicioso" })).toBe(false);
+    expect(externalUrlMock.openExternalUrl).toHaveBeenCalledWith("https://example.com/malicioso");
   });
 });

@@ -22,31 +22,31 @@ export function formatRelativeTime(value?: string | null, nowTimestamp = Date.no
 
   if (diffMs < hour) {
     const amount = Math.floor(diffMs / minute);
-    return `${amount} minuto${amount > 1 ? "s" : ""} atras`;
+    return `${amount} minuto${amount > 1 ? "s" : ""} atrás`;
   }
 
   if (diffMs < day) {
     const amount = Math.floor(diffMs / hour);
-    return `${amount} hora${amount > 1 ? "s" : ""} atras`;
+    return `${amount} hora${amount > 1 ? "s" : ""} atrás`;
   }
 
   if (diffMs < week) {
     const amount = Math.floor(diffMs / day);
-    return `${amount} dia${amount > 1 ? "s" : ""} atras`;
+    return `${amount} dia${amount > 1 ? "s" : ""} atrás`;
   }
 
   if (diffMs < month) {
     const amount = Math.floor(diffMs / week);
-    return `${amount} semana${amount > 1 ? "s" : ""} atras`;
+    return `${amount} semana${amount > 1 ? "s" : ""} atrás`;
   }
 
   if (diffMs < year) {
     const amount = Math.floor(diffMs / month);
-    return `${amount} mes${amount > 1 ? "es" : ""} atras`;
+    return `${amount} mês${amount > 1 ? "es" : ""} atrás`;
   }
 
   const amount = Math.floor(diffMs / year);
-  return `${amount} ano${amount > 1 ? "s" : ""} atras`;
+  return `${amount} ano${amount > 1 ? "s" : ""} atrás`;
 }
 
 function looksLikeEmail(value: string): boolean {
