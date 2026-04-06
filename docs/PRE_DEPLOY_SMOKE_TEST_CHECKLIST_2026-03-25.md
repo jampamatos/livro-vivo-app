@@ -34,6 +34,10 @@ Checklist manual para homologação do app antes do primeiro deploy do ciclo `Pr
 - [ ] swipe entre páginas no mobile está fluido
 - [ ] modo escuro do leitor está legível
 - [ ] busca no capítulo não quebra o fluxo do leitor
+- [ ] índice e busca têm scroll próprio e não ficam abertos ao mesmo tempo
+- [ ] modo anotação no mobile permite selecionar trecho no próprio texto do reader
+- [ ] criar, editar e apagar destaque funciona em web e mobile
+- [ ] copiar trecho do livro cola o texto com a citação ABNT ao final
 
 ## Jurisprudência
 
@@ -70,6 +74,7 @@ Checklist manual para homologação do app antes do primeiro deploy do ciclo `Pr
 - [ ] destaque visual de live `Ao vivo` está mais forte que `Agendada`
 - [ ] feed filtra por tipo
 - [ ] posts de conteúdo abrem detalhe
+- [ ] copiar trecho de post cola o texto com a citação ABNT ao final
 - [ ] post com live relacionada respeita status:
   - [ ] `scheduled` -> `Em breve`
   - [ ] `live` -> `Entrar ao vivo`

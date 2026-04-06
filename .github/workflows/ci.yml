@@ -34,6 +34,9 @@ jobs:
       - name: Run tests
         run: npm test -- --runInBand --ci
 
+      - name: Run coverage gate
+        run: npm run test:coverage
+
       - name: Validate release config baseline
         run: npm run validate:release-config
 

@@ -8,6 +8,7 @@ Fechar baseline de acessibilidade e regressao funcional nas rotas criticas antes
 
 - Login
 - Main (hub principal)
+- Library
 - Reader
 - Jurisprudencia
 - Comunidade (post)
@@ -28,6 +29,7 @@ Fechar baseline de acessibilidade e regressao funcional nas rotas criticas antes
 ```bash
 npm run typecheck
 npm run test:critical-routes
+npm run test:coverage
 npm test -- --runInBand --ci
 ```
 
@@ -38,3 +40,8 @@ O gate de regressao critica do app fica em `.github/workflows/ci.yml` e usa o me
 ```bash
 npm run test:critical-routes
 ```
+
+O gate critico inclui explicitamente:
+
+- `__tests__/LibraryScreen.test.tsx`
+- `__tests__/BookReaderScreen.test.tsx`

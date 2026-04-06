@@ -193,6 +193,7 @@ describe("BookReaderScreen", () => {
       value: "android",
     });
 
+    const consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
     const setStringSpy = jest.spyOn(Clipboard, "setString").mockImplementation(() => {});
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
@@ -226,6 +227,7 @@ describe("BookReaderScreen", () => {
       });
     });
 
+    consoleWarnSpy.mockRestore();
     expect(setStringSpy).toHaveBeenCalledWith(
       "Trecho selecionado.\n\nLIVRO VIVO. Introdução. In: LIVRO VIVO. Manual. Versão 2. 2026."
     );
