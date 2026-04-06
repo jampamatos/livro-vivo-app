@@ -149,8 +149,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [hasSearched, setHasSearched] = React.useState(false);
   const [submittedQuery, setSubmittedQuery] = React.useState("");
   const [readerMode, setReaderMode] = React.useState(false);
-  const [readerSearchOpen, setReaderSearchOpen] = React.useState(false);
-  const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
+  const [readerPanel, setReaderPanel] = React.useState<"search" | "summary" | null>(null);
   const [annotationMode, setAnnotationMode] = React.useState(false);
   const [readerFontScale, setReaderFontScale] = React.useState(1);
   const [readerToolbarOpen, setReaderToolbarOpen] = React.useState(Platform.OS === "web");
@@ -183,6 +182,19 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, []);
   const isNarrow = windowWidth <= 720;
   const isNative = Platform.OS !== "web";
+  const readerSearchOpen = readerPanel === "search";
+  const readerSummaryOpen = readerPanel === "summary";
+  const readerPanelMaxHeight = React.useMemo(() => {
+    if (isNarrow) {
+      return Math.max(180, Math.min(300, Math.round(windowHeight * 0.32)));
+    }
+    return Math.max(220, Math.min(380, Math.round(windowHeight * 0.34)));
+  }, [isNarrow, windowHeight]);
+  const activeSearchTerm = React.useMemo(() => {
+    const focusTerm = readerFocus?.query.trim() ?? "";
+    if (focusTerm) return focusTerm;
+    return submittedQuery.trim();
+  }, [readerFocus?.query, submittedQuery]);
   const webLibraryShellStyle = React.useMemo(() => {
     if (Platform.OS !== "web") return null;
     return {
@@ -469,8 +481,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setReaderFocus(null);
       setReaderInitialOffset(0);
       setReaderMode(false);
-      setReaderSearchOpen(false);
-      setReaderSummaryOpen(false);
+      setReaderPanel(null);
       setAnnotationMode(false);
       setReaderFontScale(1);
       setReaderToolbarOpen(Platform.OS === "web");
@@ -680,6 +691,11 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setSearchLoading(false);
     }
   }, [formatApiError, openBook, query, token]);
+
+  const clearReaderSearch = React.useCallback(() => {
+    resetSearch();
+    setReaderFocus(null);
+  }, [resetSearch]);
 
   const openReaderChapter = React.useCallback(
     (chapterSlug: string, focus: ReaderFocus | null = null) => {
@@ -892,8 +908,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     }
     void flushReadingProgress();
     setReaderMode(false);
-    setReaderSearchOpen(false);
-    setReaderSummaryOpen(false);
+    setReaderPanel(null);
     setAnnotationMode(false);
     setReaderToolbarOpen(Platform.OS === "web");
     setOpenBook(null);
@@ -916,6 +931,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     resetSearch();
   };
 
+  const toggleReaderPanel = React.useCallback((nextPanel: "search" | "summary") => {
+    setReaderPanel((current) => (current === nextPanel ? null : nextPanel));
+  }, []);
+
   const goToPreviousChapter = () => {
     if (!activeChapter?.previousSlug || !openBook) return;
     openReaderChapter(activeChapter.previousSlug, null);
@@ -930,6 +949,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     const readerToolbarControls = (
       <>
         <Pressable
+          testID="reader-summary-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -940,7 +960,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
               : null,
           ]}
-          onPress={() => setReaderSummaryOpen((current) => !current)}
+          onPress={() => toggleReaderPanel("summary")}
           accessibilityRole="button"
           accessibilityLabel="Alternar índice de capítulos"
         >
@@ -952,6 +972,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </Pressable>
 
         <Pressable
+          testID="reader-search-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -962,7 +983,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
               : null,
           ]}
-          onPress={() => setReaderSearchOpen((current) => !current)}
+          onPress={() => toggleReaderPanel("search")}
           accessibilityRole="button"
           accessibilityLabel="Alternar busca no livro"
         >
@@ -1081,6 +1102,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
             {isNative ? (
               <Pressable
+                testID="reader-toolbar-toggle"
                 style={[
                   styles.readerIconButton,
                   {
@@ -1168,6 +1190,41 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
           {annotationsSyncError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{annotationsSyncError}</Text> : null}
 
+          {activeSearchTerm ? (
+            <View
+              style={[
+                styles.readerSearchBanner,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <View style={styles.readerSearchBannerCopy}>
+                <Text style={[styles.readerSearchBannerTitle, { color: readerUi.panelTitle }]}>Busca ativa</Text>
+                <Text style={[styles.readerSearchBannerValue, { color: readerUi.itemText }]} numberOfLines={1}>
+                  {activeSearchTerm}
+                </Text>
+              </View>
+              <Pressable
+                testID="reader-search-clear"
+                onPress={clearReaderSearch}
+                style={[
+                  styles.readerSearchClearButton,
+                  {
+                    borderColor: readerUi.inputBorder,
+                    backgroundColor: readerUi.inputBg,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar pesquisa"
+              >
+                <MaterialCommunityIcons name="close-circle-outline" size={16} color={readerUi.itemText} />
+                <Text style={[styles.readerSearchClearButtonText, { color: readerUi.itemTitle }]}>Limpar</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           {readerSearchOpen ? (
             <View
               style={[
@@ -1179,8 +1236,9 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ]}
             >
               <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Buscar neste livro</Text>
-              <View style={styles.readerSearchRow}>
+              <View style={[styles.readerSearchRow, isNarrow ? styles.readerSearchRowNarrow : null]}>
                 <TextInput
+                  testID="reader-search-input"
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Digite um termo..."
@@ -1188,6 +1246,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   autoCapitalize="none"
                   style={[
                     styles.readerSearchInput,
+                    isNarrow ? styles.readerSearchInputNarrow : null,
                     {
                       borderColor: readerUi.inputBorder,
                       backgroundColor: readerUi.inputBg,
@@ -1199,6 +1258,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   onSubmitEditing={runSearch}
                 />
                 <Pressable
+                  testID="reader-search-submit"
                   onPress={runSearch}
                   disabled={searchLoading || !query.trim()}
                   style={[
@@ -1219,40 +1279,52 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 displayedSearchResults.length === 0 ? (
                   <Text style={[styles.empty, { color: readerUi.empty }]}>Sem resultados.</Text>
                 ) : (
-                  <View style={styles.readerResults}>
+                  <>
                     <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
                       {searchCount != null
                         ? `${displayedSearchResults.length} de ${searchCount} resultados`
                         : `${displayedSearchResults.length} resultados`}
                     </Text>
-                    {displayedSearchResults.map((result) => (
-                      <Pressable
-                        key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
-                        style={[
-                          styles.searchItem,
-                          {
-                            borderColor: readerUi.itemBorder,
-                            backgroundColor: readerUi.itemBg,
-                          },
-                        ]}
-                        onPress={() => {
-                          openReaderChapter(result.chapter_slug, {
-                            query: submittedQuery.trim(),
-                            matchStart: result.match_start,
-                            matchEnd: result.match_end,
-                          });
-                          if (isNarrow) {
-                            setReaderSearchOpen(false);
-                          }
-                        }}
-                      >
-                        <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
-                          Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
-                        </Text>
-                        {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
-                      </Pressable>
-                    ))}
-                  </View>
+                    <ScrollView
+                      testID="reader-search-results-scroll"
+                      style={[styles.readerPanelScroll, { maxHeight: readerPanelMaxHeight }]}
+                      contentContainerStyle={styles.readerPanelScrollContent}
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator
+                    >
+                      <View style={styles.readerResults}>
+                        {displayedSearchResults.map((result) => (
+                          <Pressable
+                            testID={`reader-search-result-${result.chapter_id}-${result.occurrence}`}
+                            key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
+                            style={[
+                              styles.searchItem,
+                              {
+                                borderColor: readerUi.itemBorder,
+                                backgroundColor: readerUi.itemBg,
+                              },
+                            ]}
+                            onPress={() => {
+                              openReaderChapter(result.chapter_slug, {
+                                query: submittedQuery.trim(),
+                                matchStart: result.match_start,
+                                matchEnd: result.match_end,
+                              });
+                              if (isNarrow) {
+                                setReaderPanel(null);
+                              }
+                            }}
+                          >
+                            <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
+                              Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
+                            </Text>
+                            {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
+                          </Pressable>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </>
                 )
               ) : null}
             </View>
@@ -1269,47 +1341,59 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ]}
             >
               <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Índice</Text>
-              <View style={styles.readerSummaryList}>
-                {openBook.chapters.map((chapter) => {
-                  const active = activeChapter?.chapter.slug === chapter.slug;
-                  return (
-                    <Pressable
-                      key={chapter.id}
-                      onPress={() => {
-                        openReaderChapter(chapter.slug, null);
-                        if (isNarrow) {
-                          setReaderSummaryOpen(false);
-                        }
-                      }}
-                      style={[
-                        styles.chapterItem,
-                        {
-                          borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
-                          backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
-                        },
-                      ]}
-                    >
-                      <Text
+              <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
+                {openBook.chapters.length} capítulos
+              </Text>
+              <ScrollView
+                testID="reader-summary-scroll"
+                style={[styles.readerPanelScroll, { maxHeight: readerPanelMaxHeight }]}
+                contentContainerStyle={styles.readerPanelScrollContent}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                <View style={styles.readerSummaryList}>
+                  {openBook.chapters.map((chapter) => {
+                    const active = activeChapter?.chapter.slug === chapter.slug;
+                    return (
+                      <Pressable
+                        key={chapter.id}
                         style={[
-                          styles.chapterOrder,
-                          { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                          styles.chapterItem,
+                          {
+                            borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
+                            backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
+                          },
                         ]}
+                        onPress={() => {
+                          openReaderChapter(chapter.slug, null);
+                          if (isNarrow) {
+                            setReaderPanel(null);
+                          }
+                        }}
                       >
-                        {chapter.order}.
-                      </Text>
-                      <Text
-                        style={[
-                          styles.chapterTitle,
-                          { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {chapter.title}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                        <Text
+                          style={[
+                            styles.chapterOrder,
+                            { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                          ]}
+                        >
+                          {chapter.order}.
+                        </Text>
+                        <Text
+                          style={[
+                            styles.chapterTitle,
+                            { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {chapter.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             </View>
           ) : null}
 
@@ -2057,6 +2141,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   nativeDraftActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  readerSearchBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  readerSearchBannerCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  readerSearchBannerTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  readerSearchBannerValue: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  readerSearchClearButton: {
+    minHeight: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  readerSearchClearButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
   readerPanel: {
     borderRadius: 12,
     borderWidth: 1,
@@ -2067,18 +2188,35 @@ const styles = StyleSheet.create({
   },
   readerPanelTitle: { fontSize: 13, fontWeight: "700", color: "#111" },
   readerSearchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  readerSearchRowNarrow: { flexDirection: "column", alignItems: "stretch" },
   readerSearchInput: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 46,
     borderWidth: 1,
     borderColor: "#c6c3ba",
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === "android" ? 12 : 10,
     fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: "center",
     backgroundColor: "#fff",
   },
-  readerResults: { gap: 8, maxHeight: 200 },
-  readerSummaryList: { gap: 8, maxHeight: 220 },
+  readerSearchInputNarrow: {
+    flex: 0,
+    width: "100%",
+  },
+  readerPanelScroll: {
+    minHeight: 0,
+    borderRadius: 10,
+  },
+  readerPanelScrollContent: {
+    gap: 8,
+    paddingRight: 2,
+  },
+  readerResults: { gap: 8 },
+  readerSummaryList: { gap: 8 },
   readerBody: {
     flex: 1,
     minHeight: 0,
