@@ -1,8 +1,9 @@
 import React from "react";
-import { Animated, Easing, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Clipboard, Easing, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { WebView } from "react-native-webview";
 
 import type { BookChapter } from "../api/books";
+import { useAttributedCopy } from "../hooks/useAttributedCopy";
 import { openExternalUrl } from "../utils/externalUrl";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
@@ -56,6 +57,7 @@ type Props = {
   onCreateAnnotationDraft?: (draft: ReaderAnnotationDraft) => void;
   onOpenAnnotation?: (annotationId: number) => void;
   colorMode?: "light" | "dark";
+  copyCitation?: string | null;
 };
 
 type InlineCursor = { current: number };
@@ -293,6 +295,18 @@ function safeJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
+function copyTextToClipboard(text: string): boolean {
+  const normalized = String(text || "").trim();
+  if (!normalized) return false;
+
+  try {
+    Clipboard.setString(normalized);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function renderNativeReaderHtml(args: {
   chapter: BookChapter;
   richBlocks: RichBlockNode[];
@@ -302,8 +316,9 @@ function renderNativeReaderHtml(args: {
   fontScale: number;
   annotationMode: boolean;
   initialScrollOffset: number;
+  copyCitation?: string | null;
 }) {
-  const { chapter, richBlocks, annotations, focus, colorMode, fontScale, initialScrollOffset } = args;
+  const { chapter, richBlocks, annotations, focus, colorMode, fontScale, initialScrollOffset, copyCitation } = args;
   const palette = colorMode === "dark" ? darkReaderPalette : lightReaderPalette;
   const focusedRange =
     focus && focus.matchStart >= 0 && focus.matchEnd > focus.matchStart
@@ -444,6 +459,11 @@ function renderNativeReaderHtml(args: {
         white-space: normal;
         word-break: break-word;
       }
+      #reader-content, #reader-content * {
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        -webkit-touch-callout: default !important;
+      }
       p, h2, h3, blockquote, ul, ol {
         margin: 0 0 14px;
       }
@@ -555,6 +575,7 @@ function renderNativeReaderHtml(args: {
           plainText: chapter.content_plain || "",
           focusStart: focusedRange?.start ?? -1,
           focusEnd: focusedRange?.end ?? -1,
+          copyCitation: copyCitation || "",
         })};
         const root = document.getElementById("reader-content");
         const toolbar = document.getElementById("lv-selection-toolbar");
@@ -615,6 +636,30 @@ function renderNativeReaderHtml(args: {
           const selection = window.getSelection && window.getSelection();
           if (selection && typeof selection.removeAllRanges === "function") {
             selection.removeAllRanges();
+          }
+        }
+
+        function handleCopy(event) {
+          const selection = window.getSelection && window.getSelection();
+          if (!selectionInsideRoot(selection)) return;
+
+          const selectedText = selection.toString();
+          if (!selectedText || !selectedText.trim() || !state.copyCitation) return;
+
+          const attributedText = selectedText.replace(/\\s+$/, "") + "\\n\\n" + state.copyCitation;
+          const clipboard = event && event.clipboardData;
+
+          if (clipboard && typeof clipboard.setData === "function") {
+            event.preventDefault();
+            clipboard.setData("text/plain", attributedText);
+            return;
+          }
+
+          event.preventDefault();
+          sendMessage("copy_text", { text: attributedText });
+
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            navigator.clipboard.writeText(attributedText).catch(function () {});
           }
         }
 
@@ -706,6 +751,7 @@ function renderNativeReaderHtml(args: {
         document.addEventListener("mouseup", function () {
           window.setTimeout(syncSelectionToolbar, 0);
         }, true);
+        document.addEventListener("copy", handleCopy, true);
         document.addEventListener("click", function (event) {
           const target = event.target;
           if (!(target instanceof Element)) return;
@@ -810,6 +856,7 @@ export function BookReaderScreen({
   onCreateAnnotationDraft,
   onOpenAnnotation,
   colorMode = "light",
+  copyCitation = null,
 }: Props) {
   const { width: viewportWidth } = useWindowDimensions();
   const scrollRef = React.useRef<ScrollView | null>(null);
@@ -844,8 +891,7 @@ export function BookReaderScreen({
   const currentFontScale = controlledFontScale ?? internalFontScale;
   const isDarkReader = colorMode === "dark";
   const useNativeWebReader = Platform.OS !== "web" && mode === "reader";
-  const enableDirectTextSelection =
-    Platform.OS === "web" ? annotationMode : !annotationMode;
+  const enableDirectTextSelection = Platform.OS === "web" ? true : !annotationMode;
   const swipeMaxTranslate = React.useMemo(
     () => Math.max(180, Math.min(460, viewportWidth * 0.9)),
     [viewportWidth]
@@ -963,18 +1009,26 @@ export function BookReaderScreen({
       fontScale: currentFontScale,
       annotationMode,
       initialScrollOffset: nativeScrollOffsetRef.current || initialScrollOffset,
+      copyCitation,
     });
   }, [
     annotationMode,
     annotationRanges,
     chapter,
     colorMode,
+    copyCitation,
     currentFontScale,
     focus,
     initialScrollOffset,
     richBlocks,
     useNativeWebReader,
   ]);
+
+  useAttributedCopy({
+    enabled: !useNativeWebReader && !!chapter && !!copyCitation,
+    containerRef: readingColumnRef,
+    citation: copyCitation,
+  });
 
   const renderInlineText = React.useCallback(
     (
@@ -1137,6 +1191,12 @@ export function BookReaderScreen({
           if (Number.isFinite(annotationId) && annotationId > 0) {
             onOpenAnnotation?.(annotationId);
           }
+          return;
+        }
+
+        if (type === "copy_text") {
+          const text = typeof payload?.text === "string" ? payload.text : "";
+          copyTextToClipboard(text);
           return;
         }
 
