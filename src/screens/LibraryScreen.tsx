@@ -36,6 +36,7 @@ import {
 } from "../api/annotations";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
+import { formatBookChapterCitation } from "../utils/citations";
 import {
   BookReaderScreen,
   ReaderAnnotationDraft,
@@ -961,6 +962,24 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       }));
   }, [activeChapter, annotations]);
 
+  const activeBook = React.useMemo(() => {
+    if (!openBook) return null;
+    return books.find((book) => book.id === openBook.bookId) ?? null;
+  }, [books, openBook]);
+
+  const activeChapterCopyCitation = React.useMemo(() => {
+    if (!activeBook || !activeChapter || !openBook) return null;
+    return formatBookChapterCitation({
+      chapterOrder: activeChapter.chapter.order,
+      chapterTitle: activeChapter.chapter.title,
+      bookTitle: activeBook.title,
+      version: openBook.version.version,
+      versionNumber: openBook.version.version_number,
+      publishedAt: openBook.version.published_at,
+      createdAt: openBook.version.created_at,
+    });
+  }, [activeBook, activeChapter, openBook]);
+
   const selectedAnnotation = React.useMemo(() => {
     if (annotationDetailId == null) return null;
     return annotations.find((annotation) => annotation.id === annotationDetailId) ?? null;
@@ -1713,6 +1732,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               annotationMode={annotationMode}
               allowNativeParagraphFallback={Platform.OS !== "web"}
               annotations={activeChapterAnnotations}
+              copyCitation={activeChapterCopyCitation}
               onOpenAnnotation={(annotationId) => {
                 setAnnotationDetailId(annotationId);
               }}

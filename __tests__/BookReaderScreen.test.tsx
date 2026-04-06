@@ -1,8 +1,9 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { Platform } from "react-native";
+import { Clipboard, Platform } from "react-native";
 
 import { BookReaderScreen } from "../src/screens/BookReaderScreen";
+import { formatBookChapterCitation } from "../src/utils/citations";
 
 jest.mock("../src/utils/externalUrl", () => ({
   openExternalUrl: jest.fn().mockResolvedValue(undefined),
@@ -28,6 +29,7 @@ describe("BookReaderScreen", () => {
       configurable: true,
       value: originalPlatform,
     });
+    jest.restoreAllMocks();
   });
 
   it("renderiza o leitor no web sem quebrar a abertura do capítulo", async () => {
@@ -124,6 +126,12 @@ describe("BookReaderScreen", () => {
     });
 
     const onCreateAnnotationDraft = jest.fn();
+    const copyCitation = formatBookChapterCitation({
+      chapterTitle: chapter.title,
+      bookTitle: "Manual Prático do Direito do Passageiro no Transporte Aéreo",
+      version: "2",
+      publishedAt: "2026-03-05T10:00:00Z",
+    });
     let tree: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(
@@ -136,6 +144,7 @@ describe("BookReaderScreen", () => {
           showHeader={false}
           showControls={false}
           annotationMode
+          copyCitation={copyCitation}
           onCreateAnnotationDraft={onCreateAnnotationDraft}
           onPrevious={() => {}}
           onNext={() => {}}
@@ -146,6 +155,8 @@ describe("BookReaderScreen", () => {
     });
 
     const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+    expect(webView.props.source.html).toContain(copyCitation);
+    expect(webView.props.source.html).toContain("copyCitation");
 
     await act(async () => {
       webView.props.onMessage({
@@ -169,6 +180,50 @@ describe("BookReaderScreen", () => {
           source: "webview-selection",
         }),
       })
+    );
+  });
+
+  it("escreve no clipboard nativo quando o WebView envia o texto copiado com citação", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    const setStringSpy = jest.spyOn(Clipboard, "setString").mockImplementation(() => {});
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapter}
+          loading={false}
+          error={null}
+          focus={null}
+          mode="reader"
+          showHeader={false}
+          showControls={false}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+
+    await act(async () => {
+      webView.props.onMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            type: "copy_text",
+            text: "Trecho selecionado.\n\nLIVRO VIVO. Introdução. In: LIVRO VIVO. Manual. Versão 2. 2026.",
+          }),
+        },
+      });
+    });
+
+    expect(setStringSpy).toHaveBeenCalledWith(
+      "Trecho selecionado.\n\nLIVRO VIVO. Introdução. In: LIVRO VIVO. Manual. Versão 2. 2026."
     );
   });
 });

@@ -25,7 +25,9 @@ import {
   listCoursePosts,
   listLiveEvents,
 } from "../api/courses";
+import { useAttributedCopy } from "../hooks/useAttributedCopy";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { formatCoursePostCitation } from "../utils/citations";
 import { openExternalUrl } from "../utils/externalUrl";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
@@ -223,6 +225,7 @@ export function CourseScreen({ token }: Props) {
   const { theme } = useAppTheme();
   const { width } = useWindowDimensions();
   const isWide = width >= 980;
+  const detailCopyContentRef = React.useRef<any>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [posts, setPosts] = React.useState<CoursePost[]>([]);
@@ -405,11 +408,26 @@ export function CourseScreen({ token }: Props) {
   const detailReadMinutes = React.useMemo(() => {
     return getEstimatedReadMinutes(selectedPost?.content_plain);
   }, [selectedPost?.content_plain]);
+  const detailCopyCitation = React.useMemo(() => {
+    if (!selectedPost) return null;
+    return formatCoursePostCitation({
+      title: selectedPost.title,
+      authorName: selectedPost.author_name,
+      publishedAt: selectedPost.published_at,
+      createdAt: selectedPost.created_at,
+    });
+  }, [selectedPost]);
 
   const detailShellMaxWidth = isWide ? 760 : 680;
   const detailHeroBg = theme.isDark ? "#0F182A" : "#FCF8F0";
   const detailReadingBg = theme.isDark ? "#101A2D" : "#FFFCF7";
   const detailMutedSurface = theme.isDark ? "#172235" : "#F7F2E8";
+
+  useAttributedCopy({
+    enabled: !!selectedPost,
+    containerRef: detailCopyContentRef,
+    citation: detailCopyCitation,
+  });
 
   const renderInline = React.useCallback(
     (inlines: RichInlineNode[], keyPrefix: string) => {
@@ -735,7 +753,9 @@ export function CourseScreen({ token }: Props) {
 
               {detailError ? <Text style={[styles.error, { color: theme.colors.danger }]}>{detailError}</Text> : null}
 
-              <View style={styles.detailRichText}>{detailBlocks.map((block, index) => renderBlock(block, index))}</View>
+              <View ref={detailCopyContentRef} style={styles.detailRichText}>
+                {detailBlocks.map((block, index) => renderBlock(block, index))}
+              </View>
             </View>
 
             {detailAssets.length > 0 ? (
