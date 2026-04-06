@@ -18,6 +18,8 @@ type RichTextRun = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
   href?: string;
 };
 
@@ -36,11 +38,13 @@ type InlineMarks = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  superscript?: boolean;
+  subscript?: boolean;
   href?: string;
 };
 
 const BLOCK_TAGS = new Set(["p", "h2", "h3", "ul", "ol", "li", "blockquote"]);
-const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "u", "br"]);
+const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "u", "sup", "sub", "br"]);
 const DROP_TAGS = new Set(["script", "style", "iframe", "object", "embed"]);
 const VOID_TAGS = new Set(["br", "hr", "img", "input", "meta", "link"]);
 
@@ -273,6 +277,8 @@ function collectInlines(
         bold: marks.bold,
         italic: marks.italic,
         underline: marks.underline,
+        superscript: marks.superscript,
+        subscript: marks.subscript,
         href: marks.href,
       });
       continue;
@@ -287,6 +293,8 @@ function collectInlines(
     if (node.tag === "strong" || node.tag === "b") nextMarks.bold = true;
     if (node.tag === "em" || node.tag === "i") nextMarks.italic = true;
     if (node.tag === "u") nextMarks.underline = true;
+    if (node.tag === "sup") nextMarks.superscript = true;
+    if (node.tag === "sub") nextMarks.subscript = true;
     if (node.tag === "a" && node.attrs.href) nextMarks.href = node.attrs.href;
 
     collectInlines(node.children, nextMarks, acc);
@@ -317,6 +325,8 @@ function mergeInlineRuns(nodes: RichInlineNode[]): RichInlineNode[] {
       previous.bold === node.bold &&
       previous.italic === node.italic &&
       previous.underline === node.underline &&
+      previous.superscript === node.superscript &&
+      previous.subscript === node.subscript &&
       previous.href === node.href
     ) {
       previous.text += node.text;

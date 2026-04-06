@@ -317,6 +317,8 @@ export function CaseLawScreen({ token }: Props) {
           node.bold ? styles.detailInlineBold : null,
           node.italic ? styles.detailInlineItalic : null,
           node.underline ? styles.detailInlineUnderline : null,
+          node.superscript ? styles.detailInlineSuperscript : null,
+          node.subscript ? styles.detailInlineSubscript : null,
           node.href ? styles.detailInlineLink : null,
           { color: node.href ? theme.colors.primary : theme.colors.text },
         ];
@@ -948,6 +950,18 @@ const styles = StyleSheet.create({
   detailInlineBold: { fontWeight: "700" },
   detailInlineItalic: { fontStyle: "italic" },
   detailInlineUnderline: { textDecorationLine: "underline" },
+  detailInlineSuperscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: -6,
+  },
+  detailInlineSubscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: 4,
+  },
   detailInlineLink: { textDecorationLine: "underline" },
   detailParagraph: { fontSize: 16, lineHeight: 28 },
   detailHeading2: { fontWeight: "800", fontSize: 24, lineHeight: 32 },

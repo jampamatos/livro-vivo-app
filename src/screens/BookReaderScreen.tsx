@@ -360,6 +360,8 @@ function renderNativeReaderHtml(args: {
         if (node.bold) inner = `<strong>${inner}</strong>`;
         if (node.italic) inner = `<em>${inner}</em>`;
         if (node.underline) inner = `<u>${inner}</u>`;
+        if (node.superscript) inner = `<sup>${inner}</sup>`;
+        if (node.subscript) inner = `<sub>${inner}</sub>`;
         if (node.href) {
           inner = `<a href="${escapeHtml(node.href)}" data-reader-link="1">${inner}</a>`;
         }
@@ -479,6 +481,16 @@ function renderNativeReaderHtml(args: {
       strong { font-weight: 700; }
       em { font-style: italic; }
       u { text-decoration: underline; }
+      sup {
+        font-size: 0.7em;
+        line-height: 0;
+        vertical-align: super;
+      }
+      sub {
+        font-size: 0.7em;
+        line-height: 0;
+        vertical-align: sub;
+      }
       .lv-text-fragment {
         white-space: pre-wrap;
       }
@@ -1056,6 +1068,8 @@ export function BookReaderScreen({
               node.bold ? styles.inlineBold : null,
               node.italic ? styles.inlineItalic : null,
               node.underline ? styles.inlineUnderline : null,
+              node.superscript ? styles.inlineSuperscript : null,
+              node.subscript ? styles.inlineSubscript : null,
               node.href ? [styles.inlineLink, { color: palette.linkText }] : null,
             ];
 
@@ -1768,6 +1782,18 @@ const styles = StyleSheet.create({
   inlineBold: { fontWeight: "700" },
   inlineItalic: { fontStyle: "italic" },
   inlineUnderline: { textDecorationLine: "underline" },
+  inlineSuperscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: -6,
+  },
+  inlineSubscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: 4,
+  },
   inlineLink: { textDecorationLine: "underline" },
   paragraph: { color: "#272727" },
   h2: { fontWeight: "700", color: "#0f172a", marginTop: 4 },
