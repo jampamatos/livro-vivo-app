@@ -1,9 +1,14 @@
 import React from "react";
 import { Animated, Clipboard, Easing, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { WebView } from "react-native-webview";
+import type { ShouldStartLoadRequest, WebViewMessageEvent } from "react-native-webview/lib/WebViewTypes";
 
 import type { BookChapter } from "../api/books";
 import { useAttributedCopy } from "../hooks/useAttributedCopy";
+import {
+  parseNativeReaderMessage,
+  renderNativeReaderHtml,
+} from "./bookReader/nativeReaderBridge";
 import { openExternalUrl } from "../utils/externalUrl";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
@@ -74,6 +79,7 @@ type DecoratedSegment = {
 const MIN_FONT_SCALE = 0.9;
 const MAX_FONT_SCALE = 1.35;
 const STEP_FONT_SCALE = 0.1;
+const NATIVE_READER_ALLOWED_ORIGINS = ["about:blank", "about:srcdoc", "data:*"] as const;
 
 type ReaderPalette = {
   cardBorder: string;
@@ -187,6 +193,30 @@ function findBestOccurrence(haystack: string, needle: string, approxIndex: numbe
   return best;
 }
 
+type SelectionCapableContainer = {
+  contains: (node: Node | null) => boolean;
+};
+
+function hasNodeContains(value: unknown): value is SelectionCapableContainer {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "contains" in value &&
+    typeof (value as { contains?: unknown }).contains === "function"
+  );
+}
+
+function isDomSelectionContainer(value: unknown): value is Node & SelectionCapableContainer {
+  return typeof Node !== "undefined" && value instanceof Node && hasNodeContains(value);
+}
+
+function getBrowserSelection(): Selection | null {
+  if (typeof window === "undefined" || typeof window.getSelection !== "function") {
+    return null;
+  }
+  return window.getSelection();
+}
+
 function annotationBgColor(color: string | undefined, isDark: boolean): string {
   const normalized = (color || "yellow").trim().toLowerCase();
   if (isDark) {
@@ -282,19 +312,6 @@ function splitDecoratedSegmentsForReader(
   return out;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function safeJson(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
 function copyTextToClipboard(text: string): boolean {
   const normalized = String(text || "").trim();
   if (!normalized) return false;
@@ -305,531 +322,6 @@ function copyTextToClipboard(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-function renderNativeReaderHtml(args: {
-  chapter: BookChapter;
-  richBlocks: RichBlockNode[];
-  annotations: ReaderAnnotationHighlight[];
-  focus: ReaderFocus | null;
-  colorMode: "light" | "dark";
-  fontScale: number;
-  annotationMode: boolean;
-  initialScrollOffset: number;
-  copyCitation?: string | null;
-}) {
-  const { chapter, richBlocks, annotations, focus, colorMode, fontScale, initialScrollOffset, copyCitation } = args;
-  const palette = colorMode === "dark" ? darkReaderPalette : lightReaderPalette;
-  const focusedRange =
-    focus && focus.matchStart >= 0 && focus.matchEnd > focus.matchStart
-      ? { start: focus.matchStart, end: focus.matchEnd }
-      : null;
-  const focusQuery = focus?.query.trim() ?? "";
-  const cursor: InlineCursor = { current: 0 };
-
-  const renderSegments = (segments: DecoratedSegment[]) =>
-    segments
-      .map((segment) => {
-        const classes = ["lv-text-fragment"];
-        const attrs = [
-          `data-text-start="${segment.startOffset}"`,
-          `data-text-end="${segment.endOffset}"`,
-        ];
-
-        if (segment.annotation) {
-          classes.push("lv-annotation", `lv-annotation-${(segment.annotation.color || "yellow").trim().toLowerCase()}`);
-          attrs.push(`data-annotation-id="${segment.annotation.id}"`);
-        }
-        if (segment.isSearchMatch) {
-          classes.push("lv-search-match");
-        }
-        if (segment.isFocusedMatch) {
-          classes.push("lv-focused-match");
-        }
-
-        return `<span class="${classes.join(" ")}" ${attrs.join(" ")}>${escapeHtml(segment.text)}</span>`;
-      })
-      .join("");
-
-  const renderInlines = (inlines: RichInlineNode[]) => {
-    return inlines
-      .map((node) => {
-        if (node.type === "lineBreak") {
-          const start = cursor.current;
-          cursor.current += 1;
-          return `<span class="lv-text-fragment" data-text-start="${start}" data-text-end="${cursor.current}">\n</span>`;
-        }
-
-        const start = cursor.current;
-        const nodeText = node.text;
-        cursor.current = start + nodeText.length;
-        const segments = splitDecoratedSegmentsForReader(
-          nodeText,
-          start,
-          annotations,
-          focusQuery,
-          focusedRange
-        );
-        let inner = renderSegments(segments);
-
-        if (node.bold) inner = `<strong>${inner}</strong>`;
-        if (node.italic) inner = `<em>${inner}</em>`;
-        if (node.underline) inner = `<u>${inner}</u>`;
-        if (node.superscript) inner = `<sup>${inner}</sup>`;
-        if (node.subscript) inner = `<sub>${inner}</sub>`;
-        if (node.href) {
-          inner = `<a href="${escapeHtml(node.href)}" data-reader-link="1">${inner}</a>`;
-        }
-
-        return inner;
-      })
-      .join("");
-  };
-
-  const bodyHtml = richBlocks
-    .map((block, index) => {
-      if (index > 0) {
-        cursor.current += 1;
-      }
-
-      if (block.type === "heading2") {
-        return `<h2>${renderInlines(block.inlines)}</h2>`;
-      }
-      if (block.type === "heading3") {
-        return `<h3>${renderInlines(block.inlines)}</h3>`;
-      }
-      if (block.type === "blockquote") {
-        return `<blockquote>${renderInlines(block.inlines)}</blockquote>`;
-      }
-      if (block.type === "list") {
-        const items = block.items
-          .map((item, itemIndex) => {
-            if (itemIndex > 0) {
-              cursor.current += 1;
-            }
-            return `<li>${renderInlines(item)}</li>`;
-          })
-          .join("");
-        return block.ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
-      }
-
-      return `<p>${renderInlines(block.inlines)}</p>`;
-    })
-    .join("");
-
-  return `<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <style>
-      :root {
-        --lv-font-scale: ${fontScale};
-        --lv-content-text: ${palette.contentText};
-        --lv-link-text: ${palette.linkText};
-        --lv-heading-2: ${palette.heading2Text};
-        --lv-heading-3: ${palette.heading3Text};
-        --lv-blockquote-bg: ${palette.blockquoteBg};
-        --lv-blockquote-border: ${palette.blockquoteBorder};
-        --lv-blockquote-text: ${palette.blockquoteText};
-        --lv-list-marker: ${palette.listMarker};
-        --lv-search-bg: ${palette.matchBg};
-        --lv-search-text: ${palette.matchText};
-      }
-      html, body {
-        margin: 0;
-        padding: 0;
-        background: transparent;
-        color: var(--lv-content-text);
-        -webkit-text-size-adjust: 100%;
-      }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      #reader-content {
-        max-width: 820px;
-        margin: 0 auto;
-        padding: 16px 10px 32px;
-        color: var(--lv-content-text);
-        font-size: calc(18px * var(--lv-font-scale));
-        line-height: calc(31px * var(--lv-font-scale));
-        user-select: text;
-        -webkit-user-select: text;
-        -webkit-touch-callout: default;
-        white-space: normal;
-        word-break: break-word;
-      }
-      #reader-content, #reader-content * {
-        user-select: text !important;
-        -webkit-user-select: text !important;
-        -webkit-touch-callout: default !important;
-      }
-      p, h2, h3, blockquote, ul, ol {
-        margin: 0 0 14px;
-      }
-      h2 {
-        font-size: calc(28px * var(--lv-font-scale));
-        line-height: calc(36px * var(--lv-font-scale));
-        color: var(--lv-heading-2);
-        font-weight: 700;
-      }
-      h3 {
-        font-size: calc(23px * var(--lv-font-scale));
-        line-height: calc(31px * var(--lv-font-scale));
-        color: var(--lv-heading-3);
-        font-weight: 700;
-      }
-      blockquote {
-        border-left: 3px solid var(--lv-blockquote-border);
-        background: var(--lv-blockquote-bg);
-        color: var(--lv-blockquote-text);
-        border-radius: 6px;
-        padding: 6px 0 6px 12px;
-        font-style: italic;
-      }
-      ul, ol {
-        padding-left: 24px;
-      }
-      li::marker {
-        color: var(--lv-list-marker);
-        font-weight: 600;
-      }
-      a {
-        color: var(--lv-link-text);
-        text-decoration: underline;
-      }
-      strong { font-weight: 700; }
-      em { font-style: italic; }
-      u { text-decoration: underline; }
-      sup {
-        font-size: 0.7em;
-        line-height: 0;
-        vertical-align: super;
-      }
-      sub {
-        font-size: 0.7em;
-        line-height: 0;
-        vertical-align: sub;
-      }
-      .lv-text-fragment {
-        white-space: pre-wrap;
-      }
-      .lv-annotation {
-        border-radius: 2px;
-        cursor: pointer;
-      }
-      .lv-annotation-yellow { background: ${annotationBgColor("yellow", colorMode === "dark")}; }
-      .lv-annotation-green { background: ${annotationBgColor("green", colorMode === "dark")}; }
-      .lv-annotation-blue { background: ${annotationBgColor("blue", colorMode === "dark")}; }
-      .lv-annotation-pink { background: ${annotationBgColor("pink", colorMode === "dark")}; }
-      .lv-search-match {
-        background: var(--lv-search-bg);
-        color: var(--lv-search-text);
-        font-weight: 700;
-      }
-      .lv-focused-match {
-        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45);
-        border-radius: 3px;
-      }
-      .lv-selection-toolbar {
-        position: fixed;
-        z-index: 2147483647;
-        display: none;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 14px;
-        border-radius: 999px;
-        background: rgba(15, 23, 42, 0.94);
-        color: #f8fafc;
-        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.26);
-      }
-      .lv-selection-toolbar button {
-        border: 0;
-        border-radius: 999px;
-        background: #60a5fa;
-        color: #0f172a;
-        font-size: 13px;
-        font-weight: 700;
-        padding: 8px 12px;
-      }
-      .lv-selection-toolbar span {
-        font-size: 12px;
-        color: rgba(248, 250, 252, 0.82);
-      }
-      body.lv-annotation-mode ::selection {
-        background: rgba(96, 165, 250, 0.34);
-      }
-    </style>
-  </head>
-  <body class="${args.focus ? "lv-has-focus" : ""}">
-    <div id="reader-content">${bodyHtml}</div>
-    <div id="lv-selection-toolbar" class="lv-selection-toolbar">
-      <span>Anotar trecho</span>
-      <button id="lv-selection-action" type="button">Anotar</button>
-    </div>
-    <script>
-      (function () {
-        const state = ${safeJson({
-          annotationMode: args.annotationMode,
-          initialScrollOffset,
-          plainText: chapter.content_plain || "",
-          focusStart: focusedRange?.start ?? -1,
-          focusEnd: focusedRange?.end ?? -1,
-          copyCitation: copyCitation || "",
-        })};
-        const root = document.getElementById("reader-content");
-        const toolbar = document.getElementById("lv-selection-toolbar");
-        const actionButton = document.getElementById("lv-selection-action");
-        let currentDraft = null;
-        let lastScrollSentAt = 0;
-
-        function sendMessage(type, payload) {
-          if (!window.ReactNativeWebView || typeof window.ReactNativeWebView.postMessage !== "function") {
-            return;
-          }
-          window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({ type }, payload || {})));
-        }
-
-        function clamp(value, min, max) {
-          return Math.max(min, Math.min(max, value));
-        }
-
-        function findTextNode(node, preferEnd) {
-          if (!node) return null;
-          if (node.nodeType === Node.TEXT_NODE) {
-            return node;
-          }
-          const children = Array.from(node.childNodes || []);
-          const ordered = preferEnd ? children.reverse() : children;
-          for (const child of ordered) {
-            const match = findTextNode(child, preferEnd);
-            if (match) return match;
-          }
-          return null;
-        }
-
-        function resolveBoundary(container, offset, preferEnd) {
-          if (!container) return null;
-          let textNode = null;
-          let localOffset = 0;
-
-          if (container.nodeType === Node.TEXT_NODE) {
-            textNode = container;
-            localOffset = offset;
-          } else if (container.nodeType === Node.ELEMENT_NODE) {
-            const children = Array.from(container.childNodes || []);
-            const index = clamp(offset + (preferEnd ? -1 : 0), 0, Math.max(children.length - 1, 0));
-            textNode = findTextNode(children[index] || container, preferEnd) || findTextNode(container, preferEnd);
-            if (!textNode) return null;
-            localOffset = preferEnd ? textNode.textContent.length : 0;
-          } else {
-            return null;
-          }
-
-          const span = textNode.parentElement && textNode.parentElement.closest("[data-text-start]");
-          if (!span) return null;
-          const base = Number(span.getAttribute("data-text-start") || "0");
-          return base + clamp(localOffset, 0, textNode.textContent.length);
-        }
-
-        function clearSelection() {
-          const selection = window.getSelection && window.getSelection();
-          if (selection && typeof selection.removeAllRanges === "function") {
-            selection.removeAllRanges();
-          }
-        }
-
-        function handleCopy(event) {
-          const selection = window.getSelection && window.getSelection();
-          if (!selectionInsideRoot(selection)) return;
-
-          const selectedText = selection.toString();
-          if (!selectedText || !selectedText.trim() || !state.copyCitation) return;
-
-          const attributedText = selectedText.replace(/\\s+$/, "") + "\\n\\n" + state.copyCitation;
-          const clipboard = event && event.clipboardData;
-
-          if (clipboard && typeof clipboard.setData === "function") {
-            event.preventDefault();
-            clipboard.setData("text/plain", attributedText);
-            return;
-          }
-
-          event.preventDefault();
-          sendMessage("copy_text", { text: attributedText });
-
-          if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-            navigator.clipboard.writeText(attributedText).catch(function () {});
-          }
-        }
-
-        function hideToolbar() {
-          currentDraft = null;
-          toolbar.style.display = "none";
-        }
-
-        function selectionInsideRoot(selection) {
-          if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
-          const range = selection.getRangeAt(0);
-          return root.contains(range.startContainer) && root.contains(range.endContainer);
-        }
-
-        function computeDraft() {
-          if (!state.annotationMode) return null;
-          const selection = window.getSelection && window.getSelection();
-          if (!selectionInsideRoot(selection)) return null;
-
-          const range = selection.getRangeAt(0);
-          const startOffset = resolveBoundary(range.startContainer, range.startOffset, false);
-          const endOffset = resolveBoundary(range.endContainer, range.endOffset, true);
-          if (typeof startOffset !== "number" || typeof endOffset !== "number" || endOffset <= startOffset) {
-            return null;
-          }
-
-          const raw = state.plainText.slice(startOffset, endOffset);
-          const trimmed = raw.trim();
-          if (trimmed.length < 2) return null;
-
-          const leadingTrim = raw.length - raw.trimStart().length;
-          const trailingTrim = raw.length - raw.trimEnd().length;
-          const finalStart = startOffset + leadingTrim;
-          const finalEnd = endOffset - trailingTrim;
-          if (finalEnd - finalStart < 2) return null;
-
-          return {
-            excerpt: state.plainText.slice(finalStart, finalEnd),
-            startOffset: finalStart,
-            endOffset: finalEnd,
-          };
-        }
-
-        function positionToolbar(range) {
-          toolbar.style.display = "flex";
-          toolbar.style.visibility = "hidden";
-          const rect = range.getBoundingClientRect();
-          const toolbarWidth = toolbar.offsetWidth || 116;
-          const top = rect.top > 72 ? rect.top - 56 : rect.bottom + 12;
-          const left = clamp(rect.left + rect.width / 2 - toolbarWidth / 2, 12, window.innerWidth - toolbarWidth - 12);
-          toolbar.style.left = left + "px";
-          toolbar.style.top = top + "px";
-          toolbar.style.visibility = "visible";
-        }
-
-        function syncSelectionToolbar() {
-          if (!state.annotationMode) {
-            hideToolbar();
-            return;
-          }
-          const selection = window.getSelection && window.getSelection();
-          if (!selectionInsideRoot(selection)) {
-            hideToolbar();
-            return;
-          }
-          const draft = computeDraft();
-          if (!draft) {
-            hideToolbar();
-            return;
-          }
-
-          currentDraft = draft;
-          positionToolbar(selection.getRangeAt(0));
-        }
-
-        function sendScroll() {
-          const now = Date.now();
-          if (now - lastScrollSentAt < 120) return;
-          lastScrollSentAt = now;
-          sendMessage("scroll", { offset: Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0)) });
-        }
-
-        document.addEventListener("selectionchange", function () {
-          window.requestAnimationFrame(syncSelectionToolbar);
-        });
-        document.addEventListener("touchend", function () {
-          window.setTimeout(syncSelectionToolbar, 60);
-        }, true);
-        document.addEventListener("mouseup", function () {
-          window.setTimeout(syncSelectionToolbar, 0);
-        }, true);
-        document.addEventListener("copy", handleCopy, true);
-        document.addEventListener("click", function (event) {
-          const target = event.target;
-          if (!(target instanceof Element)) return;
-
-          const link = target.closest("a[data-reader-link='1']");
-          if (link) {
-            event.preventDefault();
-            sendMessage("open_link", { href: link.getAttribute("href") || "" });
-            return;
-          }
-
-          if (state.annotationMode) {
-            return;
-          }
-
-          const annotation = target.closest("[data-annotation-id]");
-          if (annotation) {
-            event.preventDefault();
-            sendMessage("open_annotation", { annotationId: Number(annotation.getAttribute("data-annotation-id")) });
-          }
-        }, true);
-
-        actionButton.addEventListener("click", function () {
-          if (!currentDraft) return;
-          sendMessage("create_annotation", {
-            excerpt: currentDraft.excerpt,
-            startOffset: currentDraft.startOffset,
-            endOffset: currentDraft.endOffset,
-          });
-          hideToolbar();
-          clearSelection();
-        });
-
-        window.addEventListener("scroll", function () {
-          sendScroll();
-          if (currentDraft) {
-            const selection = window.getSelection && window.getSelection();
-            if (selectionInsideRoot(selection)) {
-              positionToolbar(selection.getRangeAt(0));
-            }
-          }
-        }, { passive: true });
-        window.addEventListener("resize", function () {
-          const selection = window.getSelection && window.getSelection();
-          if (selectionInsideRoot(selection)) {
-            positionToolbar(selection.getRangeAt(0));
-          }
-        });
-
-        window.__LV_READER__ = {
-          setAnnotationMode(value) {
-            state.annotationMode = !!value;
-            document.body.classList.toggle("lv-annotation-mode", !!state.annotationMode);
-            if (!state.annotationMode) {
-              hideToolbar();
-              clearSelection();
-            }
-          },
-          setFontScale(value) {
-            document.documentElement.style.setProperty("--lv-font-scale", String(value || 1));
-          },
-        };
-
-        document.body.classList.toggle("lv-annotation-mode", !!state.annotationMode);
-
-        window.setTimeout(function () {
-          const focusTarget = document.querySelector(".lv-focused-match");
-          if (focusTarget) {
-            focusTarget.scrollIntoView({ block: "center", inline: "nearest" });
-          } else if (state.initialScrollOffset > 0) {
-            window.scrollTo({ top: state.initialScrollOffset, left: 0, behavior: "auto" });
-          }
-          sendScroll();
-        }, 30);
-      })();
-    </script>
-  </body>
-</html>`;
 }
 
 export function BookReaderScreen({
@@ -860,8 +352,8 @@ export function BookReaderScreen({
 }: Props) {
   const { width: viewportWidth } = useWindowDimensions();
   const scrollRef = React.useRef<ScrollView | null>(null);
-  const nativeWebViewRef = React.useRef<any>(null);
-  const readingColumnRef = React.useRef<any>(null);
+  const nativeWebViewRef = React.useRef<React.ElementRef<typeof WebView> | null>(null);
+  const readingColumnRef = React.useRef<View | null>(null);
   const swipeTranslateX = React.useRef(new Animated.Value(0)).current;
   const pendingSwipeDirectionRef = React.useRef<-1 | 0 | 1>(0);
   const nativeScrollOffsetRef = React.useRef(initialScrollOffset);
@@ -1005,7 +497,8 @@ export function BookReaderScreen({
       richBlocks,
       annotations: annotationRanges,
       focus,
-      colorMode,
+      theme: palette,
+      isDark: isDarkReader,
       fontScale: currentFontScale,
       annotationMode,
       initialScrollOffset: nativeScrollOffsetRef.current || initialScrollOffset,
@@ -1015,11 +508,12 @@ export function BookReaderScreen({
     annotationMode,
     annotationRanges,
     chapter,
-    colorMode,
     copyCitation,
     currentFontScale,
     focus,
     initialScrollOffset,
+    isDarkReader,
+    palette,
     richBlocks,
     useNativeWebReader,
   ]);
@@ -1166,77 +660,83 @@ export function BookReaderScreen({
   );
 
   const handleNativeWebMessage = React.useCallback(
-    (event: any) => {
+    (event: WebViewMessageEvent) => {
       if (!chapter) return;
-      try {
-        const payload = JSON.parse(event?.nativeEvent?.data ?? "{}");
-        const type = String(payload?.type || "");
-
-        if (type === "scroll") {
-          const offset = Number(payload?.offset || 0);
-          if (Number.isFinite(offset)) {
-            nativeScrollOffsetRef.current = Math.max(0, offset);
-            onScrollOffsetChange?.(Math.max(0, offset));
-          }
-          return;
-        }
-
-        if (type === "open_link") {
-          void openLink(typeof payload?.href === "string" ? payload.href : undefined);
-          return;
-        }
-
-        if (type === "open_annotation") {
-          const annotationId = Number(payload?.annotationId);
-          if (Number.isFinite(annotationId) && annotationId > 0) {
-            onOpenAnnotation?.(annotationId);
-          }
-          return;
-        }
-
-        if (type === "copy_text") {
-          const text = typeof payload?.text === "string" ? payload.text : "";
-          copyTextToClipboard(text);
-          return;
-        }
-
-        if (type === "create_annotation") {
-          const startOffset = Number(payload?.startOffset);
-          const endOffset = Number(payload?.endOffset);
-          const excerpt =
-            typeof payload?.excerpt === "string" ? payload.excerpt.trim() : "";
-
-          if (
-            !onCreateAnnotationDraft ||
-            !Number.isFinite(startOffset) ||
-            !Number.isFinite(endOffset) ||
-            endOffset <= startOffset ||
-            excerpt.length < 2
-          ) {
-            return;
-          }
-
-          onCreateAnnotationDraft({
-            chapterId: chapter.id,
-            chapterSlug: chapter.slug,
-            chapterOrder: chapter.order,
-            chapterTitle: chapter.title,
-            excerpt,
-            startOffset,
-            endOffset,
-            selector: {
-              kind: "reader-selection",
-              source: "webview-selection",
-              chapter_slug: chapter.slug,
-              chapter_order: chapter.order,
-            },
-          });
-        }
-      } catch {
-        // Ignore malformed messages from the embedded reader page.
+      const message = parseNativeReaderMessage(event.nativeEvent.data ?? "");
+      if (!message) {
+        return;
       }
+
+      if (message.type === "scroll") {
+        const safeOffset = Math.max(0, message.offset);
+        nativeScrollOffsetRef.current = safeOffset;
+        onScrollOffsetChange?.(safeOffset);
+        return;
+      }
+
+      if (message.type === "open_link") {
+        void openLink(message.href);
+        return;
+      }
+
+      if (message.type === "open_annotation") {
+        if (message.annotationId > 0) {
+          onOpenAnnotation?.(message.annotationId);
+        }
+        return;
+      }
+
+      if (message.type === "copy_text") {
+        copyTextToClipboard(message.text);
+        return;
+      }
+
+      if (!onCreateAnnotationDraft || message.type !== "create_annotation") {
+        return;
+      }
+
+      const plain = chapter.content_plain || "";
+      const safeStart = Math.max(0, Math.min(Math.floor(message.startOffset), plain.length));
+      const safeEnd = Math.max(safeStart, Math.min(Math.floor(message.endOffset), plain.length));
+      const excerpt = message.excerpt.trim() || plain.slice(safeStart, safeEnd).trim();
+
+      if (safeEnd <= safeStart || excerpt.length < 2) {
+        return;
+      }
+
+      onCreateAnnotationDraft({
+        chapterId: chapter.id,
+        chapterSlug: chapter.slug,
+        chapterOrder: chapter.order,
+        chapterTitle: chapter.title,
+        excerpt,
+        startOffset: safeStart,
+        endOffset: safeEnd,
+        selector: {
+          kind: "reader-selection",
+          source: "webview-selection",
+          chapter_slug: chapter.slug,
+          chapter_order: chapter.order,
+        },
+      });
     },
     [chapter, onCreateAnnotationDraft, onOpenAnnotation, onScrollOffsetChange, openLink]
+  );
+
+  const handleNativeShouldStartLoadWithRequest = React.useCallback(
+    (request: ShouldStartLoadRequest) => {
+      const url = (request.url || "").trim();
+      const isAllowed = NATIVE_READER_ALLOWED_ORIGINS.some((pattern) =>
+        pattern.endsWith("*") ? url.startsWith(pattern.slice(0, -1)) : url === pattern
+      );
+      if (isAllowed) {
+        return true;
+      }
+
+      void openLink(url);
+      return false;
+    },
+    [openLink]
   );
 
   React.useEffect(() => {
@@ -1352,8 +852,7 @@ export function BookReaderScreen({
       return;
     }
 
-    const win = (globalThis as any).window;
-    const selection = win?.getSelection?.();
+    const selection = getBrowserSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
 
     const rawSelected = selection.toString();
@@ -1361,8 +860,8 @@ export function BookReaderScreen({
     const selectedText = selectedCollapsed.trim();
     if (selectedText.length < 2) return;
 
-    const container = readingColumnRef.current as any;
-    if (!container || typeof container.contains !== "function") return;
+    const container = readingColumnRef.current as unknown;
+    if (!isDomSelectionContainer(container)) return;
 
     const anchorNode = selection.anchorNode as Node | null;
     const focusNode = selection.focusNode as Node | null;
@@ -1603,9 +1102,12 @@ export function BookReaderScreen({
     });
   }, [canGoNext, canGoPrevious, enableSwipeNavigation, onNext, onPrevious, swipeMaxTranslate, swipeTranslateX, swipeTriggerDistance, useNativeWebReader]);
 
-  const webSelectionHandlers =
+  const webSelectionHandlers: {
+    onMouseUp?: () => void;
+    onTouchEnd?: () => void;
+  } =
     Platform.OS === "web"
-      ? ({ onMouseUp: handleWebSelectionEnd, onTouchEnd: handleWebSelectionEnd } as any)
+      ? { onMouseUp: handleWebSelectionEnd, onTouchEnd: handleWebSelectionEnd }
       : {};
 
   return (
@@ -1718,12 +1220,18 @@ export function BookReaderScreen({
               ref={nativeWebViewRef}
               testID="native-reader-webview"
               source={{ html: nativeReaderHtml }}
-              originWhitelist={["*"]}
+              originWhitelist={[...NATIVE_READER_ALLOWED_ORIGINS]}
               onMessage={handleNativeWebMessage}
+              onShouldStartLoadWithRequest={handleNativeShouldStartLoadWithRequest}
               showsVerticalScrollIndicator={false}
               bounces={false}
               scrollEnabled
               nestedScrollEnabled
+              allowFileAccess={false}
+              allowFileAccessFromFileURLs={false}
+              allowUniversalAccessFromFileURLs={false}
+              javaScriptCanOpenWindowsAutomatically={false}
+              setSupportMultipleWindows={false}
               style={styles.nativeReaderWebView}
             />
           ) : (
