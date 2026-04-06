@@ -14,6 +14,7 @@ import {
   createAnnotation,
   deleteAnnotation,
   listChapterAnnotationsForVersion,
+  updateAnnotation,
 } from "../src/api/annotations";
 import { getReadingProgress, saveReadingProgress } from "../src/storage/readingProgress";
 
@@ -29,6 +30,7 @@ jest.mock("../src/api/annotations", () => ({
   createAnnotation: jest.fn(),
   deleteAnnotation: jest.fn(),
   listChapterAnnotationsForVersion: jest.fn(),
+  updateAnnotation: jest.fn(),
 }));
 
 jest.mock("../src/storage/readingProgress", () => ({
@@ -38,10 +40,46 @@ jest.mock("../src/storage/readingProgress", () => ({
 
 jest.mock("../src/screens/BookReaderScreen", () => {
   const React = require("react");
-  const { Text } = require("react-native");
+  const { Pressable, Text, View } = require("react-native");
   return {
-    BookReaderScreen: ({ focus }: { focus?: { query?: string | null } | null }) => (
-      <Text>{focus?.query ? `Leitor do livro - destaque: ${focus.query}` : "Leitor do livro"}</Text>
+    BookReaderScreen: ({
+      annotationMode,
+      focus,
+      onCreateAnnotationDraft,
+      onOpenAnnotation,
+    }: {
+      annotationMode?: boolean;
+      focus?: { query?: string | null } | null;
+      onCreateAnnotationDraft?: ((draft: Record<string, unknown>) => void) | undefined;
+      onOpenAnnotation?: ((annotationId: number) => void) | undefined;
+    }) => (
+      <View>
+        <Text>{focus?.query ? `Leitor do livro - destaque: ${focus.query}` : "Leitor do livro"}</Text>
+        {annotationMode && onCreateAnnotationDraft ? (
+          <Pressable
+            testID="reader-create-annotation"
+            onPress={() =>
+              onCreateAnnotationDraft({
+                chapterId: 1,
+                chapterSlug: "cap-1",
+                chapterOrder: 1,
+                chapterTitle: "Introdução",
+                excerpt: "TRECHO-QUE-NAO-DEVE-APARECER",
+                startOffset: 10,
+                endOffset: 30,
+                selector: { kind: "reader-selection" },
+              })
+            }
+          >
+            <Text>Criar anotação</Text>
+          </Pressable>
+        ) : null}
+        {onOpenAnnotation ? (
+          <Pressable testID="reader-open-annotation" onPress={() => onOpenAnnotation(1)}>
+            <Text>Abrir anotação</Text>
+          </Pressable>
+        ) : null}
+      </View>
     ),
   };
 });
@@ -54,6 +92,7 @@ const searchBookMock = searchBook as unknown as jest.Mock;
 const listChapterAnnotationsForVersionMock = listChapterAnnotationsForVersion as unknown as jest.Mock;
 const createAnnotationMock = createAnnotation as unknown as jest.Mock;
 const deleteAnnotationMock = deleteAnnotation as unknown as jest.Mock;
+const updateAnnotationMock = updateAnnotation as unknown as jest.Mock;
 const getReadingProgressMock = getReadingProgress as unknown as jest.Mock;
 const saveReadingProgressMock = saveReadingProgress as unknown as jest.Mock;
 
@@ -128,6 +167,23 @@ function makeSearchResult(order: number, occurrence: number) {
   };
 }
 
+function makeAnnotation(overrides: Partial<any> = {}) {
+  return {
+    id: 1,
+    book_version: 101,
+    chapter: 1,
+    selector: { kind: "reader-selection" },
+    start_offset: 10,
+    end_offset: 30,
+    excerpt: "TRECHO-QUE-NAO-DEVE-APARECER",
+    note: "Observação importante",
+    color: "green",
+    created_at: "2026-03-05T10:00:00Z",
+    updated_at: "2026-03-05T10:00:00Z",
+    ...overrides,
+  };
+}
+
 async function flushEffects(cycles = 4) {
   for (let i = 0; i < cycles; i += 1) {
     await act(async () => {
@@ -188,6 +244,7 @@ describe("LibraryScreen reader toolbar", () => {
     listChapterAnnotationsForVersionMock.mockReset();
     createAnnotationMock.mockReset();
     deleteAnnotationMock.mockReset();
+    updateAnnotationMock.mockReset();
     getReadingProgressMock.mockReset();
     saveReadingProgressMock.mockReset();
 
@@ -240,6 +297,9 @@ describe("LibraryScreen reader toolbar", () => {
       ],
     });
     listChapterAnnotationsForVersionMock.mockResolvedValue([]);
+    createAnnotationMock.mockResolvedValue(makeAnnotation({ note: "", color: "yellow" }));
+    updateAnnotationMock.mockResolvedValue(makeAnnotation({ note: "Nota revisada", color: "blue" }));
+    deleteAnnotationMock.mockResolvedValue(undefined);
     getReadingProgressMock.mockResolvedValue(null);
     saveReadingProgressMock.mockResolvedValue(undefined);
   });
@@ -340,5 +400,64 @@ describe("LibraryScreen reader toolbar", () => {
 
     expect(JSON.stringify(tree.toJSON())).not.toContain("destaque: passageiro");
     expect(tree.root.findAllByProps({ testID: "reader-search-clear" })).toHaveLength(0);
+  });
+
+  it("abre o modal de criação sem repetir o trecho selecionado", async () => {
+    const tree = await renderReader();
+    await openReaderToolbar(tree);
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-annotation-toggle" })).props.onPress();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-create-annotation" })).props.onPress();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-native-draft-action" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree.root.findByProps({ testID: "annotation-create-modal" })).toBeTruthy();
+    expect(tree.root.findByProps({ testID: "annotation-create-note-input" })).toBeTruthy();
+    expect(JSON.stringify(tree.toJSON())).not.toContain("TRECHO-QUE-NAO-DEVE-APARECER");
+  });
+
+  it("abre a nota do destaque sem repetir o trecho e permite editar", async () => {
+    listChapterAnnotationsForVersionMock.mockResolvedValueOnce([makeAnnotation()]);
+
+    const tree = await renderReader();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-open-annotation" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree.root.findByProps({ testID: "annotation-detail-modal" })).toBeTruthy();
+    expect(JSON.stringify(tree.toJSON())).toContain("Observação importante");
+    expect(JSON.stringify(tree.toJSON())).not.toContain("TRECHO-QUE-NAO-DEVE-APARECER");
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-detail-edit" })).props.onPress();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-detail-color-blue" })).props.onPress();
+      (await waitForNode(tree, { testID: "annotation-detail-note-input" })).props.onChangeText("Nota revisada");
+    });
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-detail-save" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(updateAnnotationMock).toHaveBeenCalledWith("token-ok", 1, {
+      note: "Nota revisada",
+      color: "blue",
+    });
   });
 });

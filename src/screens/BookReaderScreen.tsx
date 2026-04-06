@@ -184,20 +184,20 @@ function findBestOccurrence(haystack: string, needle: string, approxIndex: numbe
 function annotationBgColor(color: string | undefined, isDark: boolean): string {
   const normalized = (color || "yellow").trim().toLowerCase();
   if (isDark) {
-    if (normalized === "green") return "#225b43";
-    if (normalized === "blue") return "#214f77";
-    if (normalized === "pink") return "#6c2f4d";
-    if (normalized === "orange") return "#7a4d1f";
+    if (normalized === "green") return "rgba(67, 167, 117, 0.38)";
+    if (normalized === "blue") return "rgba(90, 155, 230, 0.34)";
+    if (normalized === "pink") return "rgba(212, 112, 162, 0.34)";
+    if (normalized === "orange") return "rgba(214, 147, 62, 0.36)";
     if (normalized.startsWith("#")) return normalized;
-    return "#75600e";
+    return "rgba(224, 185, 42, 0.42)";
   }
 
-  if (normalized === "green") return "#b9f6ca";
-  if (normalized === "blue") return "#bbdefb";
-  if (normalized === "pink") return "#f8bbd0";
-  if (normalized === "orange") return "#ffd8a8";
+  if (normalized === "green") return "rgba(104, 214, 144, 0.36)";
+  if (normalized === "blue") return "rgba(123, 184, 255, 0.34)";
+  if (normalized === "pink") return "rgba(245, 160, 194, 0.34)";
+  if (normalized === "orange") return "rgba(255, 189, 109, 0.34)";
   if (normalized.startsWith("#")) return normalized;
-  return "#fff59d";
+  return "rgba(255, 232, 110, 0.52)";
 }
 
 export function BookReaderScreen({
@@ -415,6 +415,65 @@ export function BookReaderScreen({
       textRole: "text" | "header" = "text"
     ) => {
       const canOpenAnnotation = !annotationMode && typeof onOpenAnnotation === "function";
+      const renderSegmentTokens = (
+        segment: DecoratedSegment,
+        keyPrefix: string,
+        interactive: boolean
+      ) => {
+        if (!segment.annotation) {
+          if (!segment.isSearchMatch) {
+            return segment.text;
+          }
+
+          return (
+            <Text
+              key={`${keyPrefix}-match`}
+              style={[styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]}
+              selectable={annotationMode}
+            >
+              {segment.text}
+            </Text>
+          );
+        }
+
+        const tokens = segment.text.match(/\S+\s*|\s+/g) ?? [segment.text];
+
+        return tokens.map((token, tokenIndex) => {
+          if (!token) return null;
+
+          const isWhitespace = token.trim().length === 0;
+          const annotationStyle = {
+            backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
+            borderRadius: isWhitespace ? 0 : 2,
+          };
+          const tokenPressProps =
+            interactive && !isWhitespace
+              ? {
+                  accessibilityRole: "button" as const,
+                  onPress: () => {
+                    onOpenAnnotation?.(segment.annotation!.id);
+                  },
+                }
+              : {};
+
+          return (
+            <Text
+              key={`${keyPrefix}-${tokenIndex}`}
+              style={[
+                annotationStyle,
+                segment.isSearchMatch
+                  ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
+                  : null,
+              ]}
+              selectable={annotationMode}
+              {...tokenPressProps}
+            >
+              {token}
+            </Text>
+          );
+        });
+      };
+
       return (
         <Text
           style={baseStyle}
@@ -455,23 +514,9 @@ export function BookReaderScreen({
                   }}
                 >
                   {segments.map((segment, segIdx) => (
-                    <Text
-                      key={`seg-${index}-${segIdx}`}
-                      style={[
-                        segment.annotation
-                          ? {
-                              backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
-                              borderRadius: 2,
-                            }
-                          : null,
-                        segment.isSearchMatch
-                          ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
-                          : null,
-                      ]}
-                      selectable={annotationMode}
-                    >
-                      {segment.text}
-                    </Text>
+                    <React.Fragment key={`seg-${index}-${segIdx}`}>
+                      {renderSegmentTokens(segment, `seg-${index}-${segIdx}`, false)}
+                    </React.Fragment>
                   ))}
                 </Text>
               );
@@ -480,31 +525,9 @@ export function BookReaderScreen({
             return (
               <Text key={`text-${index}`} style={inlineStyle}>
                 {segments.map((segment, segIdx) => (
-                  <Text
-                    key={`seg-${index}-${segIdx}`}
-                    style={[
-                      segment.annotation
-                        ? {
-                            backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
-                            borderRadius: 2,
-                          }
-                        : null,
-                      segment.isSearchMatch
-                        ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
-                        : null,
-                    ]}
-                    selectable={annotationMode}
-                    accessibilityRole={canOpenAnnotation && segment.annotation ? "button" : undefined}
-                    onPress={
-                      canOpenAnnotation && segment.annotation
-                        ? () => {
-                            onOpenAnnotation?.(segment.annotation!.id);
-                          }
-                        : undefined
-                    }
-                  >
-                    {segment.text}
-                  </Text>
+                  <React.Fragment key={`seg-${index}-${segIdx}`}>
+                    {renderSegmentTokens(segment, `seg-${index}-${segIdx}`, canOpenAnnotation)}
+                  </React.Fragment>
                 ))}
               </Text>
             );

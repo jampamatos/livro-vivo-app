@@ -32,6 +32,7 @@ import {
   createAnnotation,
   deleteAnnotation,
   listChapterAnnotationsForVersion,
+  updateAnnotation,
 } from "../api/annotations";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
@@ -120,6 +121,99 @@ function normalizeBookStatus(status?: string | null) {
   return normalized.toUpperCase();
 }
 
+const ANNOTATION_COLOR_OPTIONS = [
+  { value: "yellow", label: "Amarelo" },
+  { value: "green", label: "Verde" },
+  { value: "blue", label: "Azul" },
+  { value: "pink", label: "Rosa" },
+] as const;
+
+type AnnotationColorValue = (typeof ANNOTATION_COLOR_OPTIONS)[number]["value"];
+
+function normalizeAnnotationColor(value?: string | null): AnnotationColorValue {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "green" || normalized === "blue" || normalized === "pink") {
+    return normalized;
+  }
+  return "yellow";
+}
+
+function getAnnotationModalTone(color: string, isDark: boolean) {
+  const normalized = normalizeAnnotationColor(color);
+
+  if (isDark) {
+    if (normalized === "green") {
+      return {
+        cardBg: "#16251D",
+        cardBorder: "#3D7B5F",
+        heroBg: "#225B43",
+        heroText: "#E4F6ED",
+        heroMuted: "#A9C9B8",
+      };
+    }
+    if (normalized === "blue") {
+      return {
+        cardBg: "#142131",
+        cardBorder: "#446C95",
+        heroBg: "#214F77",
+        heroText: "#E3F0FF",
+        heroMuted: "#A4BEDD",
+      };
+    }
+    if (normalized === "pink") {
+      return {
+        cardBg: "#2B1922",
+        cardBorder: "#8E4B67",
+        heroBg: "#6C2F4D",
+        heroText: "#FFEAF2",
+        heroMuted: "#DAB6C5",
+      };
+    }
+    return {
+      cardBg: "#2A2415",
+      cardBorder: "#7A6730",
+      heroBg: "#6F5805",
+      heroText: "#FFF4CA",
+      heroMuted: "#D9C98B",
+    };
+  }
+
+  if (normalized === "green") {
+    return {
+      cardBg: "#E9F8EF",
+      cardBorder: "#79C696",
+      heroBg: "#7FD3A2",
+      heroText: "#123325",
+      heroMuted: "#315947",
+    };
+  }
+  if (normalized === "blue") {
+    return {
+      cardBg: "#EAF3FF",
+      cardBorder: "#83B7F2",
+      heroBg: "#8CC0FF",
+      heroText: "#102744",
+      heroMuted: "#375577",
+    };
+  }
+  if (normalized === "pink") {
+    return {
+      cardBg: "#FFF0F5",
+      cardBorder: "#E4A8C0",
+      heroBg: "#F2B7CC",
+      heroText: "#461A2D",
+      heroMuted: "#6C4355",
+    };
+  }
+  return {
+    cardBg: "#FFF7D9",
+    cardBorder: "#D9C56A",
+    heroBg: "#F3D86B",
+    heroText: "#46380F",
+    heroMuted: "#6B5820",
+  };
+}
+
 export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -163,6 +257,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [annotationDraftColor, setAnnotationDraftColor] = React.useState("yellow");
   const [annotationSaving, setAnnotationSaving] = React.useState(false);
   const [annotationDetailId, setAnnotationDetailId] = React.useState<number | null>(null);
+  const [annotationDetailNote, setAnnotationDetailNote] = React.useState("");
+  const [annotationDetailColor, setAnnotationDetailColor] = React.useState("yellow");
+  const [annotationEditing, setAnnotationEditing] = React.useState(false);
+  const [annotationUpdating, setAnnotationUpdating] = React.useState(false);
   const [annotationDeleting, setAnnotationDeleting] = React.useState(false);
 
   const saveProgressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -494,6 +592,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setAnnotationDraftColor("yellow");
       setAnnotationSaving(false);
       setAnnotationDetailId(null);
+      setAnnotationDetailNote("");
+      setAnnotationDetailColor("yellow");
+      setAnnotationEditing(false);
+      setAnnotationUpdating(false);
       setAnnotationDeleting(false);
       if (resetBookSearch) {
         resetSearch();
@@ -697,6 +799,48 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setReaderFocus(null);
   }, [resetSearch]);
 
+  const renderAnnotationColorChips = React.useCallback(
+    (
+      selectedColor: string,
+      onSelect: (color: AnnotationColorValue) => void,
+      prefix: "create" | "detail"
+    ) => (
+      <View style={styles.annotationColorRow}>
+        {ANNOTATION_COLOR_OPTIONS.map((color) => {
+          const selected = normalizeAnnotationColor(selectedColor) === color.value;
+          const colorTone = getAnnotationModalTone(color.value, theme.isDark);
+
+          return (
+            <Pressable
+              key={`${prefix}-${color.value}`}
+              testID={`annotation-${prefix}-color-${color.value}`}
+              onPress={() => onSelect(color.value)}
+              style={[
+                styles.annotationColorChip,
+                {
+                  borderColor: selected ? colorTone.cardBorder : readerUi.iconBorder,
+                  backgroundColor: selected ? colorTone.heroBg : readerUi.modalInputBg,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.annotationColorChipText,
+                  {
+                    color: selected ? colorTone.heroText : readerUi.modalText,
+                  },
+                ]}
+              >
+                {color.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    ),
+    [readerUi.iconBorder, readerUi.modalInputBg, readerUi.modalText, theme.isDark]
+  );
+
   const openReaderChapter = React.useCallback(
     (chapterSlug: string, focus: ReaderFocus | null = null) => {
       if (!openBook) return;
@@ -799,6 +943,30 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     if (annotationDetailId == null) return null;
     return annotations.find((annotation) => annotation.id === annotationDetailId) ?? null;
   }, [annotationDetailId, annotations]);
+  const draftAnnotationTone = React.useMemo(
+    () => getAnnotationModalTone(annotationDraftColor, theme.isDark),
+    [annotationDraftColor, theme.isDark]
+  );
+  const selectedAnnotationTone = React.useMemo(
+    () => getAnnotationModalTone(annotationDetailColor, theme.isDark),
+    [annotationDetailColor, theme.isDark]
+  );
+  const selectedAnnotationHasNote = !!selectedAnnotation?.note?.trim();
+  const showingSelectedAnnotationEditor = annotationEditing || !selectedAnnotationHasNote;
+
+  React.useEffect(() => {
+    if (!selectedAnnotation) {
+      setAnnotationDetailNote("");
+      setAnnotationDetailColor("yellow");
+      setAnnotationEditing(false);
+      setAnnotationUpdating(false);
+      return;
+    }
+
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(!selectedAnnotation.note?.trim());
+  }, [selectedAnnotation]);
 
   const saveAnnotationDraft = React.useCallback(async () => {
     if (!openBook || !annotationDraft) return;
@@ -835,6 +1003,71 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     openBook,
     token,
   ]);
+
+  const saveSelectedAnnotation = React.useCallback(async () => {
+    if (!selectedAnnotation) return;
+
+    const nextNote = annotationDetailNote.trim();
+    const nextColor = normalizeAnnotationColor(annotationDetailColor);
+    const currentNote = (selectedAnnotation.note || "").trim();
+    const currentColor = normalizeAnnotationColor(selectedAnnotation.color);
+
+    if (nextNote === currentNote && nextColor === currentColor) {
+      setAnnotationEditing(false);
+      if (!selectedAnnotationHasNote) {
+        setAnnotationDetailId(null);
+      }
+      return;
+    }
+
+    setAnnotationUpdating(true);
+    setAnnotationsSyncError(null);
+    try {
+      await updateAnnotation(token, selectedAnnotation.id, {
+        note: nextNote,
+        color: nextColor,
+      });
+      setAnnotationEditing(false);
+      setAnnotationDetailId(null);
+      await loadAnnotations();
+    } catch (error) {
+      setAnnotationsSyncError(formatAnnotationError(error, "Erro ao atualizar anotação"));
+    } finally {
+      setAnnotationUpdating(false);
+    }
+  }, [
+    annotationDetailColor,
+    annotationDetailNote,
+    formatAnnotationError,
+    loadAnnotations,
+    selectedAnnotation,
+    selectedAnnotationHasNote,
+    token,
+  ]);
+
+  const closeSelectedAnnotationModal = React.useCallback(() => {
+    if (annotationDeleting || annotationUpdating) return;
+    setAnnotationDetailId(null);
+  }, [annotationDeleting, annotationUpdating]);
+
+  const startSelectedAnnotationEditing = React.useCallback(() => {
+    if (!selectedAnnotation) return;
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(true);
+  }, [selectedAnnotation]);
+
+  const cancelSelectedAnnotationEditing = React.useCallback(() => {
+    if (!selectedAnnotation) return;
+    if (!selectedAnnotationHasNote) {
+      setAnnotationDetailId(null);
+      return;
+    }
+
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(false);
+  }, [selectedAnnotation, selectedAnnotationHasNote]);
 
   const deleteSelectedAnnotation = React.useCallback(async () => {
     if (!selectedAnnotation) return;
@@ -927,6 +1160,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setAnnotationDraftColor("yellow");
     setAnnotationSaving(false);
     setAnnotationDetailId(null);
+    setAnnotationDetailNote("");
+    setAnnotationDetailColor("yellow");
+    setAnnotationEditing(false);
+    setAnnotationUpdating(false);
     setAnnotationDeleting(false);
     resetSearch();
   };
@@ -995,6 +1232,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </Pressable>
 
         <Pressable
+          testID="reader-annotation-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -1177,6 +1415,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 "{pendingNativeDraft.excerpt}"
               </Text>
               <Pressable
+                testID="annotation-native-draft-action"
                 style={[styles.nativeDraftAction, { backgroundColor: readerUi.draftActionBg }]}
                 onPress={() => {
                   setAnnotationDraft(pendingNativeDraft);
@@ -1527,66 +1766,23 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               style={[
                 styles.annotationModalCard,
                 {
-                  borderColor: readerUi.modalCardBorder,
-                  backgroundColor: readerUi.modalCardBg,
+                  borderColor: draftAnnotationTone.cardBorder,
+                  backgroundColor: draftAnnotationTone.cardBg,
                 },
               ]}
+              testID="annotation-create-modal"
             >
-              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Nova anotação</Text>
-              {annotationDraft ? (
-                <>
-                  <Text style={[styles.annotationModalMeta, { color: readerUi.modalMuted }]}>
-                    Cap. {annotationDraft.chapterOrder} • {annotationDraft.chapterTitle}
-                  </Text>
-                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={5}>
-                    "{annotationDraft.excerpt}"
-                  </Text>
-                </>
-              ) : null}
-
-              <View style={styles.annotationColorRow}>
-                {[
-                  { value: "yellow", label: "Amarelo" },
-                  { value: "green", label: "Verde" },
-                  { value: "blue", label: "Azul" },
-                  { value: "pink", label: "Rosa" },
-                ].map((color) => {
-                  const selected = color.value === annotationDraftColor;
-                  return (
-                    <Pressable
-                      key={color.value}
-                      onPress={() => setAnnotationDraftColor(color.value)}
-                      style={[
-                        styles.annotationColorChip,
-                        {
-                          borderColor: readerUi.iconBorder,
-                          backgroundColor: readerUi.modalInputBg,
-                        },
-                        selected ? styles.annotationColorChipSelected : null,
-                        selected
-                          ? { borderColor: readerUi.modalPrimaryBg, backgroundColor: readerUi.modalPrimaryBg }
-                          : null,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.annotationColorChipText,
-                          { color: readerUi.modalText },
-                          selected ? styles.annotationColorChipTextSelected : null,
-                          selected ? { color: readerUi.modalPrimaryText } : null,
-                        ]}
-                      >
-                        {color.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {renderAnnotationColorChips(
+                annotationDraftColor,
+                (color) => setAnnotationDraftColor(color),
+                "create"
+              )}
 
               <TextInput
+                testID="annotation-create-note-input"
                 value={annotationDraftNote}
                 onChangeText={setAnnotationDraftNote}
-                placeholder="Nota (opcional)"
+                placeholder="Escreva uma nota opcional"
                 placeholderTextColor={readerUi.inputPlaceholder}
                 multiline
                 style={[
@@ -1601,6 +1797,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
               <View style={styles.annotationModalActions}>
                 <Pressable
+                  testID="annotation-create-cancel"
                   onPress={() => {
                     setAnnotationDraft(null);
                     setPendingNativeDraft(null);
@@ -1617,6 +1814,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
+                  testID="annotation-create-save"
                   onPress={() => {
                     void saveAnnotationDraft();
                   }}
@@ -1630,7 +1828,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   ]}
                 >
                   <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
-                    {annotationSaving ? "Salvando..." : "Salvar"}
+                    {annotationSaving ? "Salvando..." : "Salvar destaque"}
                   </Text>
                 </Pressable>
               </View>
@@ -1643,8 +1841,8 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (!annotationDeleting) {
-              setAnnotationDetailId(null);
+            if (!annotationDeleting && !annotationUpdating) {
+              closeSelectedAnnotationModal();
             }
           }}
         >
@@ -1653,29 +1851,65 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               style={[
                 styles.annotationModalCard,
                 {
-                  borderColor: readerUi.modalCardBorder,
-                  backgroundColor: readerUi.modalCardBg,
+                  borderColor: selectedAnnotationTone.cardBorder,
+                  backgroundColor: selectedAnnotationTone.cardBg,
                 },
               ]}
+              testID="annotation-detail-modal"
             >
-              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Anotação</Text>
               {selectedAnnotation ? (
-                <>
-                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={6}>
-                    "{selectedAnnotation.excerpt || "Trecho sem preview"}"
-                  </Text>
-                  {selectedAnnotation.note?.trim() ? (
-                    <Text style={[styles.annotationModalNote, { color: readerUi.modalText }]}>Nota: {selectedAnnotation.note}</Text>
-                  ) : (
-                    <Text style={[styles.annotationModalNoteMuted, { color: readerUi.modalMuted }]}>Sem nota adicional.</Text>
-                  )}
-                </>
+                showingSelectedAnnotationEditor ? (
+                  <>
+                    {renderAnnotationColorChips(
+                      annotationDetailColor,
+                      (color) => setAnnotationDetailColor(color),
+                      "detail"
+                    )}
+                    <TextInput
+                      testID="annotation-detail-note-input"
+                      value={annotationDetailNote}
+                      onChangeText={setAnnotationDetailNote}
+                      placeholder="Escreva uma nota opcional"
+                      placeholderTextColor={readerUi.inputPlaceholder}
+                      multiline
+                      style={[
+                        styles.annotationNoteInput,
+                        {
+                          borderColor: readerUi.modalInputBorder,
+                          backgroundColor: readerUi.modalInputBg,
+                          color: readerUi.modalInputText,
+                        },
+                      ]}
+                    />
+                  </>
+                ) : (
+                  <View
+                    style={[
+                      styles.annotationNotePreview,
+                      {
+                        borderColor: selectedAnnotationTone.cardBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                      },
+                    ]}
+                  >
+                    <Text testID="annotation-detail-note" style={[styles.annotationModalNote, { color: readerUi.modalText }]}>
+                      {selectedAnnotation.note}
+                    </Text>
+                  </View>
+                )
               ) : null}
 
               <View style={styles.annotationModalActions}>
                 <Pressable
-                  onPress={() => setAnnotationDetailId(null)}
-                  disabled={annotationDeleting}
+                  testID="annotation-detail-close"
+                  onPress={() => {
+                    if (showingSelectedAnnotationEditor) {
+                      cancelSelectedAnnotationEditing();
+                      return;
+                    }
+                    closeSelectedAnnotationModal();
+                  }}
+                  disabled={annotationDeleting || annotationUpdating}
                   style={[
                     styles.annotationModalCancel,
                     {
@@ -1684,13 +1918,55 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     },
                   ]}
                 >
-                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Fechar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>
+                    {showingSelectedAnnotationEditor
+                      ? selectedAnnotationHasNote
+                        ? "Cancelar edição"
+                        : "Fechar"
+                      : "Fechar"}
+                  </Text>
                 </Pressable>
+                {!showingSelectedAnnotationEditor ? (
+                  <Pressable
+                    testID="annotation-detail-edit"
+                    onPress={startSelectedAnnotationEditing}
+                    disabled={annotationDeleting || annotationUpdating}
+                    style={[
+                      styles.annotationModalSecondary,
+                      {
+                        borderColor: selectedAnnotationTone.cardBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.annotationModalSecondaryText, { color: readerUi.modalText }]}>Editar nota</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    testID="annotation-detail-save"
+                    onPress={() => {
+                      void saveSelectedAnnotation();
+                    }}
+                    disabled={annotationDeleting || annotationUpdating}
+                    style={[
+                      styles.annotationModalSave,
+                      {
+                        backgroundColor: readerUi.modalPrimaryBg,
+                      },
+                      annotationUpdating ? styles.annotationModalButtonDisabled : null,
+                    ]}
+                  >
+                    <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
+                      {annotationUpdating ? "Salvando..." : "Salvar nota"}
+                    </Text>
+                  </Pressable>
+                )}
                 <Pressable
+                  testID="annotation-detail-delete"
                   onPress={() => {
                     void deleteSelectedAnnotation();
                   }}
-                  disabled={annotationDeleting}
+                  disabled={annotationDeleting || annotationUpdating}
                   style={[
                     styles.annotationModalDelete,
                     annotationDeleting ? styles.annotationModalButtonDisabled : null,
@@ -2273,9 +2549,6 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-  annotationModalTitle: { fontSize: 16, fontWeight: "700", color: "#161616" },
-  annotationModalMeta: { fontSize: 12, color: "#585858" },
-  annotationModalExcerpt: { fontSize: 14, color: "#242424" },
   annotationColorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   annotationColorChip: {
     borderWidth: 1,
@@ -2285,9 +2558,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: "#fff",
   },
-  annotationColorChipSelected: { borderColor: "#111", backgroundColor: "#111" },
   annotationColorChipText: { fontSize: 12, color: "#111", fontWeight: "700" },
-  annotationColorChipTextSelected: { color: "#fff" },
   annotationNoteInput: {
     borderWidth: 1,
     borderColor: "#c6c3ba",
@@ -2298,9 +2569,16 @@ const styles = StyleSheet.create({
     minHeight: 52,
     maxHeight: 140,
   },
+  annotationNotePreview: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 0,
+  },
   annotationModalNote: { fontSize: 13, color: "#2b2b2b", fontStyle: "italic" },
   annotationModalNoteMuted: { fontSize: 12, color: "#777" },
-  annotationModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
+  annotationModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" },
   annotationModalCancel: {
     borderWidth: 1,
     borderColor: "#9e9a90",
@@ -2316,7 +2594,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: "#111",
   },
+  annotationModalSecondary: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
   annotationModalSaveText: { fontSize: 12, color: "#fff", fontWeight: "700" },
+  annotationModalSecondaryText: { fontSize: 12, color: "#333", fontWeight: "700" },
   annotationModalDelete: {
     borderRadius: 8,
     paddingVertical: 8,
