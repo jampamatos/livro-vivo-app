@@ -1,5 +1,6 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
+import { Platform } from "react-native";
 
 import { LibraryScreen } from "../src/screens/LibraryScreen";
 import {
@@ -56,23 +57,45 @@ jest.mock("../src/screens/BookReaderScreen", () => {
       <View>
         <Text>{focus?.query ? `Leitor do livro - destaque: ${focus.query}` : "Leitor do livro"}</Text>
         {annotationMode && onCreateAnnotationDraft ? (
-          <Pressable
-            testID="reader-create-annotation"
-            onPress={() =>
-              onCreateAnnotationDraft({
-                chapterId: 1,
-                chapterSlug: "cap-1",
-                chapterOrder: 1,
-                chapterTitle: "Introdução",
-                excerpt: "TRECHO-QUE-NAO-DEVE-APARECER",
-                startOffset: 10,
-                endOffset: 30,
-                selector: { kind: "reader-selection" },
-              })
-            }
-          >
-            <Text>Criar anotação</Text>
-          </Pressable>
+          <>
+            <Pressable
+              testID="reader-create-annotation"
+              onPress={() =>
+                onCreateAnnotationDraft({
+                  chapterId: 1,
+                  chapterSlug: "cap-1",
+                  chapterOrder: 1,
+                  chapterTitle: "Introdução",
+                  excerpt: "TRECHO-QUE-NAO-DEVE-APARECER",
+                  startOffset: 10,
+                  endOffset: 30,
+                  selector: { kind: "reader-selection" },
+                })
+              }
+            >
+              <Text>Criar anotação</Text>
+            </Pressable>
+            <Pressable
+              testID="reader-create-webview-annotation"
+              onPress={() =>
+                onCreateAnnotationDraft({
+                  chapterId: 1,
+                  chapterSlug: "cap-1",
+                  chapterOrder: 1,
+                  chapterTitle: "Introdução",
+                  excerpt: "trecho selecionado no webview",
+                  startOffset: 4,
+                  endOffset: 33,
+                  selector: {
+                    kind: "reader-selection",
+                    source: "webview-selection",
+                  },
+                })
+              }
+            >
+              <Text>Criar anotação via webview</Text>
+            </Pressable>
+          </>
         ) : null}
         {onOpenAnnotation ? (
           <Pressable testID="reader-open-annotation" onPress={() => onOpenAnnotation(1)}>
@@ -235,6 +258,8 @@ async function openReaderToolbar(tree: renderer.ReactTestRenderer) {
 }
 
 describe("LibraryScreen reader toolbar", () => {
+  const originalPlatform = Platform.OS;
+
   beforeEach(() => {
     listBooksMock.mockReset();
     getCurrentBookVersionMock.mockReset();
@@ -302,6 +327,13 @@ describe("LibraryScreen reader toolbar", () => {
     deleteAnnotationMock.mockResolvedValue(undefined);
     getReadingProgressMock.mockResolvedValue(null);
     saveReadingProgressMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: originalPlatform,
+    });
   });
 
   it("renderiza scroll próprio para o índice do livro", async () => {
@@ -420,6 +452,53 @@ describe("LibraryScreen reader toolbar", () => {
     expect(tree.root.findByProps({ testID: "annotation-native-selection-input" })).toBeTruthy();
     expect(tree.root.findByProps({ testID: "annotation-create-note-input" })).toBeTruthy();
     expect(tree.root.findAllByProps({ testID: "annotation-native-selection-modal" })).toHaveLength(0);
+  });
+
+  it("abre e salva o modal de anotação direto da seleção no webview mobile", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    const tree = await renderReader();
+    await openReaderToolbar(tree);
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-annotation-toggle" })).props.onPress();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-create-webview-annotation" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree.root.findByProps({ testID: "annotation-create-modal" })).toBeTruthy();
+    expect(tree.root.findAllByProps({ testID: "annotation-native-selection-input" })).toHaveLength(0);
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-create-note-input" })).props.onChangeText("Nota mobile");
+    });
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "annotation-create-save" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(createAnnotationMock).toHaveBeenCalledWith(
+      "token-ok",
+      expect.objectContaining({
+        chapter: 1,
+        excerpt: "trecho selecionado no webview",
+        start_offset: 4,
+        end_offset: 33,
+        note: "Nota mobile",
+        color: "yellow",
+        selector: expect.objectContaining({
+          source: "webview-selection",
+        }),
+      })
+    );
   });
 
   it("abre a nota do destaque sem repetir o trecho e permite editar", async () => {

@@ -974,7 +974,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     [annotationDetailColor, theme.isDark]
   );
   const resolvedCreateDraft = React.useMemo(() => {
-    if (Platform.OS === "web") {
+    if (annotationDraft) {
       return annotationDraft;
     }
 
@@ -1031,7 +1031,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, [selectedAnnotation]);
 
   const saveAnnotationDraft = React.useCallback(async () => {
-    const draftToSave = Platform.OS === "web" ? annotationDraft : resolvedCreateDraft;
+    const draftToSave = resolvedCreateDraft;
     if (!openBook || !draftToSave) return;
     setAnnotationSaving(true);
     setAnnotationsSyncError(null);
@@ -1058,7 +1058,6 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setAnnotationSaving(false);
     }
   }, [
-    annotationDraft,
     annotationDraftColor,
     annotationDraftNote,
     formatAnnotationError,
@@ -1461,7 +1460,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   ? "Carregando anotações..."
                   : Platform.OS === "web"
                     ? "Selecione um trecho com o mouse para criar destaque."
-                    : "Toque em um parágrafo para abrir a seleção do trecho e ajuste pelas alças."}
+                    : "Segure e ajuste a seleção no próprio texto, depois toque em Anotar."}
               </Text>
             </View>
           ) : null}
@@ -1722,7 +1721,12 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 setAnnotationDraftNote("");
                 setAnnotationDraftColor("yellow");
                 setAnnotationsSyncError(null);
-                if (Platform.OS === "web") {
+                if (
+                  Platform.OS === "web" ||
+                  String(draft.selector?.source || "") === "webview-selection"
+                ) {
+                  setPendingNativeDraft(null);
+                  setNativeSelectionRange({ start: 0, end: 0 });
                   setAnnotationDraft(draft);
                   return;
                 }
@@ -1792,7 +1796,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </View>
 
         <Modal
-          visible={Platform.OS === "web" ? !!annotationDraft : !!pendingNativeDraft}
+          visible={Platform.OS === "web" ? !!annotationDraft : !!annotationDraft || !!pendingNativeDraft}
           transparent
           animationType="fade"
           onRequestClose={() => {
@@ -1904,13 +1908,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   onPress={() => {
                     void saveAnnotationDraft();
                   }}
-                  disabled={annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)}
+                  disabled={annotationSaving || resolvedCreateDraft == null}
                   style={[
                     styles.annotationModalSave,
                     {
                       backgroundColor: readerUi.modalPrimaryBg,
                     },
-                    annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)
+                    annotationSaving || resolvedCreateDraft == null
                       ? styles.annotationModalButtonDisabled
                       : null,
                   ]}

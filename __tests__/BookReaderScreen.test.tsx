@@ -116,4 +116,59 @@ describe("BookReaderScreen", () => {
       })
     );
   });
+
+  it("usa WebView no reader nativo e cria anotação a partir da seleção do texto", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    const onCreateAnnotationDraft = jest.fn();
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapter}
+          loading={false}
+          error={null}
+          focus={null}
+          mode="reader"
+          showHeader={false}
+          showControls={false}
+          annotationMode
+          onCreateAnnotationDraft={onCreateAnnotationDraft}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+
+    await act(async () => {
+      webView.props.onMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            type: "create_annotation",
+            excerpt: "Primeiro parágrafo",
+            startOffset: 0,
+            endOffset: 18,
+          }),
+        },
+      });
+    });
+
+    expect(onCreateAnnotationDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapterId: 1,
+        chapterSlug: "introducao",
+        excerpt: "Primeiro parágrafo",
+        selector: expect.objectContaining({
+          source: "webview-selection",
+        }),
+      })
+    );
+  });
 });

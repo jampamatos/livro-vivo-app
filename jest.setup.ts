@@ -14,6 +14,23 @@ jest.mock("react-native-safe-area-context", () => {
   };
 });
 
+jest.mock("react-native-webview", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+
+  const MockWebView = React.forwardRef(({ children, ...props }: any, ref: any) =>
+    React.createElement(View, { ref, ...props }, children)
+  );
+
+  MockWebView.displayName = "MockWebView";
+
+  return {
+    __esModule: true,
+    WebView: MockWebView,
+    default: MockWebView,
+  };
+});
+
 // Ajuda: limpa mocks entre testes
 afterEach(() => {
   jest.clearAllMocks();
