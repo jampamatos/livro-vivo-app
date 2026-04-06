@@ -13,8 +13,9 @@
     "export:web": "expo export --platform web",
     "validate:release-config": "node scripts/validate-release-config.mjs",
     "test": "jest",
-    "test:critical-routes": "jest --runInBand --ci __tests__/App.test.tsx __tests__/MainScreen.test.tsx __tests__/AccountScreen.test.tsx __tests__/CommunityPostScreen.test.tsx __tests__/LoginScreen.test.tsx __tests__/CaseLawScreen.test.tsx __tests__/CourseScreen.test.tsx __tests__/TemplatesBankScreen.test.tsx",
-    "gate:predeploy": "npm run typecheck && npm run test:critical-routes && npm test -- --runInBand --ci && npm run validate:release-config",
+    "test:critical-routes": "jest --runInBand --ci __tests__/App.test.tsx __tests__/MainScreen.test.tsx __tests__/AccountScreen.test.tsx __tests__/CommunityPostScreen.test.tsx __tests__/LoginScreen.test.tsx __tests__/CaseLawScreen.test.tsx __tests__/CourseScreen.test.tsx __tests__/TemplatesBankScreen.test.tsx __tests__/LibraryScreen.test.tsx __tests__/BookReaderScreen.test.tsx",
+    "test:coverage": "jest --runInBand --ci --coverage",
+    "gate:predeploy": "npm run typecheck && npm run test:critical-routes && npm test -- --runInBand --ci && npm run test:coverage && npm run validate:release-config",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -48,7 +49,19 @@
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.ts"
-    ]
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "!src/**/*.d.ts"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 50,
+        "functions": 60,
+        "lines": 65,
+        "statements": 62
+      }
+    }
   },
   "overrides": {
     "@tootallnate/once": "^3.0.1"

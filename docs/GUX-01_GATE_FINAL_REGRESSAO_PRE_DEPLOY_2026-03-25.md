@@ -29,6 +29,8 @@ Cobertura minima:
 - `__tests__/CaseLawScreen.test.tsx`
 - `__tests__/CourseScreen.test.tsx`
 - `__tests__/TemplatesBankScreen.test.tsx`
+- `__tests__/LibraryScreen.test.tsx`
+- `__tests__/BookReaderScreen.test.tsx`
 
 ## Gate local completo
 
@@ -43,7 +45,8 @@ Esse comando executa:
 1. `npm run typecheck`
 2. `npm run test:critical-routes`
 3. `npm test -- --runInBand --ci`
-4. `npm run validate:release-config`
+4. `npm run test:coverage`
+5. `npm run validate:release-config`
 
 Checks adicionais recomendados antes de marcar build candidata:
 

@@ -5,6 +5,7 @@ node_modules/
 
 # artifacts
 dist-web-ci-local/
+coverage/
 
 # Expo
 .expo/
