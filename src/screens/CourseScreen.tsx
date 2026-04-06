@@ -423,6 +423,8 @@ export function CourseScreen({ token }: Props) {
           node.bold ? styles.detailInlineBold : null,
           node.italic ? styles.detailInlineItalic : null,
           node.underline ? styles.detailInlineUnderline : null,
+          node.superscript ? styles.detailInlineSuperscript : null,
+          node.subscript ? styles.detailInlineSubscript : null,
           node.href ? styles.detailInlineLink : null,
           { color: node.href ? theme.colors.primary : theme.colors.text },
         ];
@@ -1460,6 +1462,18 @@ const styles = StyleSheet.create({
   detailInlineBold: { fontWeight: "700" },
   detailInlineItalic: { fontStyle: "italic" },
   detailInlineUnderline: { textDecorationLine: "underline" },
+  detailInlineSuperscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: -6,
+  },
+  detailInlineSubscript: {
+    fontSize: 12,
+    lineHeight: 12,
+    position: "relative",
+    top: 4,
+  },
   detailInlineLink: { textDecorationLine: "underline" },
   detailHeading2: { fontSize: 28, lineHeight: 38, fontWeight: "800", marginTop: 16, fontFamily: "Georgia" },
   detailHeading2Wide: { fontSize: 34, lineHeight: 44 },

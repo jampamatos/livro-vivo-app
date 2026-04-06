@@ -782,6 +782,26 @@ describe("reader rich text + a11y baseline", () => {
     expect(safeLink).toBeDefined();
   });
 
+  it("preserva sobrescrito e subescrito no parser rico", () => {
+    const blocks = buildRichTextBlocks(
+      "<p>Nota<sup>1</sup> e H<sub>2</sub>O</p>",
+      "fallback"
+    );
+
+    const paragraph = blocks[0];
+    if (paragraph.type !== "paragraph") {
+      throw new Error("parágrafo esperado");
+    }
+
+    expect(paragraph.inlines).toEqual([
+      expect.objectContaining({ type: "text", text: "Nota" }),
+      expect.objectContaining({ type: "text", text: "1", superscript: true }),
+      expect.objectContaining({ type: "text", text: " e H" }),
+      expect.objectContaining({ type: "text", text: "2", subscript: true }),
+      expect.objectContaining({ type: "text", text: "O" }),
+    ]);
+  });
+
   it("renderiza heading/list/link com semântica de acessibilidade", () => {
     let tree: renderer.ReactTestRenderer;
     act(() => {
