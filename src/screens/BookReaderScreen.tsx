@@ -184,20 +184,20 @@ function findBestOccurrence(haystack: string, needle: string, approxIndex: numbe
 function annotationBgColor(color: string | undefined, isDark: boolean): string {
   const normalized = (color || "yellow").trim().toLowerCase();
   if (isDark) {
-    if (normalized === "green") return "#225b43";
-    if (normalized === "blue") return "#214f77";
-    if (normalized === "pink") return "#6c2f4d";
-    if (normalized === "orange") return "#7a4d1f";
+    if (normalized === "green") return "rgba(67, 167, 117, 0.38)";
+    if (normalized === "blue") return "rgba(90, 155, 230, 0.34)";
+    if (normalized === "pink") return "rgba(212, 112, 162, 0.34)";
+    if (normalized === "orange") return "rgba(214, 147, 62, 0.36)";
     if (normalized.startsWith("#")) return normalized;
-    return "#75600e";
+    return "rgba(224, 185, 42, 0.42)";
   }
 
-  if (normalized === "green") return "#b9f6ca";
-  if (normalized === "blue") return "#bbdefb";
-  if (normalized === "pink") return "#f8bbd0";
-  if (normalized === "orange") return "#ffd8a8";
+  if (normalized === "green") return "rgba(104, 214, 144, 0.36)";
+  if (normalized === "blue") return "rgba(123, 184, 255, 0.34)";
+  if (normalized === "pink") return "rgba(245, 160, 194, 0.34)";
+  if (normalized === "orange") return "rgba(255, 189, 109, 0.34)";
   if (normalized.startsWith("#")) return normalized;
-  return "#fff59d";
+  return "rgba(255, 232, 110, 0.52)";
 }
 
 export function BookReaderScreen({
@@ -254,6 +254,8 @@ export function BookReaderScreen({
 
   const currentFontScale = controlledFontScale ?? internalFontScale;
   const isDarkReader = colorMode === "dark";
+  const enableDirectTextSelection =
+    Platform.OS === "web" ? annotationMode : !annotationMode;
   const swipeMaxTranslate = React.useMemo(
     () => Math.max(180, Math.min(460, viewportWidth * 0.9)),
     [viewportWidth]
@@ -415,13 +417,74 @@ export function BookReaderScreen({
       textRole: "text" | "header" = "text"
     ) => {
       const canOpenAnnotation = !annotationMode && typeof onOpenAnnotation === "function";
+      const renderSegmentTokens = (
+        segment: DecoratedSegment,
+        keyPrefix: string,
+        interactive: boolean
+      ) => {
+        const annotation = segment.annotation;
+
+        if (!annotation) {
+          if (!segment.isSearchMatch) {
+            return segment.text;
+          }
+
+          return (
+            <Text
+              key={`${keyPrefix}-match`}
+              style={[styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]}
+              selectable={enableDirectTextSelection}
+            >
+              {segment.text}
+            </Text>
+          );
+        }
+
+        const tokens = segment.text.match(/\S+\s*|\s+/g) ?? [segment.text];
+
+        return tokens.map((token, tokenIndex) => {
+          if (!token) return null;
+
+          const isWhitespace = token.trim().length === 0;
+          const annotationStyle = {
+            backgroundColor: annotationBgColor(annotation.color, isDarkReader),
+            borderRadius: isWhitespace ? 0 : 2,
+          };
+          const tokenPressProps =
+            interactive && !isWhitespace
+              ? {
+                  accessibilityRole: "button" as const,
+                  onPress: () => {
+                    onOpenAnnotation?.(annotation.id);
+                  },
+                }
+              : {};
+
+          return (
+            <Text
+              key={`${keyPrefix}-${tokenIndex}`}
+              style={[
+                annotationStyle,
+                segment.isSearchMatch
+                  ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
+                  : null,
+              ]}
+              selectable={enableDirectTextSelection}
+              {...tokenPressProps}
+            >
+              {token}
+            </Text>
+          );
+        });
+      };
+
       return (
         <Text
           style={baseStyle}
           allowFontScaling
           accessibilityRole={textRole}
-          selectable={annotationMode}
-          selectionColor="#9ec5fe"
+          selectable={enableDirectTextSelection}
+          selectionColor={enableDirectTextSelection ? "#9ec5fe" : undefined}
         >
           {inlines.map((node, index) => {
             if (node.type === "lineBreak") {
@@ -455,23 +518,9 @@ export function BookReaderScreen({
                   }}
                 >
                   {segments.map((segment, segIdx) => (
-                    <Text
-                      key={`seg-${index}-${segIdx}`}
-                      style={[
-                        segment.annotation
-                          ? {
-                              backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
-                              borderRadius: 2,
-                            }
-                          : null,
-                        segment.isSearchMatch
-                          ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
-                          : null,
-                      ]}
-                      selectable={annotationMode}
-                    >
-                      {segment.text}
-                    </Text>
+                    <React.Fragment key={`seg-${index}-${segIdx}`}>
+                      {renderSegmentTokens(segment, `seg-${index}-${segIdx}`, false)}
+                    </React.Fragment>
                   ))}
                 </Text>
               );
@@ -480,31 +529,9 @@ export function BookReaderScreen({
             return (
               <Text key={`text-${index}`} style={inlineStyle}>
                 {segments.map((segment, segIdx) => (
-                  <Text
-                    key={`seg-${index}-${segIdx}`}
-                    style={[
-                      segment.annotation
-                        ? {
-                            backgroundColor: annotationBgColor(segment.annotation.color, isDarkReader),
-                            borderRadius: 2,
-                          }
-                        : null,
-                      segment.isSearchMatch
-                        ? [styles.contentMatch, { backgroundColor: palette.matchBg, color: palette.matchText }]
-                        : null,
-                    ]}
-                    selectable={annotationMode}
-                    accessibilityRole={canOpenAnnotation && segment.annotation ? "button" : undefined}
-                    onPress={
-                      canOpenAnnotation && segment.annotation
-                        ? () => {
-                            onOpenAnnotation?.(segment.annotation!.id);
-                          }
-                        : undefined
-                    }
-                  >
-                    {segment.text}
-                  </Text>
+                  <React.Fragment key={`seg-${index}-${segIdx}`}>
+                    {renderSegmentTokens(segment, `seg-${index}-${segIdx}`, canOpenAnnotation)}
+                  </React.Fragment>
                 ))}
               </Text>
             );
@@ -512,81 +539,89 @@ export function BookReaderScreen({
         </Text>
       );
     },
-    [annotationMode, isDarkReader, onOpenAnnotation, openLink, palette.linkText, palette.matchBg, palette.matchText, splitDecoratedSegments]
+    [enableDirectTextSelection, isDarkReader, onOpenAnnotation, openLink, palette.linkText, palette.matchBg, palette.matchText, splitDecoratedSegments]
   );
 
-  const toInlinePlainText = React.useCallback((inlines: RichInlineNode[]) => {
-    return inlines
-      .map((node) => (node.type === "lineBreak" ? " " : node.text))
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim();
-  }, []);
-
-  const longPressTargets = React.useMemo(() => {
-    if (!chapter) return new Map<string, Omit<ReaderAnnotationDraft, "selector">>();
-    const plain = chapter.content_plain || "";
-    const map = new Map<string, Omit<ReaderAnnotationDraft, "selector">>();
-    let cursor = 0;
-
-    const register = (key: string, excerpt: string) => {
-      const normalized = normalizeForMatch(excerpt);
-      if (!normalized || !plain) return;
-
-      let startOffset = plain.indexOf(normalized, cursor);
-      if (startOffset < 0) startOffset = plain.indexOf(normalized);
-      if (startOffset < 0) return;
-
-      const endOffset = startOffset + normalized.length;
-      cursor = endOffset;
-      map.set(key, {
-        chapterId: chapter.id,
-        chapterSlug: chapter.slug,
-        chapterOrder: chapter.order,
-        chapterTitle: chapter.title,
-        excerpt: normalized,
-        startOffset,
-        endOffset,
-      });
-    };
-
-    richBlocks.forEach((block, blockIndex) => {
-      if (block.type === "list") {
-        block.items.forEach((item, itemIndex) => {
-          register(`list-${blockIndex}-${itemIndex}`, toInlinePlainText(item));
-        });
-        return;
-      }
-      register(`block-${blockIndex}`, toInlinePlainText(block.inlines));
-    });
-
-    return map;
-  }, [chapter, richBlocks, toInlinePlainText]);
-
-  const allowLongPressFallback =
+  const allowNativeSelectionComposer =
     allowNativeParagraphFallback &&
     Platform.OS !== "web" &&
     annotationMode &&
     !!onCreateAnnotationDraft;
 
-  const emitLongPressDraft = React.useCallback(
-    (targetKey: string, blockType: string) => {
+  const emitNativeBlockDraft = React.useCallback(
+    (startOffset: number, endOffset: number, blockType: string) => {
       if (!chapter || !onCreateAnnotationDraft) return;
-      const target = longPressTargets.get(targetKey);
-      if (!target) return;
+
+      const plain = chapter.content_plain || "";
+      const safeStart = Math.max(0, Math.min(startOffset, plain.length));
+      const safeEnd = Math.max(safeStart, Math.min(endOffset, plain.length));
+      const rawExcerpt = plain.slice(safeStart, safeEnd);
+      const trimmedExcerpt = rawExcerpt.trim();
+      if (trimmedExcerpt.length < 2) return;
+
+      const leadingTrim = rawExcerpt.length - rawExcerpt.trimStart().length;
+      const trailingTrim = rawExcerpt.length - rawExcerpt.trimEnd().length;
+      const finalStart = safeStart + leadingTrim;
+      const finalEnd = safeEnd - trailingTrim;
+      if (finalEnd - finalStart < 2) return;
 
       onCreateAnnotationDraft({
-        ...target,
+        chapterId: chapter.id,
+        chapterSlug: chapter.slug,
+        chapterOrder: chapter.order,
+        chapterTitle: chapter.title,
+        excerpt: plain.slice(finalStart, finalEnd),
+        startOffset: finalStart,
+        endOffset: finalEnd,
         selector: {
           kind: "reader-selection",
           source: "long-press",
           block_type: blockType,
-          chapter_slug: target.chapterSlug,
-          chapter_order: target.chapterOrder,
+          chapter_slug: chapter.slug,
+          chapter_order: chapter.order,
         },
       });
     },
-    [chapter, longPressTargets, onCreateAnnotationDraft]
+    [chapter, onCreateAnnotationDraft]
+  );
+
+  const renderNativeSelectionTarget = React.useCallback(
+    (
+      key: string,
+      content: React.ReactNode,
+      testID: string,
+      onActivate: () => void,
+      style?: object
+    ) => {
+      if (!allowNativeSelectionComposer) {
+        return (
+          <View key={key} style={style}>
+            {content}
+          </View>
+        );
+      }
+
+      return (
+        <View key={key} style={[style, styles.annotationTargetContainer]}>
+          {content}
+          <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel="Selecionar trecho para anotação"
+          accessibilityHint="Abre o seletor deste bloco para escolher o trecho"
+          onPress={onActivate}
+          onLongPress={onActivate}
+          delayLongPress={180}
+          hitSlop={4}
+          style={({ pressed }) => [
+              styles.annotationTargetOverlay,
+              pressed ? styles.annotationTargetOverlayPressed : null,
+            ]}
+          />
+        </View>
+      );
+    },
+    [allowNativeSelectionComposer]
   );
 
   const handleWebSelectionEnd = React.useCallback(() => {
@@ -651,6 +686,7 @@ export function BookReaderScreen({
   const renderBlock = React.useCallback(
     (block: RichBlockNode, index: number, cursor: InlineCursor) => {
       if (block.type === "heading2") {
+        const blockStart = cursor.current;
         const content = (
           <View accessibilityRole="header" accessibilityLabel="Título de seção nível 2">
             {renderInlineText(
@@ -661,20 +697,18 @@ export function BookReaderScreen({
             )}
           </View>
         );
+        const blockEnd = cursor.current;
 
-        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
-        return (
-          <Pressable
-            key={`block-${index}`}
-            onLongPress={() => emitLongPressDraft(`block-${index}`, "heading2")}
-            delayLongPress={260}
-          >
-            {content}
-          </Pressable>
+        return renderNativeSelectionTarget(
+          `block-${index}`,
+          content,
+          `reader-annotation-target-block-${index}`,
+          () => emitNativeBlockDraft(blockStart, blockEnd, "heading2")
         );
       }
 
       if (block.type === "heading3") {
+        const blockStart = cursor.current;
         const content = (
           <View accessibilityRole="header" accessibilityLabel="Título de seção nível 3">
             {renderInlineText(
@@ -685,20 +719,18 @@ export function BookReaderScreen({
             )}
           </View>
         );
+        const blockEnd = cursor.current;
 
-        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
-        return (
-          <Pressable
-            key={`block-${index}`}
-            onLongPress={() => emitLongPressDraft(`block-${index}`, "heading3")}
-            delayLongPress={260}
-          >
-            {content}
-          </Pressable>
+        return renderNativeSelectionTarget(
+          `block-${index}`,
+          content,
+          `reader-annotation-target-block-${index}`,
+          () => emitNativeBlockDraft(blockStart, blockEnd, "heading3")
         );
       }
 
       if (block.type === "blockquote") {
+        const blockStart = cursor.current;
         const content = (
           <View style={[styles.blockquote, { borderLeftColor: palette.blockquoteBorder, backgroundColor: palette.blockquoteBg }]}>
             {renderInlineText(
@@ -708,16 +740,13 @@ export function BookReaderScreen({
             )}
           </View>
         );
+        const blockEnd = cursor.current;
 
-        if (!allowLongPressFallback) return <View key={`block-${index}`}>{content}</View>;
-        return (
-          <Pressable
-            key={`block-${index}`}
-            onLongPress={() => emitLongPressDraft(`block-${index}`, "blockquote")}
-            delayLongPress={260}
-          >
-            {content}
-          </Pressable>
+        return renderNativeSelectionTarget(
+          `block-${index}`,
+          content,
+          `reader-annotation-target-block-${index}`,
+          () => emitNativeBlockDraft(blockStart, blockEnd, "blockquote")
         );
       }
 
@@ -725,24 +754,25 @@ export function BookReaderScreen({
         return (
           <View key={`block-${index}`} style={styles.list} accessibilityRole="list">
             {block.items.map((item, itemIndex) => {
+              if (itemIndex > 0) {
+                cursor.current += 1;
+              }
+              const itemStart = cursor.current;
               const content = (
-                <>
+                <View style={styles.listItemPressableContent}>
                   <Text style={[styles.listMarker, { color: palette.listMarker, fontSize: scaled(18), lineHeight: scaled(31) }]}> 
                     {block.ordered ? `${itemIndex + 1}.` : "\u2022"}
                   </Text>
-                <View style={styles.listItemTextWrap}>
-                    {itemIndex > 0 ? (() => {
-                      cursor.current += 1;
-                      return null;
-                    })() : null}
+                  <View style={styles.listItemTextWrap}>
                     {renderInlineText(
                       item,
                       [styles.listText, { color: palette.contentText, fontSize: scaled(18), lineHeight: scaled(31) }],
                       cursor
                     )}
                   </View>
-                </>
+                </View>
               );
+              const itemEnd = cursor.current;
 
               return (
                 <View
@@ -751,16 +781,12 @@ export function BookReaderScreen({
                   accessibilityRole="text"
                   accessibilityLabel={`Item de lista ${itemIndex + 1}`}
                 >
-                  {allowLongPressFallback ? (
-                    <Pressable
-                      style={styles.listItemPressable}
-                      onLongPress={() => emitLongPressDraft(`list-${index}-${itemIndex}`, "list-item")}
-                      delayLongPress={260}
-                    >
-                      {content}
-                    </Pressable>
-                  ) : (
-                    <View style={styles.listItemPressable}>{content}</View>
+                  {renderNativeSelectionTarget(
+                    `item-${itemIndex}-content`,
+                    content,
+                    `reader-annotation-target-list-${index}-${itemIndex}`,
+                    () => emitNativeBlockDraft(itemStart, itemEnd, "list-item"),
+                    styles.listItemPressable
                   )}
                 </View>
               );
@@ -769,6 +795,7 @@ export function BookReaderScreen({
         );
       }
 
+      const blockStart = cursor.current;
       const paragraph = (
         <View style={styles.paragraphWrap}>
           {renderInlineText(
@@ -778,19 +805,16 @@ export function BookReaderScreen({
           )}
         </View>
       );
+      const blockEnd = cursor.current;
 
-      if (!allowLongPressFallback) return <View key={`block-${index}`}>{paragraph}</View>;
-      return (
-        <Pressable
-          key={`block-${index}`}
-          onLongPress={() => emitLongPressDraft(`block-${index}`, "paragraph")}
-          delayLongPress={260}
-        >
-          {paragraph}
-        </Pressable>
+      return renderNativeSelectionTarget(
+        `block-${index}`,
+        paragraph,
+        `reader-annotation-target-block-${index}`,
+        () => emitNativeBlockDraft(blockStart, blockEnd, "paragraph")
       );
     },
-    [allowLongPressFallback, emitLongPressDraft, palette.blockquoteBg, palette.blockquoteBorder, palette.blockquoteText, palette.contentText, palette.heading2Text, palette.heading3Text, palette.listMarker, renderInlineText, scaled]
+    [emitNativeBlockDraft, palette.blockquoteBg, palette.blockquoteBorder, palette.blockquoteText, palette.contentText, palette.heading2Text, palette.heading3Text, palette.listMarker, renderInlineText, renderNativeSelectionTarget, scaled]
   );
 
   const panResponder = React.useMemo(() => {
@@ -1095,8 +1119,18 @@ const styles = StyleSheet.create({
   list: { gap: 8, marginVertical: 4 },
   listItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   listItemPressable: { flexDirection: "row", alignItems: "flex-start", gap: 8, flex: 1 },
+  listItemPressableContent: { flexDirection: "row", alignItems: "flex-start", gap: 8, flex: 1 },
   listMarker: { minWidth: 22, color: "#1f2937", fontWeight: "600" },
   listItemTextWrap: { flex: 1 },
   listText: { color: "#272727" },
+  annotationTargetContainer: { position: "relative" },
+  annotationTargetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    backgroundColor: "transparent",
+  },
+  annotationTargetOverlayPressed: {
+    backgroundColor: "rgba(158,197,254,0.08)",
+  },
   empty: { color: "#666", fontSize: 13 },
 });

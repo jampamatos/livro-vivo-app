@@ -32,6 +32,7 @@ import {
   createAnnotation,
   deleteAnnotation,
   listChapterAnnotationsForVersion,
+  updateAnnotation,
 } from "../api/annotations";
 import { useAppTheme } from "../theme/ThemeProvider";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
@@ -120,6 +121,99 @@ function normalizeBookStatus(status?: string | null) {
   return normalized.toUpperCase();
 }
 
+const ANNOTATION_COLOR_OPTIONS = [
+  { value: "yellow", label: "Amarelo" },
+  { value: "green", label: "Verde" },
+  { value: "blue", label: "Azul" },
+  { value: "pink", label: "Rosa" },
+] as const;
+
+type AnnotationColorValue = (typeof ANNOTATION_COLOR_OPTIONS)[number]["value"];
+
+function normalizeAnnotationColor(value?: string | null): AnnotationColorValue {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "green" || normalized === "blue" || normalized === "pink") {
+    return normalized;
+  }
+  return "yellow";
+}
+
+function getAnnotationModalTone(color: string, isDark: boolean) {
+  const normalized = normalizeAnnotationColor(color);
+
+  if (isDark) {
+    if (normalized === "green") {
+      return {
+        cardBg: "#16251D",
+        cardBorder: "#3D7B5F",
+        heroBg: "#225B43",
+        heroText: "#E4F6ED",
+        heroMuted: "#A9C9B8",
+      };
+    }
+    if (normalized === "blue") {
+      return {
+        cardBg: "#142131",
+        cardBorder: "#446C95",
+        heroBg: "#214F77",
+        heroText: "#E3F0FF",
+        heroMuted: "#A4BEDD",
+      };
+    }
+    if (normalized === "pink") {
+      return {
+        cardBg: "#2B1922",
+        cardBorder: "#8E4B67",
+        heroBg: "#6C2F4D",
+        heroText: "#FFEAF2",
+        heroMuted: "#DAB6C5",
+      };
+    }
+    return {
+      cardBg: "#2A2415",
+      cardBorder: "#7A6730",
+      heroBg: "#6F5805",
+      heroText: "#FFF4CA",
+      heroMuted: "#D9C98B",
+    };
+  }
+
+  if (normalized === "green") {
+    return {
+      cardBg: "#E9F8EF",
+      cardBorder: "#79C696",
+      heroBg: "#7FD3A2",
+      heroText: "#123325",
+      heroMuted: "#315947",
+    };
+  }
+  if (normalized === "blue") {
+    return {
+      cardBg: "#EAF3FF",
+      cardBorder: "#83B7F2",
+      heroBg: "#8CC0FF",
+      heroText: "#102744",
+      heroMuted: "#375577",
+    };
+  }
+  if (normalized === "pink") {
+    return {
+      cardBg: "#FFF0F5",
+      cardBorder: "#E4A8C0",
+      heroBg: "#F2B7CC",
+      heroText: "#461A2D",
+      heroMuted: "#6C4355",
+    };
+  }
+  return {
+    cardBg: "#FFF7D9",
+    cardBorder: "#D9C56A",
+    heroBg: "#F3D86B",
+    heroText: "#46380F",
+    heroMuted: "#6B5820",
+  };
+}
+
 export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
@@ -149,8 +243,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [hasSearched, setHasSearched] = React.useState(false);
   const [submittedQuery, setSubmittedQuery] = React.useState("");
   const [readerMode, setReaderMode] = React.useState(false);
-  const [readerSearchOpen, setReaderSearchOpen] = React.useState(false);
-  const [readerSummaryOpen, setReaderSummaryOpen] = React.useState(false);
+  const [readerPanel, setReaderPanel] = React.useState<"search" | "summary" | null>(null);
   const [annotationMode, setAnnotationMode] = React.useState(false);
   const [readerFontScale, setReaderFontScale] = React.useState(1);
   const [readerToolbarOpen, setReaderToolbarOpen] = React.useState(Platform.OS === "web");
@@ -160,10 +253,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   const [annotationsSyncError, setAnnotationsSyncError] = React.useState<string | null>(null);
   const [annotationDraft, setAnnotationDraft] = React.useState<AnnotationDraft | null>(null);
   const [pendingNativeDraft, setPendingNativeDraft] = React.useState<AnnotationDraft | null>(null);
+  const [nativeSelectionRange, setNativeSelectionRange] = React.useState({ start: 0, end: 0 });
   const [annotationDraftNote, setAnnotationDraftNote] = React.useState("");
   const [annotationDraftColor, setAnnotationDraftColor] = React.useState("yellow");
   const [annotationSaving, setAnnotationSaving] = React.useState(false);
   const [annotationDetailId, setAnnotationDetailId] = React.useState<number | null>(null);
+  const [annotationDetailNote, setAnnotationDetailNote] = React.useState("");
+  const [annotationDetailColor, setAnnotationDetailColor] = React.useState("yellow");
+  const [annotationEditing, setAnnotationEditing] = React.useState(false);
+  const [annotationUpdating, setAnnotationUpdating] = React.useState(false);
   const [annotationDeleting, setAnnotationDeleting] = React.useState(false);
 
   const saveProgressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -183,6 +281,19 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
   }, []);
   const isNarrow = windowWidth <= 720;
   const isNative = Platform.OS !== "web";
+  const readerSearchOpen = readerPanel === "search";
+  const readerSummaryOpen = readerPanel === "summary";
+  const readerPanelMaxHeight = React.useMemo(() => {
+    if (isNarrow) {
+      return Math.max(180, Math.min(300, Math.round(windowHeight * 0.32)));
+    }
+    return Math.max(220, Math.min(380, Math.round(windowHeight * 0.34)));
+  }, [isNarrow, windowHeight]);
+  const activeSearchTerm = React.useMemo(() => {
+    const focusTerm = readerFocus?.query.trim() ?? "";
+    if (focusTerm) return focusTerm;
+    return submittedQuery.trim();
+  }, [readerFocus?.query, submittedQuery]);
   const webLibraryShellStyle = React.useMemo(() => {
     if (Platform.OS !== "web") return null;
     return {
@@ -469,8 +580,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setReaderFocus(null);
       setReaderInitialOffset(0);
       setReaderMode(false);
-      setReaderSearchOpen(false);
-      setReaderSummaryOpen(false);
+      setReaderPanel(null);
       setAnnotationMode(false);
       setReaderFontScale(1);
       setReaderToolbarOpen(Platform.OS === "web");
@@ -479,10 +589,15 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
       setAnnotationsLoading(false);
       setAnnotationDraft(null);
       setPendingNativeDraft(null);
+      setNativeSelectionRange({ start: 0, end: 0 });
       setAnnotationDraftNote("");
       setAnnotationDraftColor("yellow");
       setAnnotationSaving(false);
       setAnnotationDetailId(null);
+      setAnnotationDetailNote("");
+      setAnnotationDetailColor("yellow");
+      setAnnotationEditing(false);
+      setAnnotationUpdating(false);
       setAnnotationDeleting(false);
       if (resetBookSearch) {
         resetSearch();
@@ -681,6 +796,73 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     }
   }, [formatApiError, openBook, query, token]);
 
+  const clearReaderSearch = React.useCallback(() => {
+    resetSearch();
+    setReaderFocus(null);
+  }, [resetSearch]);
+
+  const nativeSelectionBounds = React.useMemo(() => {
+    if (!pendingNativeDraft) return null;
+    const max = pendingNativeDraft.excerpt.length;
+    const rawStart = Math.max(0, Math.min(nativeSelectionRange.start, nativeSelectionRange.end));
+    const rawEnd = Math.max(rawStart, Math.max(nativeSelectionRange.start, nativeSelectionRange.end));
+    return {
+      start: Math.min(rawStart, max),
+      end: Math.min(rawEnd, max),
+      max,
+    };
+  }, [nativeSelectionRange.end, nativeSelectionRange.start, pendingNativeDraft]);
+
+  const nativeSelectionLength =
+    nativeSelectionBounds == null ? 0 : Math.max(0, nativeSelectionBounds.end - nativeSelectionBounds.start);
+
+  const closeNativeSelectionComposer = React.useCallback(() => {
+    setPendingNativeDraft(null);
+    setNativeSelectionRange({ start: 0, end: 0 });
+  }, []);
+
+  const renderAnnotationColorChips = React.useCallback(
+    (
+      selectedColor: string,
+      onSelect: (color: AnnotationColorValue) => void,
+      prefix: "create" | "detail"
+    ) => (
+      <View style={styles.annotationColorRow}>
+        {ANNOTATION_COLOR_OPTIONS.map((color) => {
+          const selected = normalizeAnnotationColor(selectedColor) === color.value;
+          const colorTone = getAnnotationModalTone(color.value, theme.isDark);
+
+          return (
+            <Pressable
+              key={`${prefix}-${color.value}`}
+              testID={`annotation-${prefix}-color-${color.value}`}
+              onPress={() => onSelect(color.value)}
+              style={[
+                styles.annotationColorChip,
+                {
+                  borderColor: selected ? colorTone.cardBorder : readerUi.iconBorder,
+                  backgroundColor: selected ? colorTone.heroBg : readerUi.modalInputBg,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.annotationColorChipText,
+                  {
+                    color: selected ? colorTone.heroText : readerUi.modalText,
+                  },
+                ]}
+              >
+                {color.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    ),
+    [readerUi.iconBorder, readerUi.modalInputBg, readerUi.modalText, theme.isDark]
+  );
+
   const openReaderChapter = React.useCallback(
     (chapterSlug: string, focus: ReaderFocus | null = null) => {
       if (!openBook) return;
@@ -783,19 +965,84 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     if (annotationDetailId == null) return null;
     return annotations.find((annotation) => annotation.id === annotationDetailId) ?? null;
   }, [annotationDetailId, annotations]);
+  const draftAnnotationTone = React.useMemo(
+    () => getAnnotationModalTone(annotationDraftColor, theme.isDark),
+    [annotationDraftColor, theme.isDark]
+  );
+  const selectedAnnotationTone = React.useMemo(
+    () => getAnnotationModalTone(annotationDetailColor, theme.isDark),
+    [annotationDetailColor, theme.isDark]
+  );
+  const resolvedCreateDraft = React.useMemo(() => {
+    if (Platform.OS === "web") {
+      return annotationDraft;
+    }
+
+    if (!pendingNativeDraft || !nativeSelectionBounds) {
+      return null;
+    }
+
+    const rawSelection = pendingNativeDraft.excerpt.slice(
+      nativeSelectionBounds.start,
+      nativeSelectionBounds.end
+    );
+    const trimmedSelection = rawSelection.trim();
+    if (trimmedSelection.length < 2) {
+      return null;
+    }
+
+    const leadingTrim = rawSelection.length - rawSelection.trimStart().length;
+    const trailingTrim = rawSelection.length - rawSelection.trimEnd().length;
+    const finalStart = nativeSelectionBounds.start + leadingTrim;
+    const finalEnd = nativeSelectionBounds.end - trailingTrim;
+
+    if (finalEnd - finalStart < 2) {
+      return null;
+    }
+
+    return {
+      ...pendingNativeDraft,
+      excerpt: pendingNativeDraft.excerpt.slice(finalStart, finalEnd),
+      startOffset: pendingNativeDraft.startOffset + finalStart,
+      endOffset: pendingNativeDraft.startOffset + finalEnd,
+      selector: {
+        ...pendingNativeDraft.selector,
+        source: "native-selection-modal",
+        block_start_offset: pendingNativeDraft.startOffset,
+        block_end_offset: pendingNativeDraft.endOffset,
+      },
+    };
+  }, [annotationDraft, nativeSelectionBounds, pendingNativeDraft]);
+  const selectedAnnotationHasNote = !!selectedAnnotation?.note?.trim();
+  const showingSelectedAnnotationEditor = annotationEditing || !selectedAnnotationHasNote;
+
+  React.useEffect(() => {
+    if (!selectedAnnotation) {
+      setAnnotationDetailNote("");
+      setAnnotationDetailColor("yellow");
+      setAnnotationEditing(false);
+      setAnnotationUpdating(false);
+      return;
+    }
+
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(!selectedAnnotation.note?.trim());
+  }, [selectedAnnotation]);
 
   const saveAnnotationDraft = React.useCallback(async () => {
-    if (!openBook || !annotationDraft) return;
+    const draftToSave = Platform.OS === "web" ? annotationDraft : resolvedCreateDraft;
+    if (!openBook || !draftToSave) return;
     setAnnotationSaving(true);
     setAnnotationsSyncError(null);
     try {
       await createAnnotation(token, {
         book_version: openBook.version.id,
-        chapter: annotationDraft.chapterId,
-        selector: annotationDraft.selector,
-        start_offset: annotationDraft.startOffset,
-        end_offset: annotationDraft.endOffset,
-        excerpt: annotationDraft.excerpt,
+        chapter: draftToSave.chapterId,
+        selector: draftToSave.selector,
+        start_offset: draftToSave.startOffset,
+        end_offset: draftToSave.endOffset,
+        excerpt: draftToSave.excerpt,
         note: annotationDraftNote.trim(),
         color: annotationDraftColor,
       });
@@ -817,8 +1064,74 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     formatAnnotationError,
     loadAnnotations,
     openBook,
+    resolvedCreateDraft,
     token,
   ]);
+
+  const saveSelectedAnnotation = React.useCallback(async () => {
+    if (!selectedAnnotation) return;
+
+    const nextNote = annotationDetailNote.trim();
+    const nextColor = normalizeAnnotationColor(annotationDetailColor);
+    const currentNote = (selectedAnnotation.note || "").trim();
+    const currentColor = normalizeAnnotationColor(selectedAnnotation.color);
+
+    if (nextNote === currentNote && nextColor === currentColor) {
+      setAnnotationEditing(false);
+      if (!selectedAnnotationHasNote) {
+        setAnnotationDetailId(null);
+      }
+      return;
+    }
+
+    setAnnotationUpdating(true);
+    setAnnotationsSyncError(null);
+    try {
+      await updateAnnotation(token, selectedAnnotation.id, {
+        note: nextNote,
+        color: nextColor,
+      });
+      setAnnotationEditing(false);
+      setAnnotationDetailId(null);
+      await loadAnnotations();
+    } catch (error) {
+      setAnnotationsSyncError(formatAnnotationError(error, "Erro ao atualizar anotação"));
+    } finally {
+      setAnnotationUpdating(false);
+    }
+  }, [
+    annotationDetailColor,
+    annotationDetailNote,
+    formatAnnotationError,
+    loadAnnotations,
+    selectedAnnotation,
+    selectedAnnotationHasNote,
+    token,
+  ]);
+
+  const closeSelectedAnnotationModal = React.useCallback(() => {
+    if (annotationDeleting || annotationUpdating) return;
+    setAnnotationDetailId(null);
+  }, [annotationDeleting, annotationUpdating]);
+
+  const startSelectedAnnotationEditing = React.useCallback(() => {
+    if (!selectedAnnotation) return;
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(true);
+  }, [selectedAnnotation]);
+
+  const cancelSelectedAnnotationEditing = React.useCallback(() => {
+    if (!selectedAnnotation) return;
+    if (!selectedAnnotationHasNote) {
+      setAnnotationDetailId(null);
+      return;
+    }
+
+    setAnnotationDetailNote(selectedAnnotation.note ?? "");
+    setAnnotationDetailColor(normalizeAnnotationColor(selectedAnnotation.color));
+    setAnnotationEditing(false);
+  }, [selectedAnnotation, selectedAnnotationHasNote]);
 
   const deleteSelectedAnnotation = React.useCallback(async () => {
     if (!selectedAnnotation) return;
@@ -892,8 +1205,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     }
     void flushReadingProgress();
     setReaderMode(false);
-    setReaderSearchOpen(false);
-    setReaderSummaryOpen(false);
+    setReaderPanel(null);
     setAnnotationMode(false);
     setReaderToolbarOpen(Platform.OS === "web");
     setOpenBook(null);
@@ -908,13 +1220,22 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setAnnotationsLoading(false);
     setAnnotationDraft(null);
     setPendingNativeDraft(null);
+    setNativeSelectionRange({ start: 0, end: 0 });
     setAnnotationDraftNote("");
     setAnnotationDraftColor("yellow");
     setAnnotationSaving(false);
     setAnnotationDetailId(null);
+    setAnnotationDetailNote("");
+    setAnnotationDetailColor("yellow");
+    setAnnotationEditing(false);
+    setAnnotationUpdating(false);
     setAnnotationDeleting(false);
     resetSearch();
   };
+
+  const toggleReaderPanel = React.useCallback((nextPanel: "search" | "summary") => {
+    setReaderPanel((current) => (current === nextPanel ? null : nextPanel));
+  }, []);
 
   const goToPreviousChapter = () => {
     if (!activeChapter?.previousSlug || !openBook) return;
@@ -930,6 +1251,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     const readerToolbarControls = (
       <>
         <Pressable
+          testID="reader-summary-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -940,7 +1262,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
               : null,
           ]}
-          onPress={() => setReaderSummaryOpen((current) => !current)}
+          onPress={() => toggleReaderPanel("summary")}
           accessibilityRole="button"
           accessibilityLabel="Alternar índice de capítulos"
         >
@@ -952,6 +1274,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </Pressable>
 
         <Pressable
+          testID="reader-search-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -962,7 +1285,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ? [styles.readerIconButtonActive, { borderColor: readerUi.iconActiveBg, backgroundColor: readerUi.iconActiveBg }]
               : null,
           ]}
-          onPress={() => setReaderSearchOpen((current) => !current)}
+          onPress={() => toggleReaderPanel("search")}
           accessibilityRole="button"
           accessibilityLabel="Alternar busca no livro"
         >
@@ -974,6 +1297,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </Pressable>
 
         <Pressable
+          testID="reader-annotation-toggle"
           style={[
             styles.readerIconButton,
             {
@@ -990,6 +1314,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               if (!next) {
                 setAnnotationDraft(null);
                 setPendingNativeDraft(null);
+                setNativeSelectionRange({ start: 0, end: 0 });
               }
               return next;
             });
@@ -1081,6 +1406,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
             {isNative ? (
               <Pressable
+                testID="reader-toolbar-toggle"
                 style={[
                   styles.readerIconButton,
                   {
@@ -1135,38 +1461,47 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   ? "Carregando anotações..."
                   : Platform.OS === "web"
                     ? "Selecione um trecho com o mouse para criar destaque."
-                    : "Toque e segure para preparar um trecho, depois confirme para anotar."}
+                    : "Toque em um parágrafo para abrir a seleção do trecho e ajuste pelas alças."}
               </Text>
-            </View>
-          ) : null}
-
-          {pendingNativeDraft && Platform.OS !== "web" ? (
-            <View
-              style={[
-                styles.nativeDraftBanner,
-                {
-                  borderColor: readerUi.draftBorder,
-                  backgroundColor: readerUi.draftBg,
-                },
-              ]}
-            >
-              <Text style={[styles.nativeDraftTitle, { color: readerUi.draftTitle }]}>Trecho preparado</Text>
-              <Text style={[styles.nativeDraftExcerpt, { color: readerUi.draftText }]} numberOfLines={2}>
-                "{pendingNativeDraft.excerpt}"
-              </Text>
-              <Pressable
-                style={[styles.nativeDraftAction, { backgroundColor: readerUi.draftActionBg }]}
-                onPress={() => {
-                  setAnnotationDraft(pendingNativeDraft);
-                  setPendingNativeDraft(null);
-                }}
-              >
-                <Text style={[styles.nativeDraftActionText, { color: readerUi.draftActionText }]}>Anotar trecho selecionado</Text>
-              </Pressable>
             </View>
           ) : null}
 
           {annotationsSyncError ? <Text style={[styles.errorInline, { color: readerUi.error }]}>{annotationsSyncError}</Text> : null}
+
+          {activeSearchTerm ? (
+            <View
+              style={[
+                styles.readerSearchBanner,
+                {
+                  borderColor: readerUi.panelBorder,
+                  backgroundColor: readerUi.panelBg,
+                },
+              ]}
+            >
+              <View style={styles.readerSearchBannerCopy}>
+                <Text style={[styles.readerSearchBannerTitle, { color: readerUi.panelTitle }]}>Busca ativa</Text>
+                <Text style={[styles.readerSearchBannerValue, { color: readerUi.itemText }]} numberOfLines={1}>
+                  {activeSearchTerm}
+                </Text>
+              </View>
+              <Pressable
+                testID="reader-search-clear"
+                onPress={clearReaderSearch}
+                style={[
+                  styles.readerSearchClearButton,
+                  {
+                    borderColor: readerUi.inputBorder,
+                    backgroundColor: readerUi.inputBg,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar pesquisa"
+              >
+                <MaterialCommunityIcons name="close-circle-outline" size={16} color={readerUi.itemText} />
+                <Text style={[styles.readerSearchClearButtonText, { color: readerUi.itemTitle }]}>Limpar</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
           {readerSearchOpen ? (
             <View
@@ -1179,8 +1514,9 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ]}
             >
               <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Buscar neste livro</Text>
-              <View style={styles.readerSearchRow}>
+              <View style={[styles.readerSearchRow, isNarrow ? styles.readerSearchRowNarrow : null]}>
                 <TextInput
+                  testID="reader-search-input"
                   value={query}
                   onChangeText={setQuery}
                   placeholder="Digite um termo..."
@@ -1188,6 +1524,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   autoCapitalize="none"
                   style={[
                     styles.readerSearchInput,
+                    isNarrow ? styles.readerSearchInputNarrow : null,
                     {
                       borderColor: readerUi.inputBorder,
                       backgroundColor: readerUi.inputBg,
@@ -1199,6 +1536,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   onSubmitEditing={runSearch}
                 />
                 <Pressable
+                  testID="reader-search-submit"
                   onPress={runSearch}
                   disabled={searchLoading || !query.trim()}
                   style={[
@@ -1219,40 +1557,52 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                 displayedSearchResults.length === 0 ? (
                   <Text style={[styles.empty, { color: readerUi.empty }]}>Sem resultados.</Text>
                 ) : (
-                  <View style={styles.readerResults}>
+                  <>
                     <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
                       {searchCount != null
                         ? `${displayedSearchResults.length} de ${searchCount} resultados`
                         : `${displayedSearchResults.length} resultados`}
                     </Text>
-                    {displayedSearchResults.map((result) => (
-                      <Pressable
-                        key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
-                        style={[
-                          styles.searchItem,
-                          {
-                            borderColor: readerUi.itemBorder,
-                            backgroundColor: readerUi.itemBg,
-                          },
-                        ]}
-                        onPress={() => {
-                          openReaderChapter(result.chapter_slug, {
-                            query: submittedQuery.trim(),
-                            matchStart: result.match_start,
-                            matchEnd: result.match_end,
-                          });
-                          if (isNarrow) {
-                            setReaderSearchOpen(false);
-                          }
-                        }}
-                      >
-                        <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
-                          Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
-                        </Text>
-                        {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
-                      </Pressable>
-                    ))}
-                  </View>
+                    <ScrollView
+                      testID="reader-search-results-scroll"
+                      style={[styles.readerPanelScroll, { maxHeight: readerPanelMaxHeight }]}
+                      contentContainerStyle={styles.readerPanelScrollContent}
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator
+                    >
+                      <View style={styles.readerResults}>
+                        {displayedSearchResults.map((result) => (
+                          <Pressable
+                            testID={`reader-search-result-${result.chapter_id}-${result.occurrence}`}
+                            key={`${result.chapter_id}-${result.occurrence}-${result.match_start}`}
+                            style={[
+                              styles.searchItem,
+                              {
+                                borderColor: readerUi.itemBorder,
+                                backgroundColor: readerUi.itemBg,
+                              },
+                            ]}
+                            onPress={() => {
+                              openReaderChapter(result.chapter_slug, {
+                                query: submittedQuery.trim(),
+                                matchStart: result.match_start,
+                                matchEnd: result.match_end,
+                              });
+                              if (isNarrow) {
+                                setReaderPanel(null);
+                              }
+                            }}
+                          >
+                            <Text style={[styles.searchItemTitle, { color: readerUi.itemTitle }]}>
+                              Cap. {result.chapter_order} • {result.chapter_title} #{result.occurrence}
+                            </Text>
+                            {renderHighlightedSnippet(result.compactSnippet, readerUi.itemText, readerUi.searchHighlight)}
+                          </Pressable>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </>
                 )
               ) : null}
             </View>
@@ -1269,47 +1619,59 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               ]}
             >
               <Text style={[styles.readerPanelTitle, { color: readerUi.panelTitle }]}>Índice</Text>
-              <View style={styles.readerSummaryList}>
-                {openBook.chapters.map((chapter) => {
-                  const active = activeChapter?.chapter.slug === chapter.slug;
-                  return (
-                    <Pressable
-                      key={chapter.id}
-                      onPress={() => {
-                        openReaderChapter(chapter.slug, null);
-                        if (isNarrow) {
-                          setReaderSummaryOpen(false);
-                        }
-                      }}
-                      style={[
-                        styles.chapterItem,
-                        {
-                          borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
-                          backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
-                        },
-                      ]}
-                    >
-                      <Text
+              <Text style={[styles.searchMeta, { color: readerUi.itemText }]}>
+                {openBook.chapters.length} capítulos
+              </Text>
+              <ScrollView
+                testID="reader-summary-scroll"
+                style={[styles.readerPanelScroll, { maxHeight: readerPanelMaxHeight }]}
+                contentContainerStyle={styles.readerPanelScrollContent}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                <View style={styles.readerSummaryList}>
+                  {openBook.chapters.map((chapter) => {
+                    const active = activeChapter?.chapter.slug === chapter.slug;
+                    return (
+                      <Pressable
+                        key={chapter.id}
                         style={[
-                          styles.chapterOrder,
-                          { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                          styles.chapterItem,
+                          {
+                            borderColor: active ? readerUi.itemHighlightBg : readerUi.itemBorder,
+                            backgroundColor: active ? readerUi.itemHighlightBg : readerUi.itemBg,
+                          },
                         ]}
+                        onPress={() => {
+                          openReaderChapter(chapter.slug, null);
+                          if (isNarrow) {
+                            setReaderPanel(null);
+                          }
+                        }}
                       >
-                        {chapter.order}.
-                      </Text>
-                      <Text
-                        style={[
-                          styles.chapterTitle,
-                          { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {chapter.title}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                        <Text
+                          style={[
+                            styles.chapterOrder,
+                            { color: active ? readerUi.itemHighlightText : readerUi.itemText },
+                          ]}
+                        >
+                          {chapter.order}.
+                        </Text>
+                        <Text
+                          style={[
+                            styles.chapterTitle,
+                            { color: active ? readerUi.itemHighlightText : readerUi.itemTitle },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {chapter.title}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             </View>
           ) : null}
 
@@ -1365,6 +1727,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   return;
                 }
                 setPendingNativeDraft(draft);
+                setNativeSelectionRange({ start: 0, end: draft.excerpt.length });
               }}
             />
           </View>
@@ -1429,12 +1792,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         </View>
 
         <Modal
-          visible={!!annotationDraft}
+          visible={Platform.OS === "web" ? !!annotationDraft : !!pendingNativeDraft}
           transparent
           animationType="fade"
           onRequestClose={() => {
             if (!annotationSaving) {
               setAnnotationDraft(null);
+              closeNativeSelectionComposer();
             }
           }}
         >
@@ -1443,66 +1807,68 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               style={[
                 styles.annotationModalCard,
                 {
-                  borderColor: readerUi.modalCardBorder,
-                  backgroundColor: readerUi.modalCardBg,
+                  borderColor: draftAnnotationTone.cardBorder,
+                  backgroundColor: draftAnnotationTone.cardBg,
                 },
               ]}
+              testID="annotation-create-modal"
             >
-              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Nova anotação</Text>
-              {annotationDraft ? (
+              {Platform.OS !== "web" && pendingNativeDraft ? (
                 <>
-                  <Text style={[styles.annotationModalMeta, { color: readerUi.modalMuted }]}>
-                    Cap. {annotationDraft.chapterOrder} • {annotationDraft.chapterTitle}
+                  <Text style={[styles.annotationSelectionTitle, { color: readerUi.modalTitle }]}>
+                    Ajuste o trecho
                   </Text>
-                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={5}>
-                    "{annotationDraft.excerpt}"
+                  <Text style={[styles.annotationSelectionSubtitle, { color: readerUi.modalMuted }]}>
+                    Selecione no texto abaixo e já salve o destaque com a cor e a nota.
+                  </Text>
+
+                  <TextInput
+                    testID="annotation-native-selection-input"
+                    value={pendingNativeDraft.excerpt}
+                    multiline
+                    autoFocus
+                    editable
+                    selectTextOnFocus
+                    contextMenuHidden={false}
+                    showSoftInputOnFocus={false}
+                    onChangeText={() => {}}
+                    selection={nativeSelectionBounds ?? { start: 0, end: 0 }}
+                    onSelectionChange={(event) => {
+                      setNativeSelectionRange({
+                        start: event.nativeEvent.selection.start,
+                        end: event.nativeEvent.selection.end ?? event.nativeEvent.selection.start,
+                      });
+                    }}
+                    selectionColor="#9ec5fe"
+                    style={[
+                      styles.annotationSelectionInput,
+                      {
+                        borderColor: readerUi.modalInputBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                        color: readerUi.modalInputText,
+                      },
+                    ]}
+                  />
+
+                  <Text style={[styles.annotationSelectionMeta, { color: readerUi.modalMuted }]}>
+                    {nativeSelectionLength >= 2
+                      ? `${nativeSelectionLength} caracteres selecionados`
+                      : "Selecione ao menos 2 caracteres"}
                   </Text>
                 </>
               ) : null}
 
-              <View style={styles.annotationColorRow}>
-                {[
-                  { value: "yellow", label: "Amarelo" },
-                  { value: "green", label: "Verde" },
-                  { value: "blue", label: "Azul" },
-                  { value: "pink", label: "Rosa" },
-                ].map((color) => {
-                  const selected = color.value === annotationDraftColor;
-                  return (
-                    <Pressable
-                      key={color.value}
-                      onPress={() => setAnnotationDraftColor(color.value)}
-                      style={[
-                        styles.annotationColorChip,
-                        {
-                          borderColor: readerUi.iconBorder,
-                          backgroundColor: readerUi.modalInputBg,
-                        },
-                        selected ? styles.annotationColorChipSelected : null,
-                        selected
-                          ? { borderColor: readerUi.modalPrimaryBg, backgroundColor: readerUi.modalPrimaryBg }
-                          : null,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.annotationColorChipText,
-                          { color: readerUi.modalText },
-                          selected ? styles.annotationColorChipTextSelected : null,
-                          selected ? { color: readerUi.modalPrimaryText } : null,
-                        ]}
-                      >
-                        {color.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              {renderAnnotationColorChips(
+                annotationDraftColor,
+                (color) => setAnnotationDraftColor(color),
+                "create"
+              )}
 
               <TextInput
+                testID="annotation-create-note-input"
                 value={annotationDraftNote}
                 onChangeText={setAnnotationDraftNote}
-                placeholder="Nota (opcional)"
+                placeholder="Escreva uma nota opcional"
                 placeholderTextColor={readerUi.inputPlaceholder}
                 multiline
                 style={[
@@ -1517,9 +1883,10 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
 
               <View style={styles.annotationModalActions}>
                 <Pressable
+                  testID="annotation-create-cancel"
                   onPress={() => {
                     setAnnotationDraft(null);
-                    setPendingNativeDraft(null);
+                    closeNativeSelectionComposer();
                   }}
                   disabled={annotationSaving}
                   style={[
@@ -1533,20 +1900,23 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                   <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Cancelar</Text>
                 </Pressable>
                 <Pressable
+                  testID="annotation-create-save"
                   onPress={() => {
                     void saveAnnotationDraft();
                   }}
-                  disabled={annotationSaving}
+                  disabled={annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)}
                   style={[
                     styles.annotationModalSave,
                     {
                       backgroundColor: readerUi.modalPrimaryBg,
                     },
-                    annotationSaving ? styles.annotationModalButtonDisabled : null,
+                    annotationSaving || (Platform.OS !== "web" && resolvedCreateDraft == null)
+                      ? styles.annotationModalButtonDisabled
+                      : null,
                   ]}
                 >
                   <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
-                    {annotationSaving ? "Salvando..." : "Salvar"}
+                    {annotationSaving ? "Salvando..." : "Salvar destaque"}
                   </Text>
                 </Pressable>
               </View>
@@ -1559,8 +1929,8 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (!annotationDeleting) {
-              setAnnotationDetailId(null);
+            if (!annotationDeleting && !annotationUpdating) {
+              closeSelectedAnnotationModal();
             }
           }}
         >
@@ -1569,29 +1939,65 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
               style={[
                 styles.annotationModalCard,
                 {
-                  borderColor: readerUi.modalCardBorder,
-                  backgroundColor: readerUi.modalCardBg,
+                  borderColor: selectedAnnotationTone.cardBorder,
+                  backgroundColor: selectedAnnotationTone.cardBg,
                 },
               ]}
+              testID="annotation-detail-modal"
             >
-              <Text style={[styles.annotationModalTitle, { color: readerUi.modalTitle }]}>Anotação</Text>
               {selectedAnnotation ? (
-                <>
-                  <Text style={[styles.annotationModalExcerpt, { color: readerUi.modalText }]} numberOfLines={6}>
-                    "{selectedAnnotation.excerpt || "Trecho sem preview"}"
-                  </Text>
-                  {selectedAnnotation.note?.trim() ? (
-                    <Text style={[styles.annotationModalNote, { color: readerUi.modalText }]}>Nota: {selectedAnnotation.note}</Text>
-                  ) : (
-                    <Text style={[styles.annotationModalNoteMuted, { color: readerUi.modalMuted }]}>Sem nota adicional.</Text>
-                  )}
-                </>
+                showingSelectedAnnotationEditor ? (
+                  <>
+                    {renderAnnotationColorChips(
+                      annotationDetailColor,
+                      (color) => setAnnotationDetailColor(color),
+                      "detail"
+                    )}
+                    <TextInput
+                      testID="annotation-detail-note-input"
+                      value={annotationDetailNote}
+                      onChangeText={setAnnotationDetailNote}
+                      placeholder="Escreva uma nota opcional"
+                      placeholderTextColor={readerUi.inputPlaceholder}
+                      multiline
+                      style={[
+                        styles.annotationNoteInput,
+                        {
+                          borderColor: readerUi.modalInputBorder,
+                          backgroundColor: readerUi.modalInputBg,
+                          color: readerUi.modalInputText,
+                        },
+                      ]}
+                    />
+                  </>
+                ) : (
+                  <View
+                    style={[
+                      styles.annotationNotePreview,
+                      {
+                        borderColor: selectedAnnotationTone.cardBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                      },
+                    ]}
+                  >
+                    <Text testID="annotation-detail-note" style={[styles.annotationModalNote, { color: readerUi.modalText }]}>
+                      {selectedAnnotation.note}
+                    </Text>
+                  </View>
+                )
               ) : null}
 
               <View style={styles.annotationModalActions}>
                 <Pressable
-                  onPress={() => setAnnotationDetailId(null)}
-                  disabled={annotationDeleting}
+                  testID="annotation-detail-close"
+                  onPress={() => {
+                    if (showingSelectedAnnotationEditor) {
+                      cancelSelectedAnnotationEditing();
+                      return;
+                    }
+                    closeSelectedAnnotationModal();
+                  }}
+                  disabled={annotationDeleting || annotationUpdating}
                   style={[
                     styles.annotationModalCancel,
                     {
@@ -1600,13 +2006,55 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     },
                   ]}
                 >
-                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>Fechar</Text>
+                  <Text style={[styles.annotationModalCancelText, { color: readerUi.modalCancelText }]}>
+                    {showingSelectedAnnotationEditor
+                      ? selectedAnnotationHasNote
+                        ? "Cancelar edição"
+                        : "Fechar"
+                      : "Fechar"}
+                  </Text>
                 </Pressable>
+                {!showingSelectedAnnotationEditor ? (
+                  <Pressable
+                    testID="annotation-detail-edit"
+                    onPress={startSelectedAnnotationEditing}
+                    disabled={annotationDeleting || annotationUpdating}
+                    style={[
+                      styles.annotationModalSecondary,
+                      {
+                        borderColor: selectedAnnotationTone.cardBorder,
+                        backgroundColor: readerUi.modalInputBg,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.annotationModalSecondaryText, { color: readerUi.modalText }]}>Editar nota</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    testID="annotation-detail-save"
+                    onPress={() => {
+                      void saveSelectedAnnotation();
+                    }}
+                    disabled={annotationDeleting || annotationUpdating}
+                    style={[
+                      styles.annotationModalSave,
+                      {
+                        backgroundColor: readerUi.modalPrimaryBg,
+                      },
+                      annotationUpdating ? styles.annotationModalButtonDisabled : null,
+                    ]}
+                  >
+                    <Text style={[styles.annotationModalSaveText, { color: readerUi.modalPrimaryText }]}>
+                      {annotationUpdating ? "Salvando..." : "Salvar nota"}
+                    </Text>
+                  </Pressable>
+                )}
                 <Pressable
+                  testID="annotation-detail-delete"
                   onPress={() => {
                     void deleteSelectedAnnotation();
                   }}
-                  disabled={annotationDeleting}
+                  disabled={annotationDeleting || annotationUpdating}
                   style={[
                     styles.annotationModalDelete,
                     annotationDeleting ? styles.annotationModalButtonDisabled : null,
@@ -2038,25 +2486,43 @@ const styles = StyleSheet.create({
   },
   annotationModeTitle: { fontSize: 12, fontWeight: "700", color: "#47380d" },
   annotationModeSubtitle: { fontSize: 12, color: "#5a4a15" },
-  nativeDraftBanner: {
+  readerSearchBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  readerSearchBannerCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  readerSearchBannerTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  readerSearchBannerValue: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  readerSearchClearButton: {
+    minHeight: 38,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#c9c3b6",
-    backgroundColor: "#efede6",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
-  nativeDraftTitle: { fontSize: 12, fontWeight: "700", color: "#1d1d1d" },
-  nativeDraftExcerpt: { fontSize: 12, color: "#3b3b3b" },
-  nativeDraftAction: {
-    alignSelf: "flex-start",
-    borderRadius: 8,
-    backgroundColor: "#111",
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+  readerSearchClearButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
-  nativeDraftActionText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   readerPanel: {
     borderRadius: 12,
     borderWidth: 1,
@@ -2067,18 +2533,35 @@ const styles = StyleSheet.create({
   },
   readerPanelTitle: { fontSize: 13, fontWeight: "700", color: "#111" },
   readerSearchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  readerSearchRowNarrow: { flexDirection: "column", alignItems: "stretch" },
   readerSearchInput: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 46,
     borderWidth: 1,
     borderColor: "#c6c3ba",
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === "android" ? 12 : 10,
     fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: "center",
     backgroundColor: "#fff",
   },
-  readerResults: { gap: 8, maxHeight: 200 },
-  readerSummaryList: { gap: 8, maxHeight: 220 },
+  readerSearchInputNarrow: {
+    flex: 0,
+    width: "100%",
+  },
+  readerPanelScroll: {
+    minHeight: 0,
+    borderRadius: 10,
+  },
+  readerPanelScrollContent: {
+    gap: 8,
+    paddingRight: 2,
+  },
+  readerResults: { gap: 8 },
+  readerSummaryList: { gap: 8 },
   readerBody: {
     flex: 1,
     minHeight: 0,
@@ -2135,9 +2618,29 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 10,
   },
-  annotationModalTitle: { fontSize: 16, fontWeight: "700", color: "#161616" },
-  annotationModalMeta: { fontSize: 12, color: "#585858" },
-  annotationModalExcerpt: { fontSize: 14, color: "#242424" },
+  annotationSelectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  annotationSelectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  annotationSelectionInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    minHeight: 180,
+    maxHeight: 320,
+    fontSize: 16,
+    lineHeight: 24,
+    textAlignVertical: "top",
+  },
+  annotationSelectionMeta: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
   annotationColorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   annotationColorChip: {
     borderWidth: 1,
@@ -2147,9 +2650,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: "#fff",
   },
-  annotationColorChipSelected: { borderColor: "#111", backgroundColor: "#111" },
   annotationColorChipText: { fontSize: 12, color: "#111", fontWeight: "700" },
-  annotationColorChipTextSelected: { color: "#fff" },
   annotationNoteInput: {
     borderWidth: 1,
     borderColor: "#c6c3ba",
@@ -2160,9 +2661,16 @@ const styles = StyleSheet.create({
     minHeight: 52,
     maxHeight: 140,
   },
+  annotationNotePreview: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 0,
+  },
   annotationModalNote: { fontSize: 13, color: "#2b2b2b", fontStyle: "italic" },
   annotationModalNoteMuted: { fontSize: 12, color: "#777" },
-  annotationModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
+  annotationModalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" },
   annotationModalCancel: {
     borderWidth: 1,
     borderColor: "#9e9a90",
@@ -2178,7 +2686,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     backgroundColor: "#111",
   },
+  annotationModalSecondary: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
   annotationModalSaveText: { fontSize: 12, color: "#fff", fontWeight: "700" },
+  annotationModalSecondaryText: { fontSize: 12, color: "#333", fontWeight: "700" },
   annotationModalDelete: {
     borderRadius: 8,
     paddingVertical: 8,
