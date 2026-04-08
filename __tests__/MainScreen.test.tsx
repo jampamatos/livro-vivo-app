@@ -2,12 +2,13 @@ import React from "react";
 import renderer, { act } from "react-test-renderer";
 
 import { MainScreen } from "../src/screens/MainScreen";
-import { listBooks } from "../src/api/books";
+import { getCurrentBookVersion, listBooks, listCurrentVersionChapters } from "../src/api/books";
 import { searchCaseLaw } from "../src/api/caselaw";
 import { listCommunityPosts } from "../src/api/community";
 import { listCoursePosts, listLiveEvents } from "../src/api/courses";
 import { getMyEntitlements } from "../src/api/entitlements";
 import { listTemplatePieces } from "../src/api/templatesBank";
+import { getReadingProgress } from "../src/storage/readingProgress";
 import { AppThemeProvider } from "../src/theme/ThemeProvider";
 
 jest.mock("../src/api/entitlements", () => ({
@@ -31,14 +32,20 @@ jest.mock("../src/api/courses", () => ({
 jest.mock("../src/api/templatesBank", () => ({
   listTemplatePieces: jest.fn(),
 }));
+jest.mock("../src/storage/readingProgress", () => ({
+  getReadingProgress: jest.fn(),
+}));
 
 const getMyEntitlementsMock = getMyEntitlements as unknown as jest.Mock;
 const listBooksMock = listBooks as unknown as jest.Mock;
+const getCurrentBookVersionMock = getCurrentBookVersion as unknown as jest.Mock;
+const listCurrentVersionChaptersMock = listCurrentVersionChapters as unknown as jest.Mock;
 const searchCaseLawMock = searchCaseLaw as unknown as jest.Mock;
 const listCommunityPostsMock = listCommunityPosts as unknown as jest.Mock;
 const listCoursePostsMock = listCoursePosts as unknown as jest.Mock;
 const listLiveEventsMock = listLiveEvents as unknown as jest.Mock;
 const listTemplatePiecesMock = listTemplatePieces as unknown as jest.Mock;
+const getReadingProgressMock = getReadingProgress as unknown as jest.Mock;
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -52,6 +59,7 @@ async function renderScreen({
   token = "token-ok",
   onOpenSearch = jest.fn(),
   onOpenLibrary = jest.fn(),
+  onOpenLibraryResume,
   onOpenCaseLaw = jest.fn(),
   onOpenCommunity = jest.fn(),
   onOpenTemplatesBank = jest.fn(),
@@ -61,6 +69,7 @@ async function renderScreen({
   token?: string;
   onOpenSearch?: jest.Mock;
   onOpenLibrary?: jest.Mock;
+  onOpenLibraryResume?: jest.Mock;
   onOpenCaseLaw?: jest.Mock;
   onOpenCommunity?: jest.Mock;
   onOpenTemplatesBank?: jest.Mock;
@@ -75,6 +84,7 @@ async function renderScreen({
           token={token}
           onOpenSearch={onOpenSearch}
           onOpenLibrary={onOpenLibrary}
+          onOpenLibraryResume={onOpenLibraryResume}
           onOpenCaseLaw={onOpenCaseLaw}
           onOpenCommunity={onOpenCommunity}
           onOpenTemplatesBank={onOpenTemplatesBank}
@@ -96,6 +106,9 @@ describe("MainScreen", () => {
     listCoursePostsMock.mockReset();
     listLiveEventsMock.mockReset();
     listTemplatePiecesMock.mockReset();
+    getReadingProgressMock.mockReset();
+    getCurrentBookVersionMock.mockReset();
+    listCurrentVersionChaptersMock.mockReset();
 
     listBooksMock.mockResolvedValue({
       books: [],
@@ -117,6 +130,7 @@ describe("MainScreen", () => {
     listCoursePostsMock.mockResolvedValue([]);
     listLiveEventsMock.mockResolvedValue([]);
     listTemplatePiecesMock.mockResolvedValue([]);
+    getReadingProgressMock.mockResolvedValue(null);
   });
 
   it("renderiza módulos com jurisprudência liberada para profissional", async () => {
@@ -457,5 +471,112 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ accessibilityLabel: "Jurisprudência" }).props.accessibilityRole).toBe("button");
     expect(tree.root.findByProps({ accessibilityLabel: "Comunidade" }).props.accessibilityRole).toBe("button");
     expect(tree.root.findByProps({ accessibilityRole: "header" }).props.children).toBe("Bem-vindo ao Livro Vivo");
+  });
+
+  it("permite tentar novamente quando a validação de acesso falha", async () => {
+    getMyEntitlementsMock
+      .mockRejectedValueOnce(new Error("Plano indisponível"))
+      .mockResolvedValueOnce({
+        effective_tier: "professional",
+        subscription: {
+          id: 9,
+          tier: "professional",
+          status: "active",
+          is_founder: false,
+          expires_at: null,
+          source: "admin",
+          is_legacy_fallback: false,
+        },
+        entitlements: [],
+        moderation: {
+          is_banned: false,
+          ban_scope: null,
+          community_access: true,
+          app_access: true,
+          warnings_issued: 0,
+        },
+      });
+
+    const tree = await renderScreen();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Plano indisponível");
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "main-retry-access" }).props.onPress();
+    });
+    await flushEffects();
+
+    expect(getMyEntitlementsMock).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(tree.toJSON())).not.toContain("Plano indisponível");
+    expect(tree.root.findByProps({ testID: "main-course" }).props.disabled).toBe(false);
+  });
+
+  it("retoma a leitura exatamente no capítulo salvo quando existe progresso local", async () => {
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 10,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+      moderation: {
+        is_banned: false,
+        ban_scope: null,
+        community_access: true,
+        app_access: true,
+        warnings_issued: 0,
+      },
+    });
+    listBooksMock.mockResolvedValueOnce({
+      books: [
+        {
+          id: 3,
+          title: "Manual do Passageiro",
+          summary: "",
+          current_version: 2,
+          updated_at: "2026-04-07T15:00:00Z",
+        },
+      ],
+      cache_source: "network",
+    });
+    getCurrentBookVersionMock.mockResolvedValueOnce({
+      version: {
+        id: 12,
+        number: 2,
+        title: "Versão 2",
+        description: "",
+        published_at: "2026-04-01T10:00:00Z",
+      },
+    });
+    getReadingProgressMock.mockResolvedValueOnce({
+      chapterSlug: "capitulo-2",
+      updatedAt: "2026-04-07T15:00:00Z",
+    });
+    listCurrentVersionChaptersMock.mockResolvedValueOnce({
+      version: { id: 12, number: 2, title: "Versão 2", description: "", published_at: "2026-04-01T10:00:00Z" },
+      chapters: [
+        { id: 1, order: 1, title: "Introdução", slug: "introducao", preview_text: "", updated_at: "2026-04-01T10:00:00Z" },
+        { id: 2, order: 2, title: "Capítulo 2", slug: "capitulo-2", preview_text: "", updated_at: "2026-04-01T10:00:00Z" },
+      ],
+    });
+
+    const onOpenLibraryResume = jest.fn();
+    const tree = await renderScreen({ onOpenLibraryResume });
+    await flushEffects(6);
+
+    expect(JSON.stringify(tree.toJSON())).toContain("Manual do Passageiro");
+    expect(JSON.stringify(tree.toJSON())).toContain("Capítulo 2");
+
+    await act(async () => {
+      tree.root.findByProps({ testID: "main-continue-reading" }).props.onPress();
+    });
+
+    expect(onOpenLibraryResume).toHaveBeenCalledWith({ bookId: 3, chapterSlug: "capitulo-2" });
   });
 });

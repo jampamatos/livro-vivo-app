@@ -8,10 +8,11 @@ Fechar baseline de acessibilidade e regressao funcional nas rotas criticas antes
 
 - Login
 - Main (hub principal)
+- Busca Global
 - Library
 - Reader
 - Jurisprudencia
-- Comunidade (post)
+- Comunidade (feed, novo post e post)
 - Curso
 - Banco de Pecas
 - Conta
@@ -43,5 +44,8 @@ npm run test:critical-routes
 
 O gate critico inclui explicitamente:
 
+- `__tests__/CommunityFeedScreen.test.tsx`
+- `__tests__/CommunityNewPostScreen.test.tsx`
+- `__tests__/MainSearchScreen.test.tsx`
 - `__tests__/LibraryScreen.test.tsx`
 - `__tests__/BookReaderScreen.test.tsx`

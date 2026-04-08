@@ -11,7 +11,7 @@ Implementado e ativo em `main`:
 - Shell principal com gating por tier (`essential` / `professional`) e bloqueios de moderacao.
 - Biblioteca chapter-first com sumario, leitura, busca por capitulo, progresso local e cache offline parcial.
 - Reader com rich text semantico, ajuste de fonte, anotacoes por selecao de texto, selecao mobile via `WebView`, copia com citacao ABNT e abertura segura de links externos.
-- Busca global unificada entre biblioteca, jurisprudencia e comunidade, com roteamento direto para o destino correto.
+- Busca global unificada entre biblioteca, jurisprudencia, comunidade, curso e banco de pecas, com roteamento direto para o destino correto.
 - Jurisprudencia com busca, filtros, detalhe formatado, copia de ementa e abertura do acordao.
 - Curso Profissional com feed de posts, detalhe rich text, materiais e lives/gravacoes.
 - Banco de Pecas Profissional com lista, detalhe e download seguro via token temporario.
@@ -200,14 +200,13 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 
 - Leitura: abertura por livro e versao atual, navegacao por capitulo, busca por trecho, progresso local e anotacoes sincronizadas.
 - Leitura e copia: web com selecao DOM; mobile com reader via `WebView`; copia de livro e curso com citacao ABNT anexada.
-- Busca global: consulta unica em biblioteca, jurisprudencia e comunidade com deep-link para o modulo correto.
+- Busca global: consulta unica em biblioteca, jurisprudencia, comunidade, curso e banco de pecas com deep-link para o modulo correto.
 - Conteudo Profissional: acesso a Curso e Banco de Pecas com gating consistente por tier.
 - Comunidade e notificacoes: follow de posts, banner in-app, preferencias por categoria e registro de device para push nativo.
 - Privacidade/LGPD: exportacao de dados, solicitacao de exclusao e encerramento de sessao apos fluxo destrutivo.
 
 ## Limites conhecidos
 
-- Busca global hoje cobre biblioteca, jurisprudencia e comunidade; curso e banco de pecas ainda nao entram no indice.
 - Na web, a sessao nao persiste apos hard refresh; por decisao de seguranca, os tokens ficam apenas em memoria.
 - Offline de autenticacao completa ainda nao esta fechado: o app depende de sessao valida e dados previamente sincronizados.
 - Push nativo depende de dispositivo fisico e `EXPO_PUBLIC_EAS_PROJECT_ID`; sem isso o app continua com banner in-app, mas sem registro nativo.
