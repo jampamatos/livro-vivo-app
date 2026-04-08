@@ -177,4 +177,64 @@ describe("TemplatesBankScreen", () => {
     expect(rendered).toContain("Acao de cobranca");
     expect(rendered).not.toContain("Contrato de LGPD");
   });
+
+  it("aplica busca inicial recebida da busca global", async () => {
+    listTemplatePiecesMock.mockResolvedValueOnce([
+      {
+        id: 7,
+        title: "Acao de cobranca",
+        slug: "acao-cobranca",
+        template_code: "acao-cobranca",
+        version: "1.0.0",
+        changelog: "Versao inicial com clausulas base.",
+        description: "Peca base para cobranca contratual.",
+        category: "petition",
+        tags: ["cobranca", "contrato"],
+        file_url: "https://example.com/template.docx",
+        file_name: "template.docx",
+        file_mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        file_size_bytes: 10240,
+        file_sha256: "a".repeat(64),
+        status: "published",
+        published_at: "2026-03-01T10:00:00Z",
+        created_at: "2026-03-01T10:00:00Z",
+        updated_at: "2026-03-01T10:00:00Z",
+      },
+      {
+        id: 8,
+        title: "Contrato de LGPD",
+        slug: "contrato-lgpd",
+        template_code: "contrato-lgpd",
+        version: "1.3.0",
+        changelog: "Ajustes de privacidade e protecao de dados.",
+        description: "Modelo com clausulas especificas de LGPD.",
+        category: "contract",
+        tags: ["lgpd", "dados"],
+        file_url: "https://example.com/contrato.docx",
+        file_name: "contrato.docx",
+        file_mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        file_size_bytes: 20480,
+        file_sha256: "b".repeat(64),
+        status: "published",
+        published_at: "2026-03-02T10:00:00Z",
+        created_at: "2026-03-02T10:00:00Z",
+        updated_at: "2026-03-02T10:00:00Z",
+      },
+    ]);
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <TemplatesBankScreen token="token-ok" initialOpenRequest={{ templateId: 8, query: "LGPD" }} />
+        </AppThemeProvider>
+      );
+    });
+    await flushEffects();
+
+    expect(tree!.root.findByProps({ testID: "templates-search-input" }).props.value).toBe("LGPD");
+    const rendered = JSON.stringify(tree!.toJSON());
+    expect(rendered).toContain("Contrato de LGPD");
+    expect(rendered).not.toContain("Acao de cobranca");
+  });
 });

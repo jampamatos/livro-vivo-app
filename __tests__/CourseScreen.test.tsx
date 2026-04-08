@@ -91,6 +91,26 @@ describe("CourseScreen a11y baseline", () => {
     );
   });
 
+  it("aplica pedido inicial da busca global e abre o post correspondente", async () => {
+    listCoursePostsMock.mockResolvedValueOnce([makePost()]);
+    listCourseAssetsMock.mockResolvedValueOnce([]);
+    listLiveEventsMock.mockResolvedValueOnce([]);
+    getCoursePostMock.mockResolvedValueOnce(makePost({ title: "Post detalhado" }));
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CourseScreen token="token-ok" initialOpenRequest={{ postId: 10, query: "bagagem" }} />
+        </AppThemeProvider>
+      );
+    });
+    await flushEffects();
+
+    expect(getCoursePostMock).toHaveBeenCalledWith("token-ok", 10);
+    expect(tree!.root.findByProps({ testID: "course-detail-close" }).props.accessibilityRole).toBe("button");
+  });
+
   it("mostra apenas Em breve para live agendada no detalhe", async () => {
     listCoursePostsMock.mockResolvedValueOnce([makePost()]);
     listCourseAssetsMock.mockResolvedValueOnce([]);
