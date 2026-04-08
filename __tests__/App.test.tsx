@@ -169,6 +169,34 @@ jest.mock("../src/screens/MainSearchScreen", () => {
         >
           <Text>OpenCommunityResult</Text>
         </Pressable>
+        <Pressable
+          testID="search-open-course-result"
+          onPress={() =>
+            onOpenResult({
+              type: "course_post",
+              source: "course",
+              title: "Post do curso",
+              snippet: "Conteúdo do curso",
+              target: { route: "course", params: { post_id: 88, q: "bagagem" } },
+            })
+          }
+        >
+          <Text>OpenCourseResult</Text>
+        </Pressable>
+        <Pressable
+          testID="search-open-template-result"
+          onPress={() =>
+            onOpenResult({
+              type: "template_piece",
+              source: "templates_bank",
+              title: "Peça do banco",
+              snippet: "Modelo de petição",
+              target: { route: "templatesBank", params: { template_id: 66, q: "bagagem" } },
+            })
+          }
+        >
+          <Text>OpenTemplateResult</Text>
+        </Pressable>
       </View>
     ),
   };
@@ -223,13 +251,27 @@ jest.mock("../src/screens/LibraryScreen", () => {
 jest.mock("../src/screens/CourseScreen", () => {
   const ReactLocal = require("react");
   const { View, Text } = require("react-native");
-  return { CourseScreen: () => <View><Text>CourseScreen</Text></View> };
+  return {
+    CourseScreen: ({ initialOpenRequest }: { initialOpenRequest?: unknown }) => (
+      <View>
+        <Text>CourseScreen</Text>
+        <Text>{`course-request:${JSON.stringify(initialOpenRequest ?? null)}`}</Text>
+      </View>
+    ),
+  };
 });
 
 jest.mock("../src/screens/TemplatesBankScreen", () => {
   const ReactLocal = require("react");
   const { View, Text } = require("react-native");
-  return { TemplatesBankScreen: () => <View><Text>TemplatesBankScreen</Text></View> };
+  return {
+    TemplatesBankScreen: ({ initialOpenRequest }: { initialOpenRequest?: unknown }) => (
+      <View>
+        <Text>TemplatesBankScreen</Text>
+        <Text>{`templates-request:${JSON.stringify(initialOpenRequest ?? null)}`}</Text>
+      </View>
+    ),
+  };
 });
 
 jest.mock("../src/screens/CommunityFeedScreen", () => {
@@ -569,6 +611,33 @@ describe("App", () => {
     await pressByTestId(tree, "search-open-community-result");
     expect(JSON.stringify(tree.toJSON())).toContain("CommunityPostScreen");
     expect(JSON.stringify(tree.toJSON())).toContain("post:Post da busca");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("CommunityFeedScreen");
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-search");
+    await pressByTestId(tree, "search-open-course-result");
+    expect(JSON.stringify(tree.toJSON())).toContain("CourseScreen");
+    expect(JSON.stringify(tree.toJSON())).toContain('course-request:{\\"postId\\":88');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"query\\":\\"bagagem\\"');
+
+    await act(async () => {
+      expect(hardwareBackHandler?.()).toBe(true);
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+
+    await pressByTestId(tree, "main-open-search");
+    await pressByTestId(tree, "search-open-template-result");
+    expect(JSON.stringify(tree.toJSON())).toContain("TemplatesBankScreen");
+    expect(JSON.stringify(tree.toJSON())).toContain('templates-request:{\\"templateId\\":66');
+    expect(JSON.stringify(tree.toJSON())).toContain('\\"query\\":\\"bagagem\\"');
   });
 
   it("usa o botão físico do Android para voltar uma tela sem fechar o app", async () => {

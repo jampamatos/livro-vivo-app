@@ -24,8 +24,10 @@ const LIMIT = 20;
 
 const SOURCE_LABEL: Record<string, string> = {
   library: "Livro",
+  course: "Curso",
   caselaw: "Jurisprudência",
   community: "Comunidade",
+  templates_bank: "Banco de peças",
 };
 
 function getApiErrorMessage(error: unknown, fallback: string) {
@@ -163,7 +165,7 @@ export function MainSearchScreen({ token, onOpenResult }: Props) {
             </Pressable>
           </View>
           <Text style={[styles.helperText, { color: theme.colors.textMuted }]}>
-            Busque em livro, jurisprudência e comunidade.
+            Busque em biblioteca, curso, jurisprudência, comunidade e banco de peças.
           </Text>
         </View>
 

@@ -23,6 +23,10 @@ import { openExternalUrl } from "../utils/externalUrl";
 
 type Props = {
   token: string;
+  initialOpenRequest?: {
+    templateId?: number;
+    query?: string;
+  } | null;
 };
 
 type FilterCategory = "all" | TemplateCategory;
@@ -202,8 +206,9 @@ function formatResultCount(value: number) {
   return `${value} ${value === 1 ? "modelo encontrado" : "modelos encontrados"}`;
 }
 
-export function TemplatesBankScreen({ token }: Props) {
+export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
+  const requestKey = React.useMemo(() => JSON.stringify(initialOpenRequest ?? null), [initialOpenRequest]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [templates, setTemplates] = React.useState<TemplatePiece[]>([]);
@@ -212,6 +217,7 @@ export function TemplatesBankScreen({ token }: Props) {
   const [expandedChangelogById, setExpandedChangelogById] = React.useState<Record<number, boolean>>({});
   const [downloadingId, setDownloadingId] = React.useState<number | null>(null);
   const [downloadFeedback, setDownloadFeedback] = React.useState<string | null>(null);
+  const [hasAppliedInitialRequest, setHasAppliedInitialRequest] = React.useState(false);
 
   const fetchTemplates = React.useCallback(async () => {
     try {
@@ -230,6 +236,19 @@ export function TemplatesBankScreen({ token }: Props) {
   React.useEffect(() => {
     void fetchTemplates();
   }, [fetchTemplates]);
+
+  React.useEffect(() => {
+    setHasAppliedInitialRequest(false);
+  }, [requestKey]);
+
+  React.useEffect(() => {
+    if (!initialOpenRequest || hasAppliedInitialRequest) return;
+    if (typeof initialOpenRequest.query === "string") {
+      setSearchQuery(initialOpenRequest.query);
+      setSelectedCategory("all");
+    }
+    setHasAppliedInitialRequest(true);
+  }, [hasAppliedInitialRequest, initialOpenRequest]);
 
   const startDownload = React.useCallback(
     async (piece: TemplatePiece) => {

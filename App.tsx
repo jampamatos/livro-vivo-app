@@ -37,6 +37,18 @@ type LibraryOpenRequest = {
   matchEnd?: number;
 };
 
+type CourseOpenRequest = {
+  postId?: number;
+  assetId?: number;
+  liveId?: number;
+  query?: string;
+};
+
+type TemplatesBankOpenRequest = {
+  templateId?: number;
+  query?: string;
+};
+
 function AppRoot() {
   const { theme } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
@@ -46,10 +58,16 @@ function AppRoot() {
   const [route, setRoute] = React.useState<AppRoute>("main");
   const [selectedPost, setSelectedPost] = React.useState<CommunityPost | null>(null);
   const [libraryOpenRequest, setLibraryOpenRequest] = React.useState<LibraryOpenRequest | null>(null);
+  const [courseOpenRequest, setCourseOpenRequest] = React.useState<CourseOpenRequest | null>(null);
+  const [templatesBankOpenRequest, setTemplatesBankOpenRequest] = React.useState<TemplatesBankOpenRequest | null>(
+    null
+  );
   const resolvedRoute = route === "communityPost" && !selectedPost ? "community" : route;
   const openMainFromNotification = React.useCallback(() => {
     setSelectedPost(null);
     setLibraryOpenRequest(null);
+    setCourseOpenRequest(null);
+    setTemplatesBankOpenRequest(null);
     setRoute("main");
   }, []);
   const notificationCenter = useNotificationCenter(session?.accessToken ?? null, openMainFromNotification);
@@ -65,6 +83,8 @@ function AppRoot() {
       case "templatesBank":
         setSelectedPost(null);
         setLibraryOpenRequest(null);
+        setCourseOpenRequest(null);
+        setTemplatesBankOpenRequest(null);
         setRoute("main");
         return true;
       case "communityNewPost":
@@ -76,6 +96,8 @@ function AppRoot() {
       default:
         setSelectedPost(null);
         setLibraryOpenRequest(null);
+        setCourseOpenRequest(null);
+        setTemplatesBankOpenRequest(null);
         setRoute("main");
         return true;
     }
@@ -95,6 +117,9 @@ function AppRoot() {
       setSession(next);
       if (!next) {
         setSelectedPost(null);
+        setLibraryOpenRequest(null);
+        setCourseOpenRequest(null);
+        setTemplatesBankOpenRequest(null);
         setRoute("account");
       }
     });
@@ -124,6 +149,8 @@ function AppRoot() {
     setSession(newSession);
     setAccountRefreshSignal((value) => value + 1);
     setLibraryOpenRequest(null);
+    setCourseOpenRequest(null);
+    setTemplatesBankOpenRequest(null);
     setRoute("main");
   };
 
@@ -139,6 +166,8 @@ function AppRoot() {
       await clearAuthSession();
       setSelectedPost(null);
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setSession(null);
       setRoute("account");
     }
@@ -146,9 +175,9 @@ function AppRoot() {
 
   const handleShellNavigate = React.useCallback((nextRoute: AppRoute) => {
     setSelectedPost(null);
-    if (nextRoute !== "library") {
-      setLibraryOpenRequest(null);
-    }
+    if (nextRoute !== "library") setLibraryOpenRequest(null);
+    if (nextRoute !== "course") setCourseOpenRequest(null);
+    if (nextRoute !== "templatesBank") setTemplatesBankOpenRequest(null);
     setRoute(nextRoute);
   }, []);
 
@@ -171,10 +200,14 @@ function AppRoot() {
           updated_at: nowIso,
         });
         setLibraryOpenRequest(null);
+        setCourseOpenRequest(null);
+        setTemplatesBankOpenRequest(null);
         setRoute("communityPost");
         return;
       }
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("community");
       return;
     }
@@ -182,6 +215,8 @@ function AppRoot() {
     if (routeTarget === "caselaw") {
       setSelectedPost(null);
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("caselaw");
       return;
     }
@@ -201,37 +236,97 @@ function AppRoot() {
         matchEnd: Number.isFinite(matchEnd) ? matchEnd : undefined,
       });
       setSelectedPost(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("library");
+      return;
+    }
+
+    if (routeTarget === "course") {
+      const postId = Number(params.post_id);
+      const assetId = Number(params.asset_id);
+      const liveId = Number(params.live_id);
+
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
+      setCourseOpenRequest({
+        postId: Number.isFinite(postId) && postId > 0 ? postId : undefined,
+        assetId: Number.isFinite(assetId) && assetId > 0 ? assetId : undefined,
+        liveId: Number.isFinite(liveId) && liveId > 0 ? liveId : undefined,
+        query: typeof params.q === "string" ? params.q : undefined,
+      });
+      setRoute("course");
+      return;
+    }
+
+    if (routeTarget === "templatesBank") {
+      const templateId = Number(params.template_id);
+
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest({
+        templateId: Number.isFinite(templateId) && templateId > 0 ? templateId : undefined,
+        query: typeof params.q === "string" ? params.q : undefined,
+      });
+      setRoute("templatesBank");
       return;
     }
 
     if (result.source === "community") {
       setSelectedPost(null);
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("community");
       return;
     }
     if (result.source === "caselaw") {
       setSelectedPost(null);
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("caselaw");
       return;
     }
     if (result.source === "library") {
       setSelectedPost(null);
       setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
       setRoute("library");
+      return;
+    }
+    if (result.source === "course") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
+      setCourseOpenRequest(null);
+      setRoute("course");
+      return;
+    }
+    if (result.source === "templates_bank") {
+      setSelectedPost(null);
+      setLibraryOpenRequest(null);
+      setCourseOpenRequest(null);
+      setTemplatesBankOpenRequest(null);
+      setRoute("templatesBank");
       return;
     }
 
     setSelectedPost(null);
     setLibraryOpenRequest(null);
+    setCourseOpenRequest(null);
+    setTemplatesBankOpenRequest(null);
     setRoute("main");
   }, []);
 
   const openLibraryWithRequest = React.useCallback((request?: LibraryOpenRequest | null) => {
     setSelectedPost(null);
     setLibraryOpenRequest(request ?? null);
+    setCourseOpenRequest(null);
+    setTemplatesBankOpenRequest(null);
     setRoute("library");
   }, []);
 
@@ -314,9 +409,9 @@ function AppRoot() {
       />
     );
   } else if (resolvedRoute === "course") {
-    content = <CourseScreen token={token} />;
+    content = <CourseScreen token={token} initialOpenRequest={courseOpenRequest} />;
   } else if (resolvedRoute === "templatesBank") {
-    content = <TemplatesBankScreen token={token} />;
+    content = <TemplatesBankScreen token={token} initialOpenRequest={templatesBankOpenRequest} />;
   } else if (resolvedRoute === "community") {
     content = (
       <CommunityFeedScreen

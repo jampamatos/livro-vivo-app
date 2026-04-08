@@ -48,8 +48,16 @@ import { formatCoursePostCitation } from "../utils/citations";
 import { openExternalUrl } from "../utils/externalUrl";
 import { RichBlockNode, RichInlineNode, buildRichTextBlocks } from "../utils/richText";
 
+type CourseInitialOpenRequest = {
+  postId?: number;
+  assetId?: number;
+  liveId?: number;
+  query?: string;
+};
+
 type Props = {
   token: string;
+  initialOpenRequest?: CourseInitialOpenRequest | null;
 };
 
 type FeedItem =
@@ -70,11 +78,12 @@ type FeedItem =
       relatedAssetCount: number;
     };
 
-export function CourseScreen({ token }: Props) {
+export function CourseScreen({ token, initialOpenRequest = null }: Props) {
   const { theme } = useAppTheme();
   const { width } = useWindowDimensions();
   const isWide = width >= 980;
   const detailCopyContentRef = React.useRef<any>(null);
+  const requestKey = React.useMemo(() => JSON.stringify(initialOpenRequest ?? null), [initialOpenRequest]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [posts, setPosts] = React.useState<CoursePost[]>([]);
@@ -82,6 +91,7 @@ export function CourseScreen({ token }: Props) {
   const [lives, setLives] = React.useState<LiveEvent[]>([]);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [feedFilter, setFeedFilter] = React.useState<FeedFilter>("all");
+  const [hasAppliedInitialRequest, setHasAppliedInitialRequest] = React.useState(false);
 
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState<string | null>(null);
@@ -113,6 +123,10 @@ export function CourseScreen({ token }: Props) {
   React.useEffect(() => {
     void fetchCourseData();
   }, [fetchCourseData]);
+
+  React.useEffect(() => {
+    setHasAppliedInitialRequest(false);
+  }, [requestKey]);
 
   const upcomingLives = React.useMemo(() => {
     return [...lives]
@@ -204,6 +218,36 @@ export function CourseScreen({ token }: Props) {
     },
     [token]
   );
+
+  React.useEffect(() => {
+    if (!initialOpenRequest || hasAppliedInitialRequest) return;
+
+    if (typeof initialOpenRequest.query === "string") {
+      setSearchQuery(initialOpenRequest.query);
+      setFeedFilter("all");
+    }
+
+    if (loading) return;
+
+    const relatedAssetPostId =
+      initialOpenRequest.assetId != null
+        ? assets.find((asset) => asset.id === initialOpenRequest.assetId)?.post ?? undefined
+        : undefined;
+    const relatedLivePostId =
+      initialOpenRequest.liveId != null
+        ? lives.find((live) => live.id === initialOpenRequest.liveId)?.post ?? undefined
+        : undefined;
+    const requestedPostId = initialOpenRequest.postId ?? relatedAssetPostId ?? relatedLivePostId;
+
+    if (requestedPostId != null) {
+      const post = posts.find((item) => item.id === requestedPostId);
+      if (post) {
+        void openPostDetail(post);
+      }
+    }
+
+    setHasAppliedInitialRequest(true);
+  }, [assets, hasAppliedInitialRequest, initialOpenRequest, lives, loading, openPostDetail, posts]);
 
   const closeDetail = React.useCallback(() => {
     setDetailLoading(false);
