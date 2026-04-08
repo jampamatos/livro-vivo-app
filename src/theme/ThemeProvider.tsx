@@ -7,6 +7,7 @@ import { AppTheme, ThemeMode, createTheme } from "./tokens";
 type ThemeContextValue = {
   theme: AppTheme;
   mode: ThemeMode;
+  isReady: boolean;
   setMode: (mode: ThemeMode) => void;
   toggleMode: () => void;
 };
@@ -22,6 +23,7 @@ function resolveSystemMode(systemScheme: string | null | undefined): ThemeMode {
 export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
   const [mode, setModeState] = React.useState<ThemeMode>(() => resolveSystemMode(systemScheme));
+  const [isReady, setIsReady] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -31,12 +33,15 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
         if (!alive) return;
         if (stored === "light" || stored === "dark") {
           setModeState(stored);
+          setIsReady(true);
           return;
         }
         setModeState(resolveSystemMode(systemScheme));
+        setIsReady(true);
       } catch {
         if (!alive) return;
         setModeState(resolveSystemMode(systemScheme));
+        setIsReady(true);
       }
     })();
     return () => {
@@ -61,10 +66,11 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
     return {
       theme: createTheme(mode),
       mode,
+      isReady,
       setMode,
       toggleMode,
     };
-  }, [mode, setMode, toggleMode]);
+  }, [isReady, mode, setMode, toggleMode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F7F4EE"
     },
     "androidStatusBar": {
       "backgroundColor": "#f7f4ee",
@@ -28,7 +28,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F7F4EE"
       },
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": false,

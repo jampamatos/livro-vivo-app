@@ -1,6 +1,6 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { ActivityIndicator, BackHandler, Linking, Platform } from "react-native";
+import { BackHandler, Linking, Platform } from "react-native";
 
 import App from "../App";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
@@ -423,7 +423,8 @@ describe("App", () => {
     getAuthSessionMock.mockReturnValueOnce(authPromise);
 
     const tree = await renderApp();
-    expect(tree.root.findByType(ActivityIndicator)).toBeTruthy();
+    expect(tree.root.findByProps({ testID: "app-boot-screen" })).toBeTruthy();
+    expect(JSON.stringify(tree.toJSON())).toContain("Carregando ambiente");
 
     resolveAuth(null);
     await flushEffects();

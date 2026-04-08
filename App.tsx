@@ -18,6 +18,8 @@ import { TemplatesBankScreen } from "./src/screens/TemplatesBankScreen";
 import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tokenStorage";
 import { setSessionListener } from "./src/auth/sessionBus";
 import { logout } from "./src/api/auth";
+import { hideWebBootScreen } from "./src/bootstrap/webBootScreen";
+import { AppBootScreen } from "./src/components/AppBootScreen";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
 import { AppShell } from "./src/layout/AppShell";
 import { AppRoute } from "./src/navigation/routes";
@@ -50,7 +52,7 @@ type TemplatesBankOpenRequest = {
 };
 
 function AppRoot() {
-  const { theme } = useAppTheme();
+  const { theme, isReady: themeReady } = useAppTheme();
   const [loading, setLoading] = React.useState(true);
   const [session, setSession] = React.useState<AuthSession | null>(null);
   const [accountRefreshSignal, setAccountRefreshSignal] = React.useState(0);
@@ -143,6 +145,11 @@ function AppRoot() {
       setRoute(resolvedRoute);
     }
   }, [resolvedRoute, route]);
+
+  React.useEffect(() => {
+    if (loading || !themeReady) return;
+    hideWebBootScreen();
+  }, [loading, themeReady]);
 
   const handleAuthSuccess = async (newSession: AuthSession) => {
     await setAuthSession(newSession);
@@ -330,11 +337,11 @@ function AppRoot() {
     setRoute("library");
   }, []);
 
-  if (loading) {
+  if (loading || !themeReady) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.bg }]}>
         <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
-        <ActivityIndicator />
+        <AppBootScreen />
       </View>
     );
   }
@@ -506,9 +513,5 @@ const styles = StyleSheet.create({
   loginRoot: { flex: 1 },
   center: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 16,
   },
 });
