@@ -8,7 +8,9 @@ import {
   registerPushDevice,
   unregisterPushDevice,
 } from "../src/api/notifications";
+import { ApiError } from "../src/api/http";
 import {
+  addForegroundNotificationListener,
   addNotificationResponseListener,
   getLastNotificationResponsePayloadAsync,
   registerForNativePushAsync,
@@ -23,6 +25,7 @@ jest.mock("../src/api/notifications", () => ({
 }));
 
 jest.mock("../src/notifications/push", () => ({
+  addForegroundNotificationListener: jest.fn(),
   addNotificationResponseListener: jest.fn(),
   getLastNotificationResponsePayloadAsync: jest.fn(),
   registerForNativePushAsync: jest.fn(),
@@ -32,6 +35,7 @@ const acknowledgeNotificationMock = acknowledgeNotification as unknown as jest.M
 const consumeLatestInAppNotificationMock = consumeLatestInAppNotification as unknown as jest.Mock;
 const registerPushDeviceMock = registerPushDevice as unknown as jest.Mock;
 const unregisterPushDeviceMock = unregisterPushDevice as unknown as jest.Mock;
+const addForegroundNotificationListenerMock = addForegroundNotificationListener as unknown as jest.Mock;
 const addNotificationResponseListenerMock = addNotificationResponseListener as unknown as jest.Mock;
 const getLastNotificationResponsePayloadAsyncMock =
   getLastNotificationResponsePayloadAsync as unknown as jest.Mock;
@@ -57,6 +61,7 @@ function NotificationCenterHarness({
   return (
     <View>
       <Text testID="banner-title">{notificationCenter.currentBanner?.title ?? ""}</Text>
+      <Text testID="push-detail">{notificationCenter.pushRegistration?.detail ?? ""}</Text>
       <Pressable testID="open-banner" onPress={notificationCenter.openCurrentBanner}>
         <Text>Abrir</Text>
       </Pressable>
@@ -71,15 +76,20 @@ function NotificationCenterHarness({
 }
 
 describe("useNotificationCenter", () => {
+  let foregroundListener:
+    | ((payload: { dispatchId: number | null; title: string; body: string; data: Record<string, unknown> }) => void)
+    | null;
   let responseListener: ((payload: { dispatchId: number | null; title: string; body: string; data: Record<string, unknown> }) => void) | null;
 
   beforeEach(() => {
+    foregroundListener = null;
     responseListener = null;
 
     acknowledgeNotificationMock.mockReset();
     consumeLatestInAppNotificationMock.mockReset();
     registerPushDeviceMock.mockReset();
     unregisterPushDeviceMock.mockReset();
+    addForegroundNotificationListenerMock.mockReset();
     addNotificationResponseListenerMock.mockReset();
     getLastNotificationResponsePayloadAsyncMock.mockReset();
     registerForNativePushAsyncMock.mockReset();
@@ -94,6 +104,10 @@ describe("useNotificationCenter", () => {
       expoPushToken: null,
       platform: null,
       detail: "Push nativo exige um dispositivo físico.",
+    });
+    addForegroundNotificationListenerMock.mockImplementation((callback) => {
+      foregroundListener = callback;
+      return { remove: () => { foregroundListener = null; } };
     });
     addNotificationResponseListenerMock.mockImplementation((callback) => {
       responseListener = callback;
@@ -125,6 +139,37 @@ describe("useNotificationCenter", () => {
 
     expect(tree!.root.findByProps({ testID: "banner-title" }).props.children).toBe("Novo capítulo");
     expect(consumeLatestInAppNotificationMock).toHaveBeenCalledWith("token-123");
+
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("expõe erro quando o token nativo existe mas o backend falha ao registrar o dispositivo", async () => {
+    registerForNativePushAsyncMock.mockResolvedValueOnce({
+      status: "registered",
+      expoPushToken: "ExponentPushToken[test-device]",
+      platform: "android",
+      detail: "Push nativo conectado ao dispositivo.",
+    });
+    registerPushDeviceMock.mockRejectedValueOnce(
+      new ApiError("HTTP 400 em /me/push-devices/", 400, {
+        detail: "Token rejeitado pelo backend.",
+      })
+    );
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<NotificationCenterHarness token="token-123" />);
+    });
+    await flushEffects();
+
+    expect(tree!.root.findByProps({ testID: "push-detail" }).props.children).toContain(
+      "Token push gerado, mas o backend não confirmou o dispositivo."
+    );
+    expect(tree!.root.findByProps({ testID: "push-detail" }).props.children).toContain(
+      "Token rejeitado pelo backend."
+    );
 
     act(() => {
       tree!.unmount();
@@ -195,6 +240,29 @@ describe("useNotificationCenter", () => {
     });
   });
 
+  it("mostra banner imediatamente quando a push chega com o app aberto", async () => {
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<NotificationCenterHarness token="token-123" />);
+    });
+    await flushEffects();
+
+    await act(async () => {
+      foregroundListener?.({
+        dispatchId: 21,
+        title: "Nova interação",
+        body: "Comentaram no seu post.",
+        data: { dispatch_id: 21 },
+      });
+    });
+
+    expect(tree!.root.findByProps({ testID: "banner-title" }).props.children).toBe("Nova interação");
+
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
   it("consome a última resposta de notificação ao abrir o app", async () => {
     getLastNotificationResponsePayloadAsyncMock.mockResolvedValueOnce({
       dispatchId: 19,
@@ -217,5 +285,50 @@ describe("useNotificationCenter", () => {
     act(() => {
       tree!.unmount();
     });
+  });
+
+  it("reconsulta banners in-app em segundo plano enquanto a sessão está ativa", async () => {
+    jest.useFakeTimers();
+    consumeLatestInAppNotificationMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        dispatch_id: 33,
+        event_type: "community_interaction",
+        title: "Novo comentário",
+        body: "Responderam no seu post.",
+        payload: {},
+        channel: "in_app",
+        status: "pending",
+        reason: "",
+        created_at: "2026-03-03T10:00:00Z",
+        event_created_at: "2026-03-03T10:00:00Z",
+        dispatched_at: null,
+        acknowledged_at: "2026-03-03T10:05:00Z",
+      });
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<NotificationCenterHarness token="token-123" />);
+    });
+    await flushEffects();
+
+    expect(tree!.root.findByProps({ testID: "banner-title" }).props.children).toBe("");
+
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    expect(consumeLatestInAppNotificationMock).toHaveBeenCalledTimes(2);
+    expect(tree!.root.findByProps({ testID: "banner-title" }).props.children).toBe("Novo comentário");
+
+    act(() => {
+      tree!.unmount();
+    });
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "../api/templatesBank";
 import { ApiError } from "../api/http";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { extractApiErrorMessage } from "../utils/apiErrors";
 import { openExternalUrl } from "../utils/externalUrl";
 
 type Props = {
@@ -73,11 +74,7 @@ function normalizeApiError(error: unknown, fallback: string) {
   if (error instanceof ApiError && error.status === 403) {
     return "Acesso restrito ao plano Profissional.";
   }
-  const message = (error as any)?.message;
-  if (typeof message === "string" && message.trim()) {
-    return message;
-  }
-  return fallback;
+  return extractApiErrorMessage(error, fallback);
 }
 
 function getCategoryUi(category: FilterCategory, isDark: boolean): CategoryUi {
@@ -226,7 +223,7 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
       const response = await listTemplatePieces(token, { status: "published" });
       setTemplates(response);
     } catch (e) {
-      setError(normalizeApiError(e, "Nao foi possivel carregar o Banco de Pecas."));
+      setError(normalizeApiError(e, "Não foi possível carregar o Banco de Peças."));
       setTemplates([]);
     } finally {
       setLoading(false);
@@ -262,7 +259,7 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
         await openExternalUrl(resolvedPayload.file_url);
         setDownloadFeedback("Download iniciado.");
       } catch (e) {
-        setDownloadFeedback(normalizeApiError(e, "Nao foi possivel iniciar o download da peca."));
+        setDownloadFeedback(normalizeApiError(e, "Não foi possível iniciar o download da peça."));
       } finally {
         setDownloadingId(null);
       }
@@ -285,7 +282,7 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando pecas...</Text>
+          <Text style={[styles.muted, { color: theme.colors.textMuted }]}>Carregando peças...</Text>
         </View>
       ) : error ? (
         <View style={styles.center}>
@@ -301,7 +298,7 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
             ]}
             onPress={() => void fetchTemplates()}
             accessibilityRole="button"
-            accessibilityLabel="Tentar carregar banco de pecas novamente"
+            accessibilityLabel="Tentar carregar banco de peças novamente"
           >
             <Text style={[styles.retryBtnText, { color: theme.colors.text }]}>Tentar novamente</Text>
           </Pressable>
@@ -334,7 +331,7 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
                 testID="templates-search-input"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                placeholder="Buscar por titulo, descricao ou tag..."
+                placeholder="Buscar por título, descrição ou tag..."
                 style={[styles.searchInput, { color: theme.colors.text }]}
                 placeholderTextColor={theme.colors.textMuted}
                 returnKeyType="search"
@@ -545,9 +542,9 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
                         },
                       ]}
                     >
-                      <Text style={[styles.changelogTitle, { color: theme.colors.text }]}>Changelog da versao</Text>
+                      <Text style={[styles.changelogTitle, { color: theme.colors.text }]}>Changelog da versão</Text>
                       <Text style={[styles.changelogBody, { color: theme.colors.textMuted }]}>
-                        {piece.changelog || "Sem changelog registrado para esta versao."}
+                        {piece.changelog || "Sem changelog registrado para esta versão."}
                       </Text>
                     </View>
                   ) : null}

@@ -299,7 +299,7 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
     if (!reportTargetPostId) return;
     const reason = reportReason.trim();
     if (!reason) {
-      showAlert("Motivo obrigatorio", "Escreva o motivo da denuncia.");
+      showAlert("Motivo obrigatório", "Escreva o motivo da denúncia.");
       return;
     }
 
@@ -309,7 +309,7 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
       closeReportModal();
       showAlert("Denuncia enviada", "Obrigado. O post foi encaminhado para moderacao.");
     } catch (e: any) {
-      showAlert("Erro ao denunciar", e?.message ?? "Nao foi possivel enviar a denuncia.");
+      showAlert("Erro ao denunciar", e?.message ?? "Não foi possível enviar a denúncia.");
     } finally {
       setReporting(false);
     }
@@ -532,11 +532,11 @@ export function CommunityFeedScreen({ token, onOpenPost, onCreatePost }: Props) 
         <View style={[styles.modalBackdrop, { backgroundColor: theme.colors.overlay }]}>
           <View style={[styles.modalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Denunciar post</Text>
-            <Text style={[styles.modalSubtitle, { color: theme.colors.textMuted }]}>Explique o motivo da denuncia:</Text>
+            <Text style={[styles.modalSubtitle, { color: theme.colors.textMuted }]}>Explique o motivo da denúncia:</Text>
             <TextInput
               value={reportReason}
               onChangeText={setReportReason}
-              placeholder="Ex: spam, ofensa ou conteudo inadequado"
+              placeholder="Ex: spam, ofensa ou conteúdo inadequado"
               style={[
                 styles.modalInput,
                 {

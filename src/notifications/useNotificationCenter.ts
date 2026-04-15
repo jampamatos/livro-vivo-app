@@ -8,12 +8,16 @@ import {
   type NotificationItem,
 } from "../api/notifications";
 import {
+  addForegroundNotificationListener,
   addNotificationResponseListener,
   getLastNotificationResponsePayloadAsync,
   registerForNativePushAsync,
   type ForegroundNotificationPayload,
   type PushRegistrationResult,
 } from "./push";
+import { extractApiErrorMessage } from "../utils/apiErrors";
+
+const IN_APP_NOTIFICATION_POLL_INTERVAL_MS = 5000;
 
 type BannerNotification = {
   id: string;
@@ -36,6 +40,16 @@ function buildBannerFromDispatch(item: NotificationItem): BannerNotification {
 function buildNotificationId(dispatchId: number | null, title: string, body: string) {
   if (dispatchId) return `dispatch:${dispatchId}`;
   return `message:${title.trim()}::${body.trim()}`;
+}
+
+function buildBannerFromPayload(payload: Pick<BannerNotification, "dispatchId" | "title" | "body">): BannerNotification {
+  return {
+    id: buildNotificationId(payload.dispatchId, payload.title, payload.body),
+    dispatchId: payload.dispatchId,
+    title: payload.title || "Livro Vivo",
+    body: payload.body || "",
+    createdAt: null,
+  };
 }
 
 export function useNotificationCenter(token: string | null, onOpenNotification?: () => void) {
@@ -98,23 +112,60 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
     }
 
     let alive = true;
+    let pollInFlight = false;
+
+    const publishBanner = (banner: BannerNotification) => {
+      if (!alive) return;
+      if (!banner.title.trim() && !banner.body.trim()) return;
+      setCurrentBanner((current) => (current?.id === banner.id ? current : banner));
+    };
+
+    const consumeLatestBanner = async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        const latestInAppNotification = await consumeLatestInAppNotification(token);
+        if (!alive || !latestInAppNotification) return;
+        publishBanner(buildBannerFromDispatch(latestInAppNotification));
+      } catch {
+        // best-effort silencioso
+      } finally {
+        pollInFlight = false;
+      }
+    };
 
     const setupPushRegistration = async () => {
       const result = await registerForNativePushAsync();
       if (!alive) return;
-      setPushRegistration(result);
 
       if (result.status === "registered") {
-        registeredTokenRef.current = result.expoPushToken;
         try {
+          registeredTokenRef.current = result.expoPushToken;
           await registerPushDevice(token, {
             platform: result.platform,
             expo_push_token: result.expoPushToken,
           });
-        } catch {
-          // banner local continua funcionando mesmo sem registro remoto
+          if (!alive) return;
+          setPushRegistration(result);
+        } catch (error) {
+          const backendMessage = extractApiErrorMessage(error, "");
+          const fallbackMessage =
+            error instanceof Error && error.message.trim()
+              ? error.message.trim()
+              : "Falha ao registrar o dispositivo no backend.";
+          registeredTokenRef.current = null;
+          if (!alive) return;
+          setPushRegistration({
+            status: "error",
+            expoPushToken: null,
+            platform: result.platform,
+            detail: `Token push gerado, mas o backend não confirmou o dispositivo. ${backendMessage || fallbackMessage}`,
+          });
         }
+        return;
       }
+
+      setPushRegistration(result);
     };
 
     const bootstrapLatestBanner = async () => {
@@ -126,12 +177,7 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
           return;
         }
 
-        const latestInAppNotification = await consumeLatestInAppNotification(token);
-        if (!alive || !latestInAppNotification) return;
-
-        const banner = buildBannerFromDispatch(latestInAppNotification);
-        if (!banner.title.trim() && !banner.body.trim()) return;
-        setCurrentBanner(banner);
+        await consumeLatestBanner();
       } catch {
         // best-effort silencioso
       }
@@ -139,12 +185,20 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
 
     void setupPushRegistration();
     void bootstrapLatestBanner();
+    const foregroundSubscription = addForegroundNotificationListener((payload) => {
+      publishBanner(buildBannerFromPayload(payload));
+    });
     const responseSubscription = addNotificationResponseListener((payload) => {
       openByNotification(payload);
     });
+    const pollInterval = setInterval(() => {
+      void consumeLatestBanner();
+    }, IN_APP_NOTIFICATION_POLL_INTERVAL_MS);
 
     return () => {
       alive = false;
+      clearInterval(pollInterval);
+      foregroundSubscription.remove();
       responseSubscription.remove();
     };
   }, [openByNotification, token]);

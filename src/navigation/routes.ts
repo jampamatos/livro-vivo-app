@@ -27,31 +27,31 @@ export type RouteNavItem = {
 };
 
 export const ROUTE_TITLES: Record<AppRoute, string> = {
-  main: "Inicio",
+  main: "Início",
   mainSearch: "Busca global",
   account: "Minha conta",
-  caselaw: "Jurisprudencia",
+  caselaw: "Jurisprudência",
   community: "Comunidade",
   communityNewPost: "Novo post",
   communityPost: "Post",
   course: "Curso",
   library: "Biblioteca",
-  templatesBank: "Banco de pecas",
+  templatesBank: "Banco de peças",
 };
 
 export const DESKTOP_NAV_ITEMS: RouteNavItem[] = [
-  { route: "main", label: "Inicio", icon: "home-outline" },
+  { route: "main", label: "Início", icon: "home-outline" },
   { route: "library", label: "Biblioteca", icon: "book-open-variant-outline" },
-  { route: "caselaw", label: "Jurisprudencia", icon: "scale-balance" },
+  { route: "caselaw", label: "Jurisprudência", icon: "scale-balance" },
   { route: "community", label: "Comunidade", icon: "account-group-outline" },
-  { route: "templatesBank", label: "Banco de pecas", icon: "file-document-outline" },
+  { route: "templatesBank", label: "Banco de peças", icon: "file-document-outline" },
   { route: "course", label: "Curso", icon: "school-outline" },
 ];
 
 export const MOBILE_TAB_ITEMS: RouteNavItem[] = [
   { route: "library", label: "Biblioteca", shortLabel: "Biblio", icon: "book-open-variant-outline" },
-  { route: "caselaw", label: "Jurisprudencia", shortLabel: "Juris", icon: "scale-balance" },
+  { route: "caselaw", label: "Jurisprudência", shortLabel: "Juris", icon: "scale-balance" },
   { route: "community", label: "Comunidade", shortLabel: "Comuni", icon: "account-group-outline" },
-  { route: "templatesBank", label: "Banco de pecas", shortLabel: "Pecas", icon: "file-document-outline" },
+  { route: "templatesBank", label: "Banco de peças", shortLabel: "Peças", icon: "file-document-outline" },
   { route: "course", label: "Curso", shortLabel: "Curso", icon: "school-outline" },
 ];

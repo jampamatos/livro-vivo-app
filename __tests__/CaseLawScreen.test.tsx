@@ -20,12 +20,21 @@ async function flushEffects(cycles = 2) {
 }
 
 describe("CaseLawScreen a11y baseline", () => {
+  let tree: renderer.ReactTestRenderer | null;
+
   beforeEach(() => {
+    tree = null;
     jest.useFakeTimers();
     searchCaseLawMock.mockReset();
   });
 
   afterEach(() => {
+    if (tree) {
+      act(() => {
+        tree!.unmount();
+      });
+      tree = null;
+    }
     act(() => {
       jest.runOnlyPendingTimers();
     });
@@ -55,7 +64,6 @@ describe("CaseLawScreen a11y baseline", () => {
       ],
     });
 
-    let tree: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
@@ -126,7 +134,6 @@ describe("CaseLawScreen a11y baseline", () => {
       ],
     });
 
-    let tree: renderer.ReactTestRenderer;
     await act(async () => {
       tree = renderer.create(
         <AppThemeProvider>
@@ -182,5 +189,73 @@ describe("CaseLawScreen a11y baseline", () => {
     expect(
       tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais relevantes" }).props.accessibilityState
     ).toEqual({ selected: true });
+  });
+
+  it("limpa a busca ativa sem exigir sair da tela", async () => {
+    searchCaseLawMock.mockResolvedValue({
+      q: "passageiro",
+      count: 1,
+      limit: 20,
+      offset: 0,
+      results: [
+        {
+          id: 1,
+          court: "STJ",
+          case_number: "REsp 4321/DF",
+          decision_date: "2026-03-01",
+          ementa_rich: "<p>Direitos do passageiro em atraso de voo.</p>",
+          ementa_plain: "Direitos do passageiro em atraso de voo.",
+          url: "https://example.com/caselaw/1",
+          anchors: [],
+          tags: ["passageiro"],
+          created_at: "2026-03-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      ],
+    });
+
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CaseLawScreen token="token-ok" />
+        </AppThemeProvider>
+      );
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(260);
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    const maybeShowFiltersButton = tree!.root.findAll(
+      (node: renderer.ReactTestInstance) => node.props.accessibilityLabel === "Mostrar busca e filtros"
+    );
+    if (maybeShowFiltersButton.length > 0) {
+      act(() => {
+        maybeShowFiltersButton[0].props.onPress();
+      });
+    }
+
+    act(() => {
+      tree!.root.findByProps({ accessibilityLabel: "Busca por jurisprudência" }).props.onChangeText("passageiro");
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(260);
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    expect(tree!.root.findByProps({ testID: "caselaw-search-clear" })).toBeTruthy();
+    expect(tree!.root.findByProps({ accessibilityLabel: "Busca por jurisprudência" }).props.value).toBe("passageiro");
+
+    act(() => {
+      tree!.root.findByProps({ testID: "caselaw-search-clear" }).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree!.root.findByProps({ accessibilityLabel: "Busca por jurisprudência" }).props.value).toBe("");
+    expect(tree!.root.findAllByProps({ testID: "caselaw-search-clear" })).toHaveLength(0);
   });
 });

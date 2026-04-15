@@ -43,6 +43,7 @@ type NativeReaderBridgeMessage =
   | { type: "open_link"; href: string }
   | { type: "open_annotation"; annotationId: number }
   | { type: "copy_text"; text: string }
+  | { type: "navigate_chapter"; direction: "next" | "previous" }
   | {
       type: "create_annotation";
       startOffset: number;
@@ -194,6 +195,10 @@ export function parseNativeReaderMessage(rawData: string): NativeReaderBridgeMes
     case "copy_text":
       return typeof payload.text === "string"
         ? { type: "copy_text", text: payload.text }
+        : null;
+    case "navigate_chapter":
+      return payload.direction === "next" || payload.direction === "previous"
+        ? { type: "navigate_chapter", direction: payload.direction }
         : null;
     case "create_annotation":
       return typeof payload.excerpt === "string" &&
@@ -499,6 +504,7 @@ export function renderNativeReaderHtml(args: {
         const actionButton = document.getElementById("lv-selection-action");
         let currentDraft = null;
         let lastScrollSentAt = 0;
+        let swipeGesture = null;
 
         function sendMessage(type, payload) {
           if (!window.ReactNativeWebView || typeof window.ReactNativeWebView.postMessage !== "function") {
@@ -585,6 +591,35 @@ export function renderNativeReaderHtml(args: {
           toolbar.style.display = "none";
         }
 
+        function resetSwipeGesture() {
+          swipeGesture = null;
+        }
+
+        function captureTouchPoint(touch) {
+          if (!touch) return null;
+          return {
+            x: Number(touch.clientX || 0),
+            y: Number(touch.clientY || 0),
+          };
+        }
+
+        function shouldNavigateChapterFromSwipe() {
+          if (!swipeGesture || state.annotationMode) return null;
+
+          const selection = window.getSelection && window.getSelection();
+          if (selection && !selection.isCollapsed && String(selection.toString() || "").trim()) {
+            return null;
+          }
+
+          const dx = swipeGesture.lastX - swipeGesture.startX;
+          const dy = swipeGesture.lastY - swipeGesture.startY;
+          if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.35) {
+            return null;
+          }
+
+          return dx < 0 ? "next" : "previous";
+        }
+
         function selectionInsideRoot(selection) {
           if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
           const range = selection.getRangeAt(0);
@@ -662,8 +697,45 @@ export function renderNativeReaderHtml(args: {
         document.addEventListener("selectionchange", function () {
           window.requestAnimationFrame(syncSelectionToolbar);
         });
+        document.addEventListener("touchstart", function (event) {
+          if (!event.touches || event.touches.length !== 1) {
+            resetSwipeGesture();
+            return;
+          }
+
+          const point = captureTouchPoint(event.touches[0]);
+          if (!point) {
+            resetSwipeGesture();
+            return;
+          }
+
+          swipeGesture = {
+            startX: point.x,
+            startY: point.y,
+            lastX: point.x,
+            lastY: point.y,
+          };
+        }, true);
+        document.addEventListener("touchmove", function (event) {
+          if (!swipeGesture || !event.touches || event.touches.length !== 1) {
+            return;
+          }
+
+          const point = captureTouchPoint(event.touches[0]);
+          if (!point) return;
+          swipeGesture.lastX = point.x;
+          swipeGesture.lastY = point.y;
+        }, true);
         document.addEventListener("touchend", function () {
+          const direction = shouldNavigateChapterFromSwipe();
+          if (direction) {
+            sendMessage("navigate_chapter", { direction: direction });
+          }
+          resetSwipeGesture();
           window.setTimeout(syncSelectionToolbar, 60);
+        }, true);
+        document.addEventListener("touchcancel", function () {
+          resetSwipeGesture();
         }, true);
         document.addEventListener("mouseup", function () {
           window.setTimeout(syncSelectionToolbar, 0);

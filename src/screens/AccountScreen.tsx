@@ -1351,7 +1351,7 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
             <View style={styles.preferenceTextWrap}>
               <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Push no dispositivo</Text>
               <Text style={[styles.preferenceHint, { color: theme.colors.textMuted }]}>
-                Pronto para integração futura com FCM/APNs.
+                Requer dispositivo físico e credenciais de entrega configuradas no projeto.
               </Text>
               {pushStatusMessage ? (
                 <Text style={[styles.preferenceRuntimeHint, { color: theme.colors.accent }]}>{pushStatusMessage}</Text>

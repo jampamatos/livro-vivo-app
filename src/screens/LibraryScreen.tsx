@@ -1145,6 +1145,16 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
     setReaderPanel((current) => (current === nextPanel ? null : nextPanel));
   }, []);
 
+  const toggleReaderToolbar = React.useCallback(() => {
+    setReaderToolbarOpen((current) => {
+      const nextOpen = !current;
+      if (!nextOpen) {
+        setReaderPanel(null);
+      }
+      return nextOpen;
+    });
+  }, []);
+
   const goToPreviousChapter = () => {
     if (!activeChapter?.previousSlug || !openBook) return;
     openReaderChapter(activeChapter.previousSlug, null);
@@ -1322,7 +1332,7 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
                     backgroundColor: readerToolbarOpen ? readerUi.iconActiveBg : readerUi.iconBg,
                   },
                 ]}
-                onPress={() => setReaderToolbarOpen((current) => !current)}
+                onPress={toggleReaderToolbar}
                 accessibilityRole="button"
                 accessibilityLabel={readerToolbarOpen ? "Ocultar controles de leitura" : "Exibir controles de leitura"}
               >

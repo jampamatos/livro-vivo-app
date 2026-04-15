@@ -19,6 +19,7 @@ import { ApiError } from "../api/http";
 import type { AuthSession } from "../auth/authSession";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AppTheme } from "../theme/tokens";
+import { extractApiErrorMessage } from "../utils/apiErrors";
 
 type Props = {
   onAuthSuccess: (session: AuthSession) => Promise<void> | void;
@@ -279,12 +280,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
       await onAuthSuccess(session.session);
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as any;
-        const msg =
-          body?.detail ||
-          body?.message ||
-          (typeof body === "string" ? body : null) ||
-          JSON.stringify(body ?? {});
+        const msg = extractApiErrorMessage(err, "Não foi possível concluir a autenticação.");
         setError(`Falha no ${mode === "login" ? "login" : "registro"}: ${msg}`);
       } else {
         setError("Falha inesperada. Tente novamente.");

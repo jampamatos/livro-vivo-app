@@ -370,6 +370,25 @@ describe("LibraryScreen reader toolbar", () => {
     expect(tree.root.findByProps({ testID: "reader-search-input" })).toBeTruthy();
   });
 
+  it("fecha o painel de busca quando o menu de leitura é recolhido", async () => {
+    const tree = await renderReader();
+    await openReaderToolbar(tree);
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-search-toggle" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree.root.findByProps({ testID: "reader-search-input" })).toBeTruthy();
+
+    await act(async () => {
+      (await waitForNode(tree, { testID: "reader-toolbar-toggle" })).props.onPress();
+    });
+    await flushEffects();
+
+    expect(tree.root.findAllByProps({ testID: "reader-search-input" })).toHaveLength(0);
+  });
+
   it("renderiza scroll próprio para os resultados da busca no livro", async () => {
     const tree = await renderReader();
     await openReaderToolbar(tree);

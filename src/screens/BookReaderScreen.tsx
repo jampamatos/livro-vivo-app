@@ -691,6 +691,16 @@ export function BookReaderScreen({
         return;
       }
 
+      if (message.type === "navigate_chapter") {
+        if (message.direction === "next" && canGoNext) {
+          onNext();
+        }
+        if (message.direction === "previous" && canGoPrevious) {
+          onPrevious();
+        }
+        return;
+      }
+
       if (!onCreateAnnotationDraft || message.type !== "create_annotation") {
         return;
       }
@@ -720,7 +730,7 @@ export function BookReaderScreen({
         },
       });
     },
-    [chapter, onCreateAnnotationDraft, onOpenAnnotation, onScrollOffsetChange, openLink]
+    [canGoNext, canGoPrevious, chapter, onCreateAnnotationDraft, onNext, onOpenAnnotation, onPrevious, onScrollOffsetChange, openLink]
   );
 
   const handleNativeShouldStartLoadWithRequest = React.useCallback(

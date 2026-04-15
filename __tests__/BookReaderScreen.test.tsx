@@ -187,6 +187,61 @@ describe("BookReaderScreen", () => {
     );
   });
 
+  it("navega de capítulo quando o WebView envia gesto horizontal no mobile", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    const onNext = jest.fn();
+    const onPrevious = jest.fn();
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapter}
+          loading={false}
+          error={null}
+          focus={null}
+          mode="reader"
+          showHeader={false}
+          showControls={false}
+          canGoPrevious
+          canGoNext
+          onPrevious={onPrevious}
+          onNext={onNext}
+        />
+      );
+    });
+
+    const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+
+    await act(async () => {
+      webView.props.onMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            type: "navigate_chapter",
+            direction: "next",
+          }),
+        },
+      });
+    });
+
+    await act(async () => {
+      webView.props.onMessage({
+        nativeEvent: {
+          data: JSON.stringify({
+            type: "navigate_chapter",
+            direction: "previous",
+          }),
+        },
+      });
+    });
+
+    expect(onNext).toHaveBeenCalledTimes(1);
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+  });
+
   it("escreve no clipboard nativo quando o WebView envia o texto copiado com citação", async () => {
     Object.defineProperty(Platform, "OS", {
       configurable: true,

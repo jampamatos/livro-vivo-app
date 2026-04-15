@@ -153,7 +153,7 @@ export function CaseLawScreen({ token }: Props) {
     const tokens: string[] = [];
     if (q.trim()) tokens.push("busca ativa");
     if (selectedCourts.length) tokens.push(`${selectedCourts.length} tribunal${selectedCourts.length > 1 ? "is" : ""}`);
-    if (sortMode === "relevant") tokens.push("ordem por relevancia");
+    if (sortMode === "relevant") tokens.push("ordem por relevância");
     if (!tokens.length) return "Nenhum filtro ativo";
     return tokens.join(" • ");
   }, [q, selectedCourts.length, sortMode]);
@@ -261,6 +261,10 @@ export function CaseLawScreen({ token }: Props) {
 
   const clearFilters = React.useCallback(() => {
     setSelectedCourts([]);
+  }, []);
+
+  const clearSearch = React.useCallback(() => {
+    setQ("");
   }, []);
 
   const renderHighlightedSummary = React.useCallback(
@@ -653,6 +657,40 @@ export function CaseLawScreen({ token }: Props) {
           )}
         </View>
 
+        {q.trim() ? (
+          <View
+            style={[
+              styles.activeSearchBanner,
+              {
+                borderColor: theme.colors.border,
+                backgroundColor: theme.colors.surfaceMuted,
+              },
+            ]}
+          >
+            <View style={styles.activeSearchCopy}>
+              <Text style={[styles.activeSearchTitle, { color: theme.colors.text }]}>Busca ativa</Text>
+              <Text style={[styles.activeSearchValue, { color: theme.colors.textMuted }]} numberOfLines={1}>
+                {q.trim()}
+              </Text>
+            </View>
+            <Pressable
+              testID="caselaw-search-clear"
+              onPress={clearSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Limpar busca por jurisprudência"
+              style={[
+                styles.activeSearchClearButton,
+                {
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.surface,
+                },
+              ]}
+            >
+              <Text style={[styles.activeSearchClearText, { color: theme.colors.text }]}>Limpar</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {(filtersOpen || !canCollapseFilterCard) ? (
           <Text style={[styles.resultsMeta, { color: theme.colors.textMuted }]}>{summaryText}</Text>
         ) : null}
@@ -849,6 +887,28 @@ const styles = StyleSheet.create({
   },
   filterCardCollapsedInfo: { gap: 4 },
   collapsedMetaText: { fontSize: 12, fontWeight: "600" },
+  activeSearchBanner: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  activeSearchCopy: { flex: 1, gap: 2 },
+  activeSearchTitle: { fontSize: 12, fontWeight: "800" },
+  activeSearchValue: { fontSize: 13, fontWeight: "600" },
+  activeSearchClearButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  activeSearchClearText: { fontSize: 12, fontWeight: "700" },
   filterHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   filterTitle: { fontSize: 13, fontWeight: "700" },
   clearFilterText: { fontSize: 12, fontWeight: "700" },
