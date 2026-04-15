@@ -333,8 +333,8 @@ describe("CommunityPostScreen", () => {
       reason: "Ofensa direta",
     });
     expect(alertSpy).toHaveBeenCalledWith(
-      "Denuncia enviada",
-      "Obrigado. A moderacao recebeu sua denuncia."
+      "Denúncia enviada",
+      "Obrigado. A moderação recebeu sua denúncia."
     );
     alertSpy.mockRestore();
   });

@@ -15,6 +15,7 @@ import {
   type ForegroundNotificationPayload,
   type PushRegistrationResult,
 } from "./push";
+import { getOrCreatePushInstallationId } from "./installation";
 import { extractApiErrorMessage } from "../utils/apiErrors";
 
 const IN_APP_NOTIFICATION_POLL_INTERVAL_MS = 5000;
@@ -57,6 +58,7 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
   const [pushRegistration, setPushRegistration] = React.useState<PushRegistrationResult | null>(null);
   const handledOpenIdsRef = React.useRef<Set<string>>(new Set());
   const registeredTokenRef = React.useRef<string | null>(null);
+  const registeredInstallationIdRef = React.useRef<string | null>(null);
 
   const dismissCurrentBanner = React.useCallback(() => {
     setCurrentBanner(null);
@@ -92,13 +94,22 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
   }, [currentBanner, openByNotification]);
 
   const unregisterCurrentDevice = React.useCallback(async () => {
-    if (!token || !registeredTokenRef.current) return;
+    if (!token) return;
+
+    const expoPushToken = registeredTokenRef.current;
+    const installationId = registeredInstallationIdRef.current;
+    if (!expoPushToken && !installationId) return;
+
     try {
-      await unregisterPushDevice(token, registeredTokenRef.current);
+      await unregisterPushDevice(token, {
+        expo_push_token: expoPushToken ?? undefined,
+        installation_id: installationId ?? undefined,
+      });
     } catch {
       // best-effort no logout
     } finally {
       registeredTokenRef.current = null;
+      registeredInstallationIdRef.current = null;
     }
   }, [token]);
 
@@ -108,6 +119,7 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
       setPushRegistration(null);
       handledOpenIdsRef.current.clear();
       registeredTokenRef.current = null;
+      registeredInstallationIdRef.current = null;
       return;
     }
 
@@ -140,9 +152,14 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
 
       if (result.status === "registered") {
         try {
+          const installationId = await getOrCreatePushInstallationId();
+          if (!alive) return;
+
           registeredTokenRef.current = result.expoPushToken;
+          registeredInstallationIdRef.current = installationId;
           await registerPushDevice(token, {
             platform: result.platform,
+            installation_id: installationId,
             expo_push_token: result.expoPushToken,
           });
           if (!alive) return;
@@ -154,6 +171,7 @@ export function useNotificationCenter(token: string | null, onOpenNotification?:
               ? error.message.trim()
               : "Falha ao registrar o dispositivo no backend.";
           registeredTokenRef.current = null;
+          registeredInstallationIdRef.current = null;
           if (!alive) return;
           setPushRegistration({
             status: "error",

@@ -37,6 +37,7 @@ export type NotificationItem = {
 export type PushDevice = {
   id: number;
   platform: PushDevicePlatform;
+  installation_id: string | null;
   expo_push_token: string;
   is_active: boolean;
   disabled_reason: string;
@@ -119,6 +120,7 @@ export function registerPushDevice(
   token: string,
   payload: {
     platform: PushDevicePlatform;
+    installation_id: string;
     expo_push_token: string;
   }
 ) {
@@ -129,10 +131,16 @@ export function registerPushDevice(
   });
 }
 
-export function unregisterPushDevice(token: string, expoPushToken: string) {
+export function unregisterPushDevice(
+  token: string,
+  payload: {
+    expo_push_token?: string;
+    installation_id?: string;
+  }
+) {
   return apiFetch<void>("/me/push-devices/", {
     method: "DELETE",
     token,
-    body: { expo_push_token: expoPushToken },
+    body: payload,
   });
 }

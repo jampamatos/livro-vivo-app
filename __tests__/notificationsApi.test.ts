@@ -94,27 +94,40 @@ describe("api/notifications", () => {
 
   it("registra e remove um dispositivo de push", async () => {
     apiFetchMock
-      .mockResolvedValueOnce({ id: 1, platform: "android", expo_push_token: "ExponentPushToken[test]" })
+      .mockResolvedValueOnce({
+        id: 1,
+        platform: "android",
+        installation_id: "lv-installation-123",
+        expo_push_token: "ExponentPushToken[test]",
+      })
       .mockResolvedValueOnce(undefined);
 
     await registerPushDevice("token-123", {
       platform: "android",
+      installation_id: "lv-installation-123",
       expo_push_token: "ExponentPushToken[test]",
     });
-    await unregisterPushDevice("token-123", "ExponentPushToken[test]");
+    await unregisterPushDevice("token-123", {
+      expo_push_token: "ExponentPushToken[test]",
+      installation_id: "lv-installation-123",
+    });
 
     expect(apiFetchMock).toHaveBeenNthCalledWith(1, "/me/push-devices/", {
       method: "POST",
       token: "token-123",
       body: {
         platform: "android",
+        installation_id: "lv-installation-123",
         expo_push_token: "ExponentPushToken[test]",
       },
     });
     expect(apiFetchMock).toHaveBeenNthCalledWith(2, "/me/push-devices/", {
       method: "DELETE",
       token: "token-123",
-      body: { expo_push_token: "ExponentPushToken[test]" },
+      body: {
+        expo_push_token: "ExponentPushToken[test]",
+        installation_id: "lv-installation-123",
+      },
     });
   });
 });
