@@ -482,6 +482,7 @@ export function CaseLawScreen({ token }: Props) {
                 onPress={() => setFiltersOpen((current) => !current)}
                 accessibilityRole="button"
                 accessibilityLabel={filtersOpen ? "Ocultar busca e filtros" : "Mostrar busca e filtros"}
+                accessibilityState={{ expanded: filtersOpen }}
               >
                 <Text style={[styles.filterCardToggleText, { color: theme.colors.primary }]}>
                   {filtersOpen ? "Ocultar" : "Mostrar"}
@@ -536,6 +537,7 @@ export function CaseLawScreen({ token }: Props) {
                   onPress={clearFilters}
                   accessibilityRole="button"
                   accessibilityLabel="Selecionar todos os tribunais"
+                  accessibilityState={{ selected: !selectedCourts.length }}
                 >
                   <Text
                     style={[
@@ -562,6 +564,7 @@ export function CaseLawScreen({ token }: Props) {
                       onPress={() => toggleCourt(courtName)}
                       accessibilityRole="button"
                       accessibilityLabel={`Filtrar por tribunal ${courtName}`}
+                      accessibilityState={{ selected: selectedCourt }}
                     >
                       <Text
                         style={[
@@ -588,6 +591,7 @@ export function CaseLawScreen({ token }: Props) {
                   onPress={() => setSortMode("recent")}
                   accessibilityRole="button"
                   accessibilityLabel="Ordenar por mais recentes"
+                  accessibilityState={{ selected: sortMode === "recent" }}
                 >
                   <Text
                     style={[
@@ -609,6 +613,7 @@ export function CaseLawScreen({ token }: Props) {
                   onPress={() => setSortMode("relevant")}
                   accessibilityRole="button"
                   accessibilityLabel="Ordenar por mais relevantes"
+                  accessibilityState={{ selected: sortMode === "relevant" }}
                 >
                   <Text
                     style={[

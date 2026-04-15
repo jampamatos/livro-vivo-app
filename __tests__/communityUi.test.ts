@@ -39,6 +39,10 @@ describe("sanitizeAvatarUrl", () => {
     expect(sanitizeAvatarUrl("http://localhost:8000/media/avatar.png")).toBe("http://localhost:8000/media/avatar.png");
   });
 
+  it("rejeita avatar remoto inseguro fora do host local/api", () => {
+    expect(sanitizeAvatarUrl("http://cdn.example.com/avatar.png")).toBeNull();
+  });
+
   it("normaliza urls protocol-relative e caminhos relativos da API", () => {
     expect(sanitizeAvatarUrl("//cdn.example.com/avatar.png")).toBe("https://cdn.example.com/avatar.png");
     expect(sanitizeAvatarUrl("/media/avatar.png")).toBe(`${API_BASE_URL}/media/avatar.png`);

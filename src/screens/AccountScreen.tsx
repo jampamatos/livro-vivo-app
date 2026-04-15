@@ -296,18 +296,28 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
         setLoading(true);
         setError(null);
 
-        const [profileRes, entitlementsRes, preferencesRes] = await Promise.all([
+        const [profileRes, entitlementsRes, preferencesRes] = await Promise.allSettled([
           getMeProfile(token),
           getMyEntitlements(token),
           getNotificationPreferences(token),
         ]);
 
         if (!alive) return;
-        setProfile(profileRes);
-        setEntitlements(entitlementsRes);
-        setPreferences(preferencesRes);
+        setProfile(profileRes.status === "fulfilled" ? profileRes.value : null);
+        setEntitlements(entitlementsRes.status === "fulfilled" ? entitlementsRes.value : null);
+        setPreferences(preferencesRes.status === "fulfilled" ? preferencesRes.value : null);
+
+        const allRejected =
+          profileRes.status === "rejected" &&
+          entitlementsRes.status === "rejected" &&
+          preferencesRes.status === "rejected";
+
+        setError(allRejected ? "Não foi possível carregar os dados da sua conta." : null);
       } catch {
         if (!alive) return;
+        setProfile(null);
+        setEntitlements(null);
+        setPreferences(null);
         setError("Não foi possível carregar os dados da sua conta.");
       } finally {
         if (!alive) return;

@@ -89,4 +89,98 @@ describe("CaseLawScreen a11y baseline", () => {
       tree!.root.findByProps({ accessibilityLabel: "Abrir jurisprudência STJ REsp 1234/DF" }).props.accessibilityRole
     ).toBe("button");
   });
+
+  it("expõe estados acessíveis de expansão e seleção dos filtros", async () => {
+    searchCaseLawMock.mockResolvedValueOnce({
+      q: "",
+      count: 2,
+      limit: 20,
+      offset: 0,
+      results: [
+        {
+          id: 1,
+          court: "STJ",
+          case_number: "REsp 1234/DF",
+          decision_date: "2026-03-01",
+          ementa_rich: "<p>Bagagem extraviada.</p>",
+          ementa_plain: "Bagagem extraviada.",
+          url: "https://example.com/caselaw/1",
+          anchors: [],
+          tags: ["bagagem"],
+          created_at: "2026-03-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+        {
+          id: 2,
+          court: "TJSP",
+          case_number: "Apelação 5678/SP",
+          decision_date: "2026-03-02",
+          ementa_rich: "<p>Dano moral.</p>",
+          ementa_plain: "Dano moral.",
+          url: "https://example.com/caselaw/2",
+          anchors: [],
+          tags: ["dano moral"],
+          created_at: "2026-03-02T00:00:00Z",
+          updated_at: "2026-03-02T00:00:00Z",
+        },
+      ],
+    });
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CaseLawScreen token="token-ok" />
+        </AppThemeProvider>
+      );
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(260);
+      await Promise.resolve();
+    });
+    await flushEffects();
+
+    const toggleButton = tree!.root.findByProps({ accessibilityLabel: "Mostrar busca e filtros" });
+    expect(toggleButton.props.accessibilityState).toEqual({ expanded: false });
+
+    act(() => {
+      toggleButton.props.onPress();
+    });
+
+    const collapseButton = tree!.root.findByProps({ accessibilityLabel: "Ocultar busca e filtros" });
+    expect(collapseButton.props.accessibilityState).toEqual({ expanded: true });
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Selecionar todos os tribunais" }).props.accessibilityState
+    ).toEqual({ selected: true });
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais recentes" }).props.accessibilityState
+    ).toEqual({ selected: true });
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais relevantes" }).props.accessibilityState
+    ).toEqual({ selected: false });
+
+    const stjChip = tree!.root.findByProps({ accessibilityLabel: "Filtrar por tribunal STJ" });
+    act(() => {
+      stjChip.props.onPress();
+    });
+
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Selecionar todos os tribunais" }).props.accessibilityState
+    ).toEqual({ selected: false });
+    expect(tree!.root.findByProps({ accessibilityLabel: "Filtrar por tribunal STJ" }).props.accessibilityState).toEqual(
+      { selected: true }
+    );
+
+    act(() => {
+      tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais relevantes" }).props.onPress();
+    });
+
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais recentes" }).props.accessibilityState
+    ).toEqual({ selected: false });
+    expect(
+      tree!.root.findByProps({ accessibilityLabel: "Ordenar por mais relevantes" }).props.accessibilityState
+    ).toEqual({ selected: true });
+  });
 });

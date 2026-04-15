@@ -101,15 +101,22 @@ export function CourseScreen({ token, initialOpenRequest = null }: Props) {
     try {
       setLoading(true);
       setError(null);
-      const [postsRes, assetsRes, livesRes] = await Promise.all([
+      const [postsRes, assetsRes, livesRes] = await Promise.allSettled([
         listCoursePosts(token, { status: "published" }),
         listCourseAssets(token, { status: "published" }),
         listLiveEvents(token),
       ]);
 
-      setPosts(postsRes);
-      setAssets(assetsRes);
-      setLives(livesRes);
+      setPosts(postsRes.status === "fulfilled" ? postsRes.value : []);
+      setAssets(assetsRes.status === "fulfilled" ? assetsRes.value : []);
+      setLives(livesRes.status === "fulfilled" ? livesRes.value : []);
+
+      const allRejected =
+        postsRes.status === "rejected" &&
+        assetsRes.status === "rejected" &&
+        livesRes.status === "rejected";
+
+      setError(allRejected ? "Não foi possível carregar o conteúdo do curso." : null);
     } catch (e: any) {
       setError(e?.message || "Não foi possível carregar o conteúdo do curso.");
       setPosts([]);

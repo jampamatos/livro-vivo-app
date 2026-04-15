@@ -133,8 +133,17 @@ export function AppShell({
     try {
       setAccountSummaryLoading(true);
       setAccountSummaryError(null);
-      const [profile, entitlements] = await Promise.all([getMeProfile(token), getMyEntitlements(token)]);
+      const [profileResult, entitlementsResult] = await Promise.allSettled([getMeProfile(token), getMyEntitlements(token)]);
       if (aliveRef && !aliveRef.current) return;
+
+      const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
+      const entitlements = entitlementsResult.status === "fulfilled" ? entitlementsResult.value : null;
+
+      if (!profile && !entitlements) {
+        setAccountSummary(null);
+        setAccountSummaryError("Não foi possível carregar o resumo da conta.");
+        return;
+      }
 
       setAccountSummary({
         name: profile?.name?.trim() || "Conta Livro Vivo",
@@ -146,6 +155,7 @@ export function AppShell({
       });
     } catch {
       if (aliveRef && !aliveRef.current) return;
+      setAccountSummary(null);
       setAccountSummaryError("Não foi possível carregar o resumo da conta.");
     } finally {
       if (aliveRef && !aliveRef.current) return;
@@ -337,6 +347,8 @@ export function AppShell({
                 <Pressable
                   key={item.route}
                   onPress={() => onNavigate(item.route)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir ${item.label}`}
                   style={[
                     styles.desktopNavItem,
                     active
@@ -354,15 +366,30 @@ export function AppShell({
           </View>
 
           <View style={[styles.desktopFooter, { borderTopColor: theme.colors.sidebarBorder }]}>
-            <Pressable style={styles.desktopFooterAction} onPress={onOpenSearch}>
+            <Pressable
+              style={styles.desktopFooterAction}
+              onPress={onOpenSearch}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir busca global"
+            >
               <ShellIcon name="magnify" size={20} color={theme.colors.sidebarText} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.sidebarText }]}>Busca global</Text>
             </Pressable>
-            <Pressable style={styles.desktopFooterAction} onPress={onOpenAccount}>
+            <Pressable
+              style={styles.desktopFooterAction}
+              onPress={onOpenAccount}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir minha conta"
+            >
               <ShellIcon name="account-circle-outline" size={20} color={theme.colors.sidebarText} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.sidebarText }]}>Minha conta</Text>
             </Pressable>
-            <Pressable style={styles.desktopFooterAction} onPress={toggleMode}>
+            <Pressable
+              style={styles.desktopFooterAction}
+              onPress={toggleMode}
+              accessibilityRole="button"
+              accessibilityLabel={theme.isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+            >
               <ShellIcon
                 name={theme.isDark ? "weather-sunny" : "moon-waning-crescent"}
                 size={20}
@@ -372,7 +399,12 @@ export function AppShell({
                 {theme.isDark ? "Modo claro" : "Modo escuro"}
               </Text>
             </Pressable>
-            <Pressable style={styles.desktopFooterAction} onPress={() => void Promise.resolve(onLogout())}>
+            <Pressable
+              style={styles.desktopFooterAction}
+              onPress={() => void Promise.resolve(onLogout())}
+              accessibilityRole="button"
+              accessibilityLabel="Sair da conta"
+            >
               <ShellIcon name="logout-variant" size={20} color={theme.colors.danger} />
               <Text style={[styles.desktopFooterText, { color: theme.colors.danger }]}>Sair</Text>
             </Pressable>

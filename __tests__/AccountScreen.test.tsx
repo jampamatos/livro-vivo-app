@@ -145,6 +145,38 @@ describe("AccountScreen", () => {
     expect(tree.root.findByProps({ testID: "account-menu-profile" })).toBeTruthy();
   });
 
+  it("mantém o hub utilizável quando preferências de notificação falham", async () => {
+    getMeProfileMock.mockResolvedValueOnce({
+      id: 1,
+      email: "jampa@example.com",
+      name: "Jampa Matos",
+      profession: "Advogado",
+      avatar_url: "https://example.com/avatar.jpg",
+    });
+    getMyEntitlementsMock.mockResolvedValueOnce({
+      effective_tier: "professional",
+      subscription: {
+        id: 1,
+        tier: "professional",
+        status: "active",
+        is_founder: false,
+        expires_at: null,
+        source: "admin",
+        is_legacy_fallback: false,
+      },
+      entitlements: [],
+    });
+    getNotificationPreferencesMock.mockRejectedValueOnce(new Error("boom"));
+
+    const tree = await renderScreen("token-partial");
+    await flushEffects();
+
+    const json = JSON.stringify(tree.toJSON());
+    expect(json).toContain("Jampa Matos");
+    expect(json).toContain("Meu plano");
+    expect(json).not.toContain("Não foi possível carregar os dados da sua conta.");
+  });
+
   it("não renderiza mais os botões antigos de Voltar e Sair no conteúdo", async () => {
     seedBaseMocks();
     const tree = await renderScreen("token-header");

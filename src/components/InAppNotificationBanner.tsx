@@ -27,7 +27,14 @@ export function InAppNotificationBanner({ title, body, onDismiss, onPress }: Pro
             {body ? <Text style={styles.body}>{body}</Text> : null}
           </View>
         </Pressable>
-        <Pressable testID="in-app-notification-dismiss" onPress={onDismiss} style={styles.dismissButton}>
+        <Pressable
+          testID="in-app-notification-dismiss"
+          accessibilityRole="button"
+          accessibilityLabel="Fechar notificação"
+          accessibilityHint="Dispensa o banner de notificação em tela."
+          onPress={onDismiss}
+          style={styles.dismissButton}
+        >
           <Text style={styles.dismissText}>Fechar</Text>
         </Pressable>
       </View>

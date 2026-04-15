@@ -30,5 +30,7 @@ describe("InAppNotificationBanner", () => {
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(root.findByProps({ testID: "in-app-notification-dismiss" }).props.accessibilityRole).toBe("button");
+    expect(root.findByProps({ testID: "in-app-notification-dismiss" }).props.accessibilityLabel).toBe("Fechar notificação");
   });
 });

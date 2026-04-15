@@ -91,6 +91,26 @@ describe("CourseScreen a11y baseline", () => {
     );
   });
 
+  it("mantém a lista principal quando uma fonte secundária falha", async () => {
+    listCoursePostsMock.mockResolvedValueOnce([makePost()]);
+    listCourseAssetsMock.mockResolvedValueOnce([]);
+    listLiveEventsMock.mockRejectedValueOnce(new Error("boom"));
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <AppThemeProvider>
+          <CourseScreen token="token-ok" />
+        </AppThemeProvider>
+      );
+    });
+    await flushEffects();
+
+    const json = JSON.stringify(tree!.toJSON());
+    expect(json).toContain("Post de aula");
+    expect(json).not.toContain("Não foi possível carregar o conteúdo do curso.");
+  });
+
   it("aplica pedido inicial da busca global e abre o post correspondente", async () => {
     listCoursePostsMock.mockResolvedValueOnce([makePost()]);
     listCourseAssetsMock.mockResolvedValueOnce([]);

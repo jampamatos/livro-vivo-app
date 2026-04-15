@@ -73,9 +73,23 @@ export function sanitizeAuthorDisplay(value: string | undefined | null, fallback
 }
 
 const SAFE_AVATAR_SCHEMES = new Set(["http:", "https:"]);
+const INSECURE_AVATAR_HOST_ALLOWLIST = new Set(["localhost", "127.0.0.1", "::1", "testserver"]);
 
 function hasControlChars(value: string): boolean {
   return /[\u0000-\u001F\u007F]/.test(value);
+}
+
+function isAllowedInsecureAvatarUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    if (INSECURE_AVATAR_HOST_ALLOWLIST.has(host)) return true;
+
+    const apiHost = new URL(API_BASE_URL).hostname.toLowerCase();
+    return Boolean(apiHost) && host === apiHost;
+  } catch {
+    return false;
+  }
 }
 
 export function sanitizeAvatarUrl(value: string | undefined | null): string | null {
@@ -98,6 +112,7 @@ export function sanitizeAvatarUrl(value: string | undefined | null): string | nu
 
   const scheme = `${schemeMatch[1].toLowerCase()}:`;
   if (!SAFE_AVATAR_SCHEMES.has(scheme)) return null;
+  if (scheme === "http:" && !isAllowedInsecureAvatarUrl(compact)) return null;
 
   return compact;
 }

@@ -18,6 +18,17 @@ Implementado e ativo em `main`:
 - Comunidade com feed, detalhe, novo post, comentario, denuncia e follow/unfollow de posts para notificacoes.
 - Minha Conta com perfil, assinatura, resumo de moderacao, preferencias de notificacao, estado do push e fluxo LGPD (exportacao/exclusao).
 - Banner in-app, registro de device para push nativo e endurecimento defensivo de URLs remotas no cliente.
+- Rotas criticas com baseline automatizada de a11y e telas-chave endurecidas contra falhas parciais de API.
+
+## Status pre-deploy
+
+Ultima varredura completa validada em `2026-04-15`:
+
+- `npm audit` zerado para dependencias de producao e desenvolvimento.
+- `npm run gate:predeploy` aprovado.
+- `37` suites / `194` testes passando.
+- Coverage global no gate: statements `67.6%`, branches `54.67%`, functions `68.8%`, lines `70.93%`.
+- `npm` definido como package manager canonico e `package-lock.json` como lockfile oficial.
 
 ## Stack
 
@@ -37,7 +48,7 @@ Implementado e ativo em `main`:
 ### 1) Dependencias
 
 ```bash
-npm install
+npm ci
 ```
 
 ### 2) Variavel de ambiente da API
@@ -121,7 +132,7 @@ npm run gate:predeploy
 ### Auditoria de dependencias
 
 ```bash
-npm audit --audit-level=low
+npm audit --omit=dev --audit-level=moderate
 ```
 
 ### Typecheck
@@ -210,7 +221,7 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 - Na web, a sessao nao persiste apos hard refresh; por decisao de seguranca, os tokens ficam apenas em memoria.
 - Offline de autenticacao completa ainda nao esta fechado: o app depende de sessao valida e dados previamente sincronizados.
 - Push nativo depende de dispositivo fisico e `EXPO_PUBLIC_EAS_PROJECT_ID`; sem isso o app continua com banner in-app, mas sem registro nativo.
-- A auditoria formal de a11y das rotas criticas ainda nao foi concluida.
+- A baseline automatizada de a11y das rotas criticas cobre labels, roles e estados interativos; smoke manual com leitor de tela continua recomendado antes de grandes mudancas visuais.
 
 ## CI
 
@@ -223,6 +234,11 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 - `npm run test:coverage`
 - validacao de release config
 - export web de sanity
+
+Convencao operacional:
+
+- `npm` e o package manager canonico deste app.
+- `package-lock.json` e o lockfile de referencia para CI/deploy.
 
 Threshold global atual de cobertura no Jest:
 
