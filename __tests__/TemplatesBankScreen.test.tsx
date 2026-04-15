@@ -83,7 +83,7 @@ describe("TemplatesBankScreen", () => {
     await flushEffects();
 
     expect(tree!.root.findByProps({ testID: "templates-search-input" }).props.placeholder).toBe(
-      "Buscar por titulo, descricao ou tag..."
+      "Buscar por título, descrição ou tag..."
     );
     expect(tree!.root.findByProps({ testID: "templates-filter-petition" }).props.accessibilityRole).toBe("button");
     expect(tree!.root.findByProps({ accessibilityLabel: "Baixar modelo Acao de cobranca" }).props.accessibilityRole).toBe(
@@ -94,7 +94,7 @@ describe("TemplatesBankScreen", () => {
       tree!.root.findByProps({ testID: "templates-changelog-7" }).props.onPress();
     });
 
-      expect(JSON.stringify(tree!.toJSON())).toContain("Changelog da versao");
+      expect(JSON.stringify(tree!.toJSON())).toContain("Changelog da versão");
       expect(JSON.stringify(tree!.toJSON())).toContain("Versao inicial com clausulas base.");
     },
     15000
