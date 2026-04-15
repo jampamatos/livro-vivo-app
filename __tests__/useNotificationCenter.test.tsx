@@ -15,6 +15,7 @@ import {
   getLastNotificationResponsePayloadAsync,
   registerForNativePushAsync,
 } from "../src/notifications/push";
+import { getOrCreatePushInstallationId } from "../src/notifications/installation";
 import { useNotificationCenter } from "../src/notifications/useNotificationCenter";
 
 jest.mock("../src/api/notifications", () => ({
@@ -31,6 +32,10 @@ jest.mock("../src/notifications/push", () => ({
   registerForNativePushAsync: jest.fn(),
 }));
 
+jest.mock("../src/notifications/installation", () => ({
+  getOrCreatePushInstallationId: jest.fn(),
+}));
+
 const acknowledgeNotificationMock = acknowledgeNotification as unknown as jest.Mock;
 const consumeLatestInAppNotificationMock = consumeLatestInAppNotification as unknown as jest.Mock;
 const registerPushDeviceMock = registerPushDevice as unknown as jest.Mock;
@@ -40,6 +45,7 @@ const addNotificationResponseListenerMock = addNotificationResponseListener as u
 const getLastNotificationResponsePayloadAsyncMock =
   getLastNotificationResponsePayloadAsync as unknown as jest.Mock;
 const registerForNativePushAsyncMock = registerForNativePushAsync as unknown as jest.Mock;
+const getOrCreatePushInstallationIdMock = getOrCreatePushInstallationId as unknown as jest.Mock;
 
 async function flushEffects(cycles = 3) {
   for (let i = 0; i < cycles; i += 1) {
@@ -93,6 +99,7 @@ describe("useNotificationCenter", () => {
     addNotificationResponseListenerMock.mockReset();
     getLastNotificationResponsePayloadAsyncMock.mockReset();
     registerForNativePushAsyncMock.mockReset();
+    getOrCreatePushInstallationIdMock.mockReset();
 
     acknowledgeNotificationMock.mockResolvedValue(undefined);
     consumeLatestInAppNotificationMock.mockResolvedValue(null);
@@ -105,6 +112,7 @@ describe("useNotificationCenter", () => {
       platform: null,
       detail: "Push nativo exige um dispositivo físico.",
     });
+    getOrCreatePushInstallationIdMock.mockResolvedValue("lv-installation-123");
     addForegroundNotificationListenerMock.mockImplementation((callback) => {
       foregroundListener = callback;
       return { remove: () => { foregroundListener = null; } };
@@ -170,6 +178,40 @@ describe("useNotificationCenter", () => {
     expect(tree!.root.findByProps({ testID: "push-detail" }).props.children).toContain(
       "Token rejeitado pelo backend."
     );
+
+    act(() => {
+      tree!.unmount();
+    });
+  });
+
+  it("registra e remove o dispositivo usando installation_id estável", async () => {
+    registerForNativePushAsyncMock.mockResolvedValueOnce({
+      status: "registered",
+      expoPushToken: "ExponentPushToken[test-device]",
+      platform: "android",
+      detail: "Push nativo conectado ao dispositivo.",
+    });
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(<NotificationCenterHarness token="token-123" />);
+    });
+    await flushEffects();
+
+    expect(registerPushDeviceMock).toHaveBeenCalledWith("token-123", {
+      platform: "android",
+      installation_id: "lv-installation-123",
+      expo_push_token: "ExponentPushToken[test-device]",
+    });
+
+    await act(async () => {
+      tree!.root.findByProps({ testID: "logout-device" }).props.onPress();
+    });
+
+    expect(unregisterPushDeviceMock).toHaveBeenCalledWith("token-123", {
+      expo_push_token: "ExponentPushToken[test-device]",
+      installation_id: "lv-installation-123",
+    });
 
     act(() => {
       tree!.unmount();

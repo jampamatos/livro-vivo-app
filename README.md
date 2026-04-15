@@ -180,7 +180,7 @@ RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run vali
 - `POST /me/notifications/:dispatch_id/ack/`
 - `POST /me/notifications/in-app/consume-latest/`
 - `GET/PATCH /me/notification-preferences/`
-- `GET/POST/DELETE /me/push-devices/`
+- `GET/POST/DELETE /me/push-devices/` com `installation_id` estavel por instalacao para evitar duplicacao de device quando o token push rotaciona
 - `GET /books/`
 - `GET /books/:id/current-version/`
 - `GET /books/:id/current-version/chapters/`
