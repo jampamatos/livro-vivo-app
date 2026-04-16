@@ -502,14 +502,20 @@ export function BookReaderScreen({
       fontScale: currentFontScale,
       annotationMode,
       initialScrollOffset: nativeScrollOffsetRef.current || initialScrollOffset,
+      enableSwipeNavigation,
+      canGoNext,
+      canGoPrevious,
       copyCitation,
     });
   }, [
     annotationMode,
     annotationRanges,
+    canGoNext,
+    canGoPrevious,
     chapter,
     copyCitation,
     currentFontScale,
+    enableSwipeNavigation,
     focus,
     initialScrollOffset,
     isDarkReader,
@@ -693,9 +699,11 @@ export function BookReaderScreen({
 
       if (message.type === "navigate_chapter") {
         if (message.direction === "next" && canGoNext) {
+          pendingSwipeDirectionRef.current = -1;
           onNext();
         }
         if (message.direction === "previous" && canGoPrevious) {
+          pendingSwipeDirectionRef.current = 1;
           onPrevious();
         }
         return;

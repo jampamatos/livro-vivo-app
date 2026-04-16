@@ -206,6 +206,7 @@ describe("BookReaderScreen", () => {
           mode="reader"
           showHeader={false}
           showControls={false}
+          enableSwipeNavigation
           canGoPrevious
           canGoNext
           onPrevious={onPrevious}
@@ -215,6 +216,10 @@ describe("BookReaderScreen", () => {
     });
 
     const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
+    expect(webView.props.source.html).toContain("reader-swipe-layer");
+    expect(webView.props.source.html).toContain('"enableSwipeNavigation":true');
+    expect(webView.props.source.html).toContain('"canGoNext":true');
+    expect(webView.props.source.html).toContain('"canGoPrevious":true');
 
     await act(async () => {
       webView.props.onMessage({
