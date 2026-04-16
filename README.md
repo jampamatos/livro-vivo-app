@@ -251,7 +251,7 @@ Configuracao oficial deste repo para beta:
 
 - provider: `Cloudflare Pages`
 - branch publicada: `main`
-- build command: `npm ci && npm run export:web`
+- build command: `npm run export:web`
 - output directory: `dist`
 - variavel obrigatoria: `EXPO_PUBLIC_API_BASE_URL=https://api.seu-dominio-ou-url-temp`
 
@@ -261,8 +261,8 @@ Dominio alvo quando existir:
 
 Arquivos operacionais incluidos no export:
 
-- `public/_redirects`: fallback SPA para `index.html`
 - `public/_headers`: headers de seguranca e cache para assets do export
+- o fallback SPA fica por conta do proprio Cloudflare Pages, sem `_redirects`, para evitar loop de roteamento no deploy estatico atual
 
 Checklist minimo no Pages:
 
