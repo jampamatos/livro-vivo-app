@@ -95,6 +95,16 @@ npm run start
 npm run web
 ```
 
+### Export web estatico
+
+```bash
+npm run export:web
+```
+
+Output oficial:
+
+- `dist/`
+
 ### Android (dev build)
 
 ```bash
@@ -234,6 +244,38 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 - `npm run test:coverage`
 - validacao de release config
 - export web de sanity
+
+## Deploy beta web no Cloudflare Pages
+
+Configuracao oficial deste repo para beta:
+
+- provider: `Cloudflare Pages`
+- branch publicada: `main`
+- build command: `npm ci && npm run export:web`
+- output directory: `dist`
+- variavel obrigatoria: `EXPO_PUBLIC_API_BASE_URL=https://api.seu-dominio-ou-url-temp`
+
+Dominio alvo quando existir:
+
+- `app.vitorguglinski.jur.br`
+
+Arquivos operacionais incluidos no export:
+
+- `public/_redirects`: fallback SPA para `index.html`
+- `public/_headers`: headers de seguranca e cache para assets do export
+
+Checklist minimo no Pages:
+
+1. conectar a repo `livro-vivo-app`
+2. apontar production branch para `main`
+3. configurar `EXPO_PUBLIC_API_BASE_URL`
+4. validar que o deploy publica `dist`
+5. testar hard refresh em rota interna do app
+6. so depois conectar dominio customizado
+
+Observacao operacional:
+
+- o Android beta continua fora deste fluxo; builds mobile seguem manuais via `eas build --platform android --profile preview`
 
 Convencao operacional:
 
