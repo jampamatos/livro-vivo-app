@@ -16,7 +16,9 @@
     "test:critical-routes": "jest --runInBand --ci __tests__/App.test.tsx __tests__/MainScreen.test.tsx __tests__/AccountScreen.test.tsx __tests__/CommunityFeedScreen.test.tsx __tests__/CommunityNewPostScreen.test.tsx __tests__/CommunityPostScreen.test.tsx __tests__/LoginScreen.test.tsx __tests__/CaseLawScreen.test.tsx __tests__/CourseScreen.test.tsx __tests__/TemplatesBankScreen.test.tsx __tests__/LibraryScreen.test.tsx __tests__/BookReaderScreen.test.tsx __tests__/MainSearchScreen.test.tsx",
     "test:coverage": "jest --runInBand --ci --coverage",
     "gate:predeploy": "npm run typecheck && npm run test:critical-routes && npm test -- --runInBand --ci && npm run test:coverage && npm run validate:release-config",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy": "npx expo export -p web && wrangler deploy",
+    "preview": "npx expo export -p web && wrangler dev"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -43,7 +45,8 @@
     "@types/react": "~19.1.0",
     "jest": "~29.7.0",
     "jest-expo": "~54.0.16",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "wrangler": "^4.83.0"
   },
   "jest": {
     "preset": "jest-expo",
