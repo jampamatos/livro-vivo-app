@@ -34,6 +34,8 @@ type AccountQuickSummary = {
   planStatus: string;
 };
 
+const SHELL_BRAND_BANNER = require("../../assets/branding/banner-1-sidebar.png");
+
 function isRouteActive(current: AppRoute, target: AppRoute) {
   if (current === target) return true;
   if (target === "community") {
@@ -334,9 +336,33 @@ export function AppShell({
             },
           ]}
         >
-          <View style={styles.brandBlock}>
-            <Text style={[styles.brandTitle, { color: theme.colors.sidebarText }]}>Livro Vivo</Text>
-            <Text style={[styles.brandSubtitle, { color: theme.colors.sidebarTextMuted }]}>Direito do Consumidor</Text>
+          <View
+            style={[
+              styles.brandBlock,
+              {
+                backgroundColor: theme.isDark ? "#243B5B" : theme.colors.sidebarActiveBg,
+                borderColor: theme.colors.sidebarBorder,
+              },
+            ]}
+          >
+            <View style={styles.brandCover}>
+              <Image source={SHELL_BRAND_BANNER} style={styles.brandCoverImage} resizeMode="contain" />
+            </View>
+            <View style={styles.brandBody}>
+              <Text style={[styles.brandEyebrow, { color: theme.colors.accent }]}>Plataforma Livro Vivo</Text>
+              <Text style={[styles.brandTitle, { color: theme.colors.sidebarText }]}>Direito do Passageiro</Text>
+              <View
+                style={[
+                  styles.brandDivider,
+                  {
+                    backgroundColor: theme.colors.accent,
+                  },
+                ]}
+              />
+              <Text style={[styles.brandSubtitle, { color: theme.colors.sidebarTextMuted }]}>
+                Atualização contínua, jurisprudência e prática jurídica em uma experiência autoral.
+              </Text>
+            </View>
           </View>
 
           <View style={styles.desktopNav}>
@@ -541,20 +567,55 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   desktopSidebar: {
-    width: 250,
+    width: 276,
     borderRightWidth: 1,
     paddingVertical: 22,
     paddingHorizontal: 16,
   },
-  brandBlock: { marginBottom: 18, gap: 4 },
+  brandBlock: {
+    marginBottom: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 14,
+  },
+  brandCover: {
+    height: 128,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandCoverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  brandBody: {
+    gap: 7,
+    paddingHorizontal: 2,
+    paddingBottom: 2,
+  },
+  brandEyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
   brandTitle: {
     fontFamily: "Georgia",
-    fontSize: 27,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: "700",
   },
+  brandDivider: {
+    width: 42,
+    height: 2,
+    borderRadius: 999,
+    marginTop: 2,
+    marginBottom: 2,
+  },
   brandSubtitle: {
-    fontSize: 14,
+    fontSize: 12.5,
     fontWeight: "500",
+    lineHeight: 18,
   },
   desktopNav: { gap: 6 },
   desktopNavItem: {

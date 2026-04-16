@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../theme/ThemeProvider";
 
@@ -7,8 +7,10 @@ type AppBootScreenProps = {
   message?: string;
 };
 
+const BOOT_BRAND_ICON = require("../../assets/branding/icon-1-ui.png");
+
 export function AppBootScreen({
-  message = "Preparando sua biblioteca digital, cursos e ferramentas.",
+  message = "Preparando sua biblioteca viva, jurisprudência e ferramentas de prática.",
 }: AppBootScreenProps) {
   const { theme } = useAppTheme();
 
@@ -29,10 +31,11 @@ export function AppBootScreen({
         ]}
       >
         <View style={[styles.badge, { backgroundColor: theme.colors.topBarBg, borderColor: theme.colors.borderStrong }]}>
-          <Text style={[styles.badgeText, { color: theme.colors.textInverse }]}>LV</Text>
+          <Image source={BOOT_BRAND_ICON} style={styles.badgeImage} resizeMode="cover" />
         </View>
 
-        <Text style={[styles.title, { color: theme.colors.text }]}>Livro Vivo</Text>
+        <Text style={[styles.eyebrow, { color: theme.colors.accent }]}>Plataforma Livro Vivo</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Direito do Passageiro</Text>
         <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{message}</Text>
 
         <View style={[styles.statusPill, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.border }]}>
@@ -68,10 +71,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
+    overflow: "hidden",
   },
-  badgeText: {
-    fontSize: 28,
+  badgeImage: {
+    width: "100%",
+    height: "100%",
+  },
+  eyebrow: {
+    fontSize: 11,
     fontWeight: "800",
+    letterSpacing: 0.9,
+    textTransform: "uppercase",
   },
   title: {
     fontSize: 30,
