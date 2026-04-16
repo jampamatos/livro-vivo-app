@@ -340,8 +340,7 @@ export function AppShell({
             style={[
               styles.brandBlock,
               {
-                backgroundColor: theme.isDark ? "#243B5B" : theme.colors.sidebarActiveBg,
-                borderColor: theme.colors.sidebarBorder,
+                borderBottomColor: theme.colors.sidebarBorder,
               },
             ]}
           >
@@ -574,13 +573,13 @@ const styles = StyleSheet.create({
   },
   brandBlock: {
     marginBottom: 18,
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 14,
+    gap: 14,
+    paddingHorizontal: 6,
+    paddingBottom: 22,
+    borderBottomWidth: 1,
   },
   brandCover: {
-    height: 128,
+    height: 136,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -589,9 +588,8 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   brandBody: {
-    gap: 7,
-    paddingHorizontal: 2,
-    paddingBottom: 2,
+    gap: 8,
+    paddingHorizontal: 4,
   },
   brandEyebrow: {
     fontSize: 11,
@@ -610,12 +608,12 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 999,
     marginTop: 2,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   brandSubtitle: {
     fontSize: 12.5,
     fontWeight: "500",
-    lineHeight: 18,
+    lineHeight: 19,
   },
   desktopNav: { gap: 6 },
   desktopNavItem: {
