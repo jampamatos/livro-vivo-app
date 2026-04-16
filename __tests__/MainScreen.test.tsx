@@ -470,7 +470,7 @@ describe("MainScreen", () => {
     expect(tree.root.findByProps({ accessibilityLabel: "Biblioteca" }).props.accessibilityRole).toBe("button");
     expect(tree.root.findByProps({ accessibilityLabel: "Jurisprudência" }).props.accessibilityRole).toBe("button");
     expect(tree.root.findByProps({ accessibilityLabel: "Comunidade" }).props.accessibilityRole).toBe("button");
-    expect(tree.root.findByProps({ accessibilityRole: "header" }).props.children).toBe("Bem-vindo ao Livro Vivo");
+    expect(tree.root.findByProps({ accessibilityRole: "header" }).props.children).toBe("Direito do Passageiro");
   });
 
   it("permite tentar novamente quando a validação de acesso falha", async () => {

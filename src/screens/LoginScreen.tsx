@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,6 +32,8 @@ const SOCIAL_PROVIDERS = [
   { icon: "linkedin", label: "LinkedIn" },
 ] as const;
 
+const BRAND_ICON = require("../../assets/branding/icon-1-ui.png");
+
 function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
   return StyleSheet.create({
     root: {
@@ -44,7 +47,7 @@ function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
     },
     shell: {
       width: "100%",
-      maxWidth: 540,
+      maxWidth: isWide ? 620 : 540,
       alignSelf: "center",
     },
     card: {
@@ -71,6 +74,11 @@ function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
       backgroundColor: theme.isDark ? theme.colors.sidebarBg : theme.colors.sidebarActiveBg,
       borderWidth: 1,
       borderColor: theme.isDark ? theme.colors.sidebarBorder : theme.colors.sidebarBg,
+      overflow: "hidden",
+    },
+    brandBadgeImage: {
+      width: "100%",
+      height: "100%",
     },
     headerTextGroup: {
       flex: 1,
@@ -89,6 +97,12 @@ function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
       lineHeight: isCompact ? 26 : 30,
       fontWeight: "700",
       color: theme.colors.text,
+    },
+    brandSupport: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: theme.colors.textMuted,
+      fontWeight: "600",
     },
     title: {
       fontFamily: theme.fontFamily.heading,
@@ -242,8 +256,8 @@ export function LoginScreen({ onAuthSuccess }: Props) {
   const title = useMemo(() => (mode === "login" ? "Entrar" : "Criar conta"), [mode]);
   const authSubtitle =
     mode === "login"
-      ? "Entre com e-mail e senha para acessar sua conta no Livro Vivo."
-      : "Crie sua conta para começar a usar o app no web e no mobile.";
+      ? "Entre com e-mail e senha para acessar o Direito do Passageiro na plataforma Livro Vivo."
+      : "Crie sua conta para acessar o Direito do Passageiro no web e no mobile.";
 
   const handleSubmit = async () => {
     const e = email.trim();
@@ -306,15 +320,12 @@ export function LoginScreen({ onAuthSuccess }: Props) {
           <View style={styles.card}>
             <View style={styles.headerRow}>
               <View style={styles.brandBadge}>
-                <MaterialCommunityIcons
-                  name="book-open-page-variant-outline"
-                  size={28}
-                  color={theme.isDark ? theme.colors.sidebarText : theme.colors.textInverse}
-                />
+                <Image source={BRAND_ICON} style={styles.brandBadgeImage} resizeMode="contain" />
               </View>
               <View style={styles.headerTextGroup}>
-                <Text style={styles.eyebrow}>Livro Vivo</Text>
-                <Text style={styles.brandName}>Direito do Consumidor</Text>
+                <Text style={styles.eyebrow}>Produto principal</Text>
+                <Text style={styles.brandName}>Direito do Passageiro</Text>
+                <Text style={styles.brandSupport}>Plataforma jurídica autoral de Prof. Vitor Guglinski</Text>
               </View>
             </View>
 

@@ -677,10 +677,23 @@ export function MainScreen({
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.bg }]} contentContainerStyle={styles.content}>
+      <View
+        style={[
+          styles.brandLead,
+          {
+            backgroundColor: theme.colors.surfaceMuted,
+            borderColor: theme.colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.brandLeadText, { color: theme.colors.accent }]}>Plataforma Livro Vivo</Text>
+      </View>
       <Text style={[styles.title, { color: theme.colors.text }]} accessibilityRole="header">
-        Bem-vindo ao Livro Vivo
+        Direito do Passageiro
       </Text>
-      <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>Direito do Consumidor atualizado e ao seu alcance.</Text>
+      <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
+        Seu ambiente de leitura, atualização e prática jurídica com foco total no passageiro aéreo.
+      </Text>
 
       {accessState === "loading" ? (
         <View style={styles.inlineStatusRow}>
@@ -926,6 +939,19 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 26, gap: 14 },
 
+  brandLead: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  brandLeadText: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
   title: { fontSize: 34, lineHeight: 40, fontWeight: "800", fontFamily: "Georgia" },
   subtitle: { fontSize: 15, lineHeight: 22 },
 
