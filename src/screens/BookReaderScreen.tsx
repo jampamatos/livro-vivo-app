@@ -388,6 +388,22 @@ export function BookReaderScreen({
     () => buildRichTextBlocks(chapter?.content_rich, chapter?.content_plain),
     [chapter?.content_plain, chapter?.content_rich]
   );
+  const continuousTextProps = React.useMemo(() => {
+    if (Platform.OS === "android") {
+      return {
+        textBreakStrategy: "highQuality" as const,
+        android_hyphenationFrequency: "full" as const,
+      };
+    }
+
+    if (Platform.OS === "ios") {
+      return {
+        lineBreakStrategyIOS: "standard" as const,
+      };
+    }
+
+    return {};
+  }, []);
 
   const currentFontScale = controlledFontScale ?? internalFontScale;
   const isDarkReader = colorMode === "dark";
@@ -544,7 +560,8 @@ export function BookReaderScreen({
       inlines: RichInlineNode[],
       baseStyle: object,
       cursor: InlineCursor,
-      textRole: "text" | "header" = "text"
+      textRole: "text" | "header" = "text",
+      textFlow: "continuous" | "display" = "continuous"
     ) => {
       const canOpenAnnotation = !annotationMode && typeof onOpenAnnotation === "function";
       const renderSegmentTokens = (
@@ -615,6 +632,7 @@ export function BookReaderScreen({
           accessibilityRole={textRole}
           selectable={enableDirectTextSelection}
           selectionColor={enableDirectTextSelection ? "#9ec5fe" : undefined}
+          {...(textFlow === "continuous" ? continuousTextProps : {})}
         >
           {inlines.map((node, index) => {
             if (node.type === "lineBreak") {
@@ -671,7 +689,17 @@ export function BookReaderScreen({
         </Text>
       );
     },
-    [enableDirectTextSelection, isDarkReader, onOpenAnnotation, openLink, palette.linkText, palette.matchBg, palette.matchText, splitDecoratedSegments]
+    [
+      continuousTextProps,
+      enableDirectTextSelection,
+      isDarkReader,
+      onOpenAnnotation,
+      openLink,
+      palette.linkText,
+      palette.matchBg,
+      palette.matchText,
+      splitDecoratedSegments,
+    ]
   );
 
   const handleNativeWebMessage = React.useCallback(
@@ -942,7 +970,8 @@ export function BookReaderScreen({
               block.inlines,
               [styles.h2, { color: palette.heading2Text, fontSize: scaled(28), lineHeight: scaled(36) }],
               cursor,
-              "header"
+              "header",
+              "display"
             )}
           </View>
         );
@@ -964,7 +993,8 @@ export function BookReaderScreen({
               block.inlines,
               [styles.h3, { color: palette.heading3Text, fontSize: scaled(23), lineHeight: scaled(31) }],
               cursor,
-              "header"
+              "header",
+              "display"
             )}
           </View>
         );
@@ -1426,7 +1456,7 @@ const styles = StyleSheet.create({
     top: 4,
   },
   inlineLink: { textDecorationLine: "underline" },
-  paragraph: { color: "#272727" },
+  paragraph: { color: "#272727", textAlign: "justify" },
   h2: { fontWeight: "700", color: "#0f172a", marginTop: 4 },
   h3: { fontWeight: "700", color: "#111827", marginTop: 4 },
   footnote: {
@@ -1439,7 +1469,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     marginTop: 4,
   },
-  footnoteText: { color: "#5d5448" },
+  footnoteText: { color: "#5d5448", textAlign: "justify" },
   blockquote: {
     borderLeftWidth: 3,
     borderLeftColor: "#c8b27b",
@@ -1448,14 +1478,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingVertical: 6,
   },
-  blockquoteText: { color: "#3f3320", fontStyle: "italic" },
+  blockquoteText: { color: "#3f3320", fontStyle: "italic", textAlign: "justify" },
   list: { gap: 8, marginVertical: 4 },
   listItemRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   listItemPressable: { flexDirection: "row", alignItems: "flex-start", gap: 8, flex: 1 },
   listItemPressableContent: { flexDirection: "row", alignItems: "flex-start", gap: 8, flex: 1 },
   listMarker: { minWidth: 22, color: "#1f2937", fontWeight: "600" },
   listItemTextWrap: { flex: 1 },
-  listText: { color: "#272727" },
+  listText: { color: "#272727", textAlign: "justify" },
   annotationTargetContainer: { position: "relative" },
   annotationTargetOverlay: {
     ...StyleSheet.absoluteFillObject,

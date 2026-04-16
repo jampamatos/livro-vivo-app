@@ -400,7 +400,9 @@ export function renderNativeReaderHtml(args: {
         -webkit-user-select: text;
         -webkit-touch-callout: default;
         white-space: normal;
-        word-break: break-word;
+        word-break: normal;
+        overflow-wrap: break-word;
+        text-rendering: optimizeLegibility;
       }
       #reader-content, #reader-content * {
         user-select: text !important;
@@ -409,6 +411,14 @@ export function renderNativeReaderHtml(args: {
       }
       p, aside, h2, h3, blockquote, ul, ol {
         margin: 0 0 14px;
+      }
+      p, aside, blockquote, li {
+        text-align: justify;
+        text-justify: inter-word;
+        hyphens: auto;
+        -webkit-hyphens: auto;
+        word-break: normal;
+        overflow-wrap: break-word;
       }
       aside {
         border-top: 1px solid var(--lv-footnote-border);

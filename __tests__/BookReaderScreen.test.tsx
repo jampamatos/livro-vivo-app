@@ -1,6 +1,6 @@
 import React from "react";
 import renderer, { act } from "react-test-renderer";
-import { Clipboard, Platform } from "react-native";
+import { Clipboard, Platform, Text } from "react-native";
 
 import { BookReaderScreen } from "../src/screens/BookReaderScreen";
 import { formatBookChapterCitation } from "../src/utils/citations";
@@ -121,6 +121,16 @@ describe("BookReaderScreen", () => {
         }),
       })
     );
+
+    const hyphenatedTextNodes = tree!.root.findAll(
+      (node: any) =>
+        node.type === Text &&
+        node.props.accessibilityRole === "text" &&
+        node.props.textBreakStrategy === "highQuality" &&
+        node.props.android_hyphenationFrequency === "full"
+    );
+
+    expect(hyphenatedTextNodes.length).toBeGreaterThan(0);
   });
 
   it("trata nota de rodapé como bloco próprio no leitor", async () => {
@@ -210,6 +220,8 @@ describe("BookReaderScreen", () => {
     const webView = tree!.root.findByProps({ testID: "native-reader-webview" });
     expect(webView.props.source.html).toContain(copyCitation);
     expect(webView.props.source.html).toContain("copyCitation");
+    expect(webView.props.source.html).toContain("text-align: justify");
+    expect(webView.props.source.html).toContain("hyphens: auto");
 
     await act(async () => {
       webView.props.onMessage({
