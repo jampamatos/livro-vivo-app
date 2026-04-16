@@ -123,6 +123,55 @@ describe("BookReaderScreen", () => {
     );
   });
 
+  it("trata nota de rodapé como bloco próprio no leitor", async () => {
+    Object.defineProperty(Platform, "OS", {
+      configurable: true,
+      value: "android",
+    });
+
+    const onCreateAnnotationDraft = jest.fn();
+    const chapterWithFootnote = {
+      ...chapter,
+      content_rich: "<p>Texto principal.</p><aside>Nota de rodapé 1.</aside>",
+      content_plain: "Texto principal. Nota de rodapé 1.",
+    };
+
+    let tree: renderer.ReactTestRenderer;
+    await act(async () => {
+      tree = renderer.create(
+        <BookReaderScreen
+          chapter={chapterWithFootnote}
+          loading={false}
+          error={null}
+          focus={null}
+          annotationMode
+          allowNativeParagraphFallback
+          onCreateAnnotationDraft={onCreateAnnotationDraft}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          canGoPrevious={false}
+          canGoNext={false}
+        />
+      );
+    });
+
+    const target = tree!.root.findByProps({ testID: "reader-annotation-target-block-1" });
+
+    await act(async () => {
+      target.props.onPress();
+    });
+
+    expect(onCreateAnnotationDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        excerpt: "Nota de rodapé 1.",
+        selector: expect.objectContaining({
+          source: "long-press",
+          block_type: "footnote",
+        }),
+      })
+    );
+  });
+
   it("usa WebView no reader nativo e cria anotação a partir da seleção do texto", async () => {
     Object.defineProperty(Platform, "OS", {
       configurable: true,

@@ -21,6 +21,9 @@ export type NativeReaderTheme = {
   matchText: string;
   heading2Text: string;
   heading3Text: string;
+  footnoteBorder: string;
+  footnoteBg: string;
+  footnoteText: string;
   blockquoteBorder: string;
   blockquoteBg: string;
   blockquoteText: string;
@@ -326,6 +329,9 @@ export function renderNativeReaderHtml(args: {
       if (block.type === "heading3") {
         return `<h3>${renderInlines(block.inlines)}</h3>`;
       }
+      if (block.type === "footnote") {
+        return `<aside>${renderInlines(block.inlines)}</aside>`;
+      }
       if (block.type === "blockquote") {
         return `<blockquote>${renderInlines(block.inlines)}</blockquote>`;
       }
@@ -357,6 +363,9 @@ export function renderNativeReaderHtml(args: {
         --lv-link-text: ${theme.linkText};
         --lv-heading-2: ${theme.heading2Text};
         --lv-heading-3: ${theme.heading3Text};
+        --lv-footnote-border: ${theme.footnoteBorder};
+        --lv-footnote-bg: ${theme.footnoteBg};
+        --lv-footnote-text: ${theme.footnoteText};
         --lv-blockquote-bg: ${theme.blockquoteBg};
         --lv-blockquote-border: ${theme.blockquoteBorder};
         --lv-blockquote-text: ${theme.blockquoteText};
@@ -398,8 +407,17 @@ export function renderNativeReaderHtml(args: {
         -webkit-user-select: text !important;
         -webkit-touch-callout: default !important;
       }
-      p, h2, h3, blockquote, ul, ol {
+      p, aside, h2, h3, blockquote, ul, ol {
         margin: 0 0 14px;
+      }
+      aside {
+        border-top: 1px solid var(--lv-footnote-border);
+        background: var(--lv-footnote-bg);
+        color: var(--lv-footnote-text);
+        border-radius: 6px;
+        padding: 10px 10px 8px;
+        font-size: calc(15px * var(--lv-font-scale));
+        line-height: calc(24px * var(--lv-font-scale));
       }
       h2 {
         font-size: calc(28px * var(--lv-font-scale));

@@ -872,6 +872,22 @@ describe("reader rich text + a11y baseline", () => {
     ]);
   });
 
+  it("reconhece notas de rodapé como bloco dedicado", () => {
+    const blocks = buildRichTextBlocks(
+      "<p>Parágrafo.</p><aside>Nota final.</aside>",
+      "fallback"
+    );
+
+    expect(blocks.map((block) => block.type)).toEqual(["paragraph", "footnote"]);
+
+    const footnote = blocks[1];
+    if (footnote.type !== "footnote") {
+      throw new Error("nota de rodapé esperada");
+    }
+
+    expect(footnote.inlines).toEqual([expect.objectContaining({ type: "text", text: "Nota final." })]);
+  });
+
   it("renderiza heading/list/link com semântica de acessibilidade", () => {
     let tree: renderer.ReactTestRenderer;
     act(() => {

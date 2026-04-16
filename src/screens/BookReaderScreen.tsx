@@ -102,6 +102,9 @@ type ReaderPalette = {
   matchText: string;
   heading2Text: string;
   heading3Text: string;
+  footnoteBorder: string;
+  footnoteBg: string;
+  footnoteText: string;
   blockquoteBorder: string;
   blockquoteBg: string;
   blockquoteText: string;
@@ -130,6 +133,9 @@ const lightReaderPalette: ReaderPalette = {
   matchText: "#2a2000",
   heading2Text: "#0f172a",
   heading3Text: "#111827",
+  footnoteBorder: "#d6cec0",
+  footnoteBg: "#f3efe7",
+  footnoteText: "#5d5448",
   blockquoteBorder: "#c8b27b",
   blockquoteBg: "#f3efe5",
   blockquoteText: "#3f3320",
@@ -158,6 +164,9 @@ const darkReaderPalette: ReaderPalette = {
   matchText: "#fff6d4",
   heading2Text: "#f2f6fd",
   heading3Text: "#edf4ff",
+  footnoteBorder: "#425775",
+  footnoteBg: "#122238",
+  footnoteText: "#b8c5da",
   blockquoteBorder: "#8d7642",
   blockquoteBg: "#1a2b44",
   blockquoteText: "#d0ddf2",
@@ -990,6 +999,27 @@ export function BookReaderScreen({
         );
       }
 
+      if (block.type === "footnote") {
+        const blockStart = cursor.current;
+        const content = (
+          <View style={[styles.footnote, { borderTopColor: palette.footnoteBorder, backgroundColor: palette.footnoteBg }]}>
+            {renderInlineText(
+              block.inlines,
+              [styles.footnoteText, { color: palette.footnoteText, fontSize: scaled(15), lineHeight: scaled(24) }],
+              cursor
+            )}
+          </View>
+        );
+        const blockEnd = cursor.current;
+
+        return renderNativeSelectionTarget(
+          `block-${index}`,
+          content,
+          `reader-annotation-target-block-${index}`,
+          () => emitNativeBlockDraft(blockStart, blockEnd, "footnote")
+        );
+      }
+
       if (block.type === "list") {
         return (
           <View key={`block-${index}`} style={styles.list} accessibilityRole="list">
@@ -1054,7 +1084,22 @@ export function BookReaderScreen({
         () => emitNativeBlockDraft(blockStart, blockEnd, "paragraph")
       );
     },
-    [emitNativeBlockDraft, palette.blockquoteBg, palette.blockquoteBorder, palette.blockquoteText, palette.contentText, palette.heading2Text, palette.heading3Text, palette.listMarker, renderInlineText, renderNativeSelectionTarget, scaled]
+    [
+      emitNativeBlockDraft,
+      palette.blockquoteBg,
+      palette.blockquoteBorder,
+      palette.blockquoteText,
+      palette.contentText,
+      palette.footnoteBg,
+      palette.footnoteBorder,
+      palette.footnoteText,
+      palette.heading2Text,
+      palette.heading3Text,
+      palette.listMarker,
+      renderInlineText,
+      renderNativeSelectionTarget,
+      scaled,
+    ]
   );
 
   const panResponder = React.useMemo(() => {
@@ -1384,6 +1429,17 @@ const styles = StyleSheet.create({
   paragraph: { color: "#272727" },
   h2: { fontWeight: "700", color: "#0f172a", marginTop: 4 },
   h3: { fontWeight: "700", color: "#111827", marginTop: 4 },
+  footnote: {
+    borderTopWidth: 1,
+    borderTopColor: "#d6cec0",
+    backgroundColor: "#f3efe7",
+    borderRadius: 6,
+    paddingTop: 10,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    marginTop: 4,
+  },
+  footnoteText: { color: "#5d5448" },
   blockquote: {
     borderLeftWidth: 3,
     borderLeftColor: "#c8b27b",

@@ -413,6 +413,28 @@ export function CourseScreen({ token, initialOpenRequest = null }: Props) {
         );
       }
 
+      if (block.type === "footnote") {
+        return (
+          <View
+            key={`block-footnote-${index}`}
+            style={[
+              styles.detailFootnote,
+              { borderTopColor: theme.colors.borderStrong, backgroundColor: detailMutedSurface },
+            ]}
+          >
+            <Text
+              style={[
+                styles.detailFootnoteText,
+                isWide ? styles.detailFootnoteTextWide : null,
+                { color: theme.colors.textMuted },
+              ]}
+            >
+              {renderInline(block.inlines, `footnote-${index}`)}
+            </Text>
+          </View>
+        );
+      }
+
       if (block.type === "list") {
         return (
           <View key={`block-list-${index}`} style={styles.detailList}>
@@ -441,7 +463,7 @@ export function CourseScreen({ token, initialOpenRequest = null }: Props) {
         </Text>
       );
     },
-    [isWide, renderInline, theme.colors.borderStrong, theme.colors.surfaceMuted, theme.colors.text, theme.colors.textMuted]
+    [detailMutedSurface, isWide, renderInline, theme.colors.borderStrong, theme.colors.surfaceMuted, theme.colors.text, theme.colors.textMuted]
   );
 
   if (selectedPost && detailTypeUi) {
@@ -1401,6 +1423,9 @@ const styles = StyleSheet.create({
   detailHeading3Wide: { fontSize: 26, lineHeight: 38 },
   detailParagraph: { fontSize: 17, lineHeight: 31 },
   detailParagraphWide: { fontSize: 18, lineHeight: 34 },
+  detailFootnote: { borderTopWidth: 1, paddingTop: 12, paddingHorizontal: 12, paddingBottom: 10, borderRadius: 14 },
+  detailFootnoteText: { fontSize: 15, lineHeight: 24 },
+  detailFootnoteTextWide: { fontSize: 16, lineHeight: 26 },
   detailQuote: { borderLeftWidth: 3, paddingLeft: 14, paddingVertical: 6, marginVertical: 8 },
   detailList: { gap: 10 },
   detailListRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
