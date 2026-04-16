@@ -145,7 +145,7 @@ describe("api/books", () => {
         title: "Cap&iacute;tulo &ccedil;entral",
         slug: "intro-1",
         content_rich: "<p>Notifica&ccedil;&atilde;o</p>",
-        content_plain: "Notifica&ccedil;&atilde;o",
+        content_plain: "Notifica&ccedil;&atilde;o no art. 5&sect;",
         created_at: "",
         updated_at: "",
       },
@@ -155,7 +155,7 @@ describe("api/books", () => {
 
     expect(res.book_title).toBe("Livro çentral");
     expect(res.chapter.title).toBe("Capítulo çentral");
-    expect(res.chapter.content_plain).toBe("Notificação");
+    expect(res.chapter.content_plain).toBe("Notificação no art. 5§");
     expect(res.chapter.content_rich).toBe("<p>Notifica&ccedil;&atilde;o</p>");
     expect(saveCurrentVersionChapterMock).toHaveBeenCalledWith(
       1,
@@ -163,7 +163,7 @@ describe("api/books", () => {
         book_title: "Livro çentral",
         chapter: expect.objectContaining({
           title: "Capítulo çentral",
-          content_plain: "Notificação",
+          content_plain: "Notificação no art. 5§",
         }),
       })
     );

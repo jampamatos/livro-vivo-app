@@ -933,8 +933,8 @@ describe("reader rich text + a11y baseline", () => {
     const encodedChapter: BookChapter = {
       ...baseChapter,
       content_rich:
-        "<h2>Teste de Notifica&ccedil;&atilde;o</h2><p>Cap&iacute;tulo com a&ccedil;&atilde;o, cora&ccedil;&atilde;o e se&ccedil;&atilde;o.</p>",
-      content_plain: "Teste de Notificação Capítulo com ação, coração e seção.",
+        "<h2>Teste de Notifica&ccedil;&atilde;o</h2><p>Cap&iacute;tulo com a&ccedil;&atilde;o, cora&ccedil;&atilde;o, se&ccedil;&atilde;o e art. 5&sect;.</p>",
+      content_plain: "Teste de Notificação Capítulo com ação, coração, seção e art. 5§.",
     };
 
     let tree: renderer.ReactTestRenderer;
@@ -955,10 +955,11 @@ describe("reader rich text + a11y baseline", () => {
 
     const output = JSON.stringify(tree!.toJSON());
     expect(output).toContain("Teste de Notificação");
-    expect(output).toContain("Capítulo com ação, coração e seção.");
+    expect(output).toContain("Capítulo com ação, coração, seção e art. 5§.");
     expect(output).not.toContain("&ccedil;");
     expect(output).not.toContain("&atilde;");
     expect(output).not.toContain("&iacute;");
+    expect(output).not.toContain("&sect;");
 
     act(() => {
       tree!.unmount();

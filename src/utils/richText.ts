@@ -113,6 +113,7 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
   hellip: "...",
   middot: "·",
   bull: "•",
+  sect: "§",
   ordm: "º",
   ordf: "ª",
   copy: "©",
