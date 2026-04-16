@@ -228,6 +228,9 @@ export function renderNativeReaderHtml(args: {
   fontScale: number;
   annotationMode: boolean;
   initialScrollOffset: number;
+  enableSwipeNavigation: boolean;
+  canGoNext: boolean;
+  canGoPrevious: boolean;
   copyCitation?: string | null;
 }) {
   const {
@@ -240,6 +243,9 @@ export function renderNativeReaderHtml(args: {
     fontScale,
     annotationMode,
     initialScrollOffset,
+    enableSwipeNavigation,
+    canGoNext,
+    canGoPrevious,
     copyCitation,
   } = args;
   const focusedRange =
@@ -368,6 +374,12 @@ export function renderNativeReaderHtml(args: {
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+      #reader-swipe-layer {
+        min-height: 100%;
+        will-change: transform;
+        transform: translate3d(0, 0, 0);
+        touch-action: pan-y;
+      }
       #reader-content {
         max-width: 820px;
         margin: 0 auto;
@@ -484,7 +496,9 @@ export function renderNativeReaderHtml(args: {
     </style>
   </head>
   <body class="${focus ? "lv-has-focus" : ""}">
-    <div id="reader-content">${bodyHtml}</div>
+    <div id="reader-swipe-layer">
+      <div id="reader-content">${bodyHtml}</div>
+    </div>
     <div id="lv-selection-toolbar" class="lv-selection-toolbar">
       <span>Anotar trecho</span>
       <button id="lv-selection-action" type="button">Anotar</button>
@@ -494,12 +508,16 @@ export function renderNativeReaderHtml(args: {
         const state = ${safeJson({
           annotationMode,
           initialScrollOffset,
+          enableSwipeNavigation,
+          canGoNext,
+          canGoPrevious,
           plainText: chapter.content_plain || "",
           focusStart: focusedRange?.start ?? -1,
           focusEnd: focusedRange?.end ?? -1,
           copyCitation: copyCitation || "",
         })};
         const root = document.getElementById("reader-content");
+        const swipeLayer = document.getElementById("reader-swipe-layer");
         const toolbar = document.getElementById("lv-selection-toolbar");
         const actionButton = document.getElementById("lv-selection-action");
         let currentDraft = null;
@@ -591,6 +609,40 @@ export function renderNativeReaderHtml(args: {
           toolbar.style.display = "none";
         }
 
+        function setSwipeTransform(offset) {
+          if (!swipeLayer) return;
+          swipeLayer.style.transition = "none";
+          swipeLayer.style.transform = "translate3d(" + Math.round(offset) + "px, 0, 0)";
+        }
+
+        function animateSwipeTransform(offset, callback) {
+          if (!swipeLayer) {
+            if (typeof callback === "function") callback();
+            return;
+          }
+
+          let completed = false;
+          const finalize = function () {
+            if (completed) return;
+            completed = true;
+            swipeLayer.removeEventListener("transitionend", handleTransitionEnd);
+            swipeLayer.style.transition = "none";
+            if (offset === 0) {
+              swipeLayer.style.transform = "translate3d(0, 0, 0)";
+            }
+            if (typeof callback === "function") callback();
+          };
+          const handleTransitionEnd = function (event) {
+            if (event && event.target !== swipeLayer) return;
+            finalize();
+          };
+
+          swipeLayer.addEventListener("transitionend", handleTransitionEnd);
+          swipeLayer.style.transition = "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)";
+          swipeLayer.style.transform = "translate3d(" + Math.round(offset) + "px, 0, 0)";
+          window.setTimeout(finalize, 240);
+        }
+
         function resetSwipeGesture() {
           swipeGesture = null;
         }
@@ -604,7 +656,7 @@ export function renderNativeReaderHtml(args: {
         }
 
         function shouldNavigateChapterFromSwipe() {
-          if (!swipeGesture || state.annotationMode) return null;
+          if (!swipeGesture || state.annotationMode || !state.enableSwipeNavigation) return null;
 
           const selection = window.getSelection && window.getSelection();
           if (selection && !selection.isCollapsed && String(selection.toString() || "").trim()) {
@@ -618,6 +670,12 @@ export function renderNativeReaderHtml(args: {
           }
 
           return dx < 0 ? "next" : "previous";
+        }
+
+        function canNavigateDirection(direction) {
+          if (direction === "next") return !!state.canGoNext;
+          if (direction === "previous") return !!state.canGoPrevious;
+          return false;
         }
 
         function selectionInsideRoot(selection) {
@@ -698,6 +756,10 @@ export function renderNativeReaderHtml(args: {
           window.requestAnimationFrame(syncSelectionToolbar);
         });
         document.addEventListener("touchstart", function (event) {
+          if (!state.enableSwipeNavigation || state.annotationMode) {
+            resetSwipeGesture();
+            return;
+          }
           if (!event.touches || event.touches.length !== 1) {
             resetSwipeGesture();
             return;
@@ -714,6 +776,8 @@ export function renderNativeReaderHtml(args: {
             startY: point.y,
             lastX: point.x,
             lastY: point.y,
+            axis: null,
+            translateX: 0,
           };
         }, true);
         document.addEventListener("touchmove", function (event) {
@@ -725,16 +789,63 @@ export function renderNativeReaderHtml(args: {
           if (!point) return;
           swipeGesture.lastX = point.x;
           swipeGesture.lastY = point.y;
-        }, true);
+
+          const dx = swipeGesture.lastX - swipeGesture.startX;
+          const dy = swipeGesture.lastY - swipeGesture.startY;
+          if (!swipeGesture.axis) {
+            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+              return;
+            }
+            if (Math.abs(dx) > Math.abs(dy) * 1.25) {
+              swipeGesture.axis = "x";
+            } else if (Math.abs(dy) > Math.abs(dx)) {
+              swipeGesture.axis = "y";
+            } else {
+              return;
+            }
+          }
+
+          if (swipeGesture.axis !== "x") {
+            return;
+          }
+
+          const direction = dx < 0 ? "next" : "previous";
+          const resistance = canNavigateDirection(direction) ? 1 : 0.26;
+          const maxTranslate = Math.max(180, Math.min(460, window.innerWidth * 0.9));
+          const translateX = clamp(dx * resistance, -maxTranslate, maxTranslate);
+
+          swipeGesture.translateX = translateX;
+          if (event.cancelable) {
+            event.preventDefault();
+          }
+          setSwipeTransform(translateX);
+        }, { capture: true, passive: false });
         document.addEventListener("touchend", function () {
           const direction = shouldNavigateChapterFromSwipe();
-          if (direction) {
-            sendMessage("navigate_chapter", { direction: direction });
-          }
+          const gesture = swipeGesture;
           resetSwipeGesture();
+
+          if (gesture && gesture.axis === "x") {
+            const maxTranslate = Math.max(180, Math.min(460, window.innerWidth * 0.9));
+            const triggerDistance = Math.max(78, Math.min(150, window.innerWidth * 0.22));
+            const releaseDistance = Math.abs(gesture.lastX - gesture.startX);
+
+            if (direction && canNavigateDirection(direction) && releaseDistance >= triggerDistance) {
+              animateSwipeTransform(direction === "next" ? -maxTranslate : maxTranslate, function () {
+                sendMessage("navigate_chapter", { direction: direction });
+              });
+            } else {
+              animateSwipeTransform(0);
+            }
+          } else if (swipeLayer) {
+            animateSwipeTransform(0);
+          }
           window.setTimeout(syncSelectionToolbar, 60);
         }, true);
         document.addEventListener("touchcancel", function () {
+          if (swipeGesture && swipeGesture.axis === "x") {
+            animateSwipeTransform(0);
+          }
           resetSwipeGesture();
         }, true);
         document.addEventListener("mouseup", function () {
