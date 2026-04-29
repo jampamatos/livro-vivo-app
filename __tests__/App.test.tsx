@@ -3,9 +3,12 @@ import renderer, { act } from "react-test-renderer";
 import { BackHandler, Linking, Platform } from "react-native";
 
 import App from "../App";
+import { getMeProfile } from "../src/api/entitlements";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
 import { setSessionListener } from "../src/auth/sessionBus";
 import { logout } from "../src/api/auth";
+import { completeSocialAuth, normalizeSocialCompleteResponse } from "../src/api/social";
+import { clearWebSocialResultToken, readWebSocialResultToken } from "../src/auth/socialWeb";
 import { useNotificationCenter } from "../src/notifications/useNotificationCenter";
 import type { BookChapter } from "../src/api/books";
 import type { AuthSession } from "../src/auth/authSession";
@@ -26,6 +29,20 @@ jest.mock("../src/api/auth", () => ({
   logout: jest.fn(),
 }));
 
+jest.mock("../src/api/entitlements", () => ({
+  getMeProfile: jest.fn(),
+}));
+
+jest.mock("../src/api/social", () => ({
+  completeSocialAuth: jest.fn(),
+  normalizeSocialCompleteResponse: jest.fn(),
+}));
+
+jest.mock("../src/auth/socialWeb", () => ({
+  readWebSocialResultToken: jest.fn(),
+  clearWebSocialResultToken: jest.fn(),
+}));
+
 jest.mock("../src/notifications/useNotificationCenter", () => ({
   useNotificationCenter: jest.fn(),
 }));
@@ -37,7 +54,7 @@ jest.mock("../src/screens/LoginScreen", () => {
     LoginScreen: ({
       onAuthSuccess,
     }: {
-      onAuthSuccess: (session: AuthSession) => void;
+      onAuthSuccess: (session: AuthSession, accountState: any) => void;
     }) => (
       <View>
         <Text>LoginScreen</Text>
@@ -47,6 +64,22 @@ jest.mock("../src/screens/LoginScreen", () => {
             onAuthSuccess({
               accessToken: "new-token",
               refreshToken: "new-refresh-token",
+            }, {
+              id: 1,
+              email: "conta@example.com",
+              name: "Conta Teste",
+              profession: "Advogada",
+              avatar_url: null,
+              avatar_source: null,
+              role: "member",
+              has_usable_password: true,
+              auth_methods: ["password"],
+              legal_status: {
+                requires_acceptance: false,
+                accepted_current_documents: true,
+                pending_document_types: [],
+                current_documents: [],
+              },
             })
           }
         >
@@ -342,8 +375,13 @@ jest.mock("../src/screens/CommunityPostScreen", () => {
 const getAuthSessionMock = getAuthSession as unknown as jest.Mock;
 const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
 const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
+const getMeProfileMock = getMeProfile as unknown as jest.Mock;
 const setSessionListenerMock = setSessionListener as unknown as jest.Mock;
 const logoutMock = logout as unknown as jest.Mock;
+const completeSocialAuthMock = completeSocialAuth as unknown as jest.Mock;
+const normalizeSocialCompleteResponseMock = normalizeSocialCompleteResponse as unknown as jest.Mock;
+const readWebSocialResultTokenMock = readWebSocialResultToken as unknown as jest.Mock;
+const clearWebSocialResultTokenMock = clearWebSocialResultToken as unknown as jest.Mock;
 const useNotificationCenterMock = useNotificationCenter as unknown as jest.Mock;
 const addBackHandlerListenerMock = jest.spyOn(BackHandler, "addEventListener");
 
@@ -377,12 +415,36 @@ describe("App", () => {
     getAuthSessionMock.mockReset();
     setAuthSessionMock.mockReset();
     clearAuthSessionMock.mockReset();
+    getMeProfileMock.mockReset();
     setSessionListenerMock.mockReset();
     logoutMock.mockReset();
+    completeSocialAuthMock.mockReset();
+    normalizeSocialCompleteResponseMock.mockReset();
+    readWebSocialResultTokenMock.mockReset();
+    clearWebSocialResultTokenMock.mockReset();
     addBackHandlerListenerMock.mockReset();
 
     setAuthSessionMock.mockResolvedValue(undefined);
     clearAuthSessionMock.mockResolvedValue(undefined);
+    readWebSocialResultTokenMock.mockReturnValue(null);
+    clearWebSocialResultTokenMock.mockImplementation(() => undefined);
+    getMeProfileMock.mockResolvedValue({
+      id: 1,
+      email: "conta@example.com",
+      name: "Conta Teste",
+      profession: "Advogada",
+      avatar_url: null,
+      avatar_source: null,
+      role: "member",
+      has_usable_password: true,
+      auth_methods: ["password"],
+      legal_status: {
+        requires_acceptance: false,
+        accepted_current_documents: true,
+        pending_document_types: [],
+        current_documents: [],
+      },
+    });
     logoutMock.mockResolvedValue(undefined);
     hardwareBackHandler = null;
     Object.defineProperty(Platform, "OS", {
@@ -447,6 +509,28 @@ describe("App", () => {
       refreshToken: "new-refresh-token",
     });
     expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
+  });
+
+  it("não fica preso no boot quando o callback social volta com mensagem sem sessão", async () => {
+    getAuthSessionMock.mockResolvedValue(null);
+    readWebSocialResultTokenMock.mockReturnValue("social-result-token");
+    completeSocialAuthMock.mockResolvedValue({ result_code: "account_exists_requires_linking" });
+    normalizeSocialCompleteResponseMock.mockReturnValue({
+      kind: "message",
+      resultCode: "account_exists_requires_linking",
+      provider: "google",
+      email: "conta@example.com",
+      message: "Entre com seu método atual e vincule a conta manualmente.",
+    });
+
+    const tree = await renderApp();
+    await flushEffects(5);
+
+    const serialized = JSON.stringify(tree.toJSON());
+    expect(serialized).toContain("LoginScreen");
+    expect(serialized).not.toContain("Carregando ambiente");
+    expect(completeSocialAuthMock).toHaveBeenCalledWith("social-result-token", null);
+    expect(clearWebSocialResultTokenMock).toHaveBeenCalled();
   });
 
   it("usa sessão salva e permite ir para conta e voltar", async () => {

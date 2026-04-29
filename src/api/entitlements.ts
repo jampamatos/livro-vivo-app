@@ -1,16 +1,11 @@
 import { apiFetch } from "./http";
+import type { AccountState } from "./accountState";
 
 export type SubscriptionTier = "essential" | "professional";
 export type SubscriptionStatus = "active" | "inactive" | "canceled";
 export type ModuleAccessTier = SubscriptionTier | null;
 
-export type MeProfileResponse = {
-  id: number;
-  email: string;
-  name: string;
-  profession: string;
-  avatar_url?: string | null;
-};
+export type MeProfileResponse = AccountState;
 
 export type UpdateMeProfileAvatarUpload = {
   uri: string;

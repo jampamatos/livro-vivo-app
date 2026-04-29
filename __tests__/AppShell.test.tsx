@@ -21,6 +21,16 @@ describe("AppShell", () => {
       name: "Conta Teste",
       profession: "Advogada",
       avatar_url: null,
+      avatar_source: null,
+      role: "member",
+      has_usable_password: true,
+      auth_methods: ["password"],
+      legal_status: {
+        requires_acceptance: false,
+        accepted_current_documents: true,
+        pending_document_types: [],
+        current_documents: [],
+      },
     });
     getMyEntitlementsMock.mockResolvedValue({
       entitlements: [],

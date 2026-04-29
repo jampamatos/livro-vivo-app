@@ -30,6 +30,11 @@ import {
   type UpdateMeProfileAvatarUpload,
 } from "../api/entitlements";
 import {
+  acceptLegalDocuments,
+  getLegalAcceptances,
+  getRequiredLegalDocuments,
+} from "../api/legal";
+import {
   getNotificationPreferences,
   updateNotificationPreferences,
   type NotificationPreferenceField,
@@ -42,7 +47,17 @@ import {
   type DataExportResponse,
   type DataExportSummary,
 } from "../api/privacy";
+import type { LinkedAccount, LegalAcceptanceEntry, LegalDocumentSummary } from "../api/accountState";
 import { ApiError } from "../api/http";
+import {
+  getLinkedAccounts,
+  setPasswordFromSocialOnlyAccount,
+  startSocialAuth,
+  unlinkLinkedAccount,
+} from "../api/social";
+import { getCurrentWebRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
+import { LegalRichText } from "../components/LegalRichText";
+import { getAppPlatform, getAppVersion } from "../config/runtime";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AppTheme } from "../theme/tokens";
 import {
@@ -56,6 +71,13 @@ import {
   type AvatarCropSelection,
 } from "../utils/avatarCrop";
 import { sanitizeAvatarUrl } from "../utils/communityUi";
+import { extractApiErrorMessage } from "../utils/apiErrors";
+import {
+  formatAuthMethodLabel,
+  formatLegalAcceptanceSource,
+  formatLegalDocumentType,
+  formatLegalPlatform,
+} from "../utils/legalText";
 
 type Props = {
   token: string;
@@ -63,9 +85,11 @@ type Props = {
   onLogout: () => void | Promise<void>;
   onProfileUpdated?: (profile: MeProfileResponse) => void;
   pushStatusMessage?: string | null;
+  initialPanel?: AccountPanel | null;
+  privacyNotice?: string | null;
 };
 
-type AccountPanel = "home" | "profile" | "password" | "plan" | "notifications" | "privacy" | "export" | "delete";
+export type AccountPanel = "home" | "profile" | "password" | "plan" | "notifications" | "privacy" | "export" | "delete";
 
 type MenuRowProps = {
   theme: AppTheme;
@@ -148,6 +172,14 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("pt-BR");
+}
+
+function isEditorialLegalTitle(document: Pick<LegalDocumentSummary, "document_type" | "title">) {
+  const documentTypeLabel = formatLegalDocumentType(document.document_type);
+  return (
+    document.title.trim().length > 0 &&
+    document.title.trim().toLowerCase() !== documentTypeLabel.trim().toLowerCase()
+  );
 }
 
 function getInitials(name: string) {
@@ -242,7 +274,15 @@ function MenuRow({ theme, icon, title, subtitle, testID, danger = false, onPress
   );
 }
 
-export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushStatusMessage }: Props) {
+export function AccountScreen({
+  token,
+  onBack,
+  onLogout,
+  onProfileUpdated,
+  pushStatusMessage,
+  initialPanel = null,
+  privacyNotice = null,
+}: Props) {
   const { theme } = useAppTheme();
   const { width } = useWindowDimensions();
   const [loading, setLoading] = React.useState(true);
@@ -259,6 +299,17 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
   const [preferencesError, setPreferencesError] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [privacyMessage, setPrivacyMessage] = React.useState<string | null>(null);
+  const [privacyLoading, setPrivacyLoading] = React.useState(true);
+  const [legalDocuments, setLegalDocuments] = React.useState<LegalDocumentSummary[]>([]);
+  const [legalAcceptances, setLegalAcceptances] = React.useState<LegalAcceptanceEntry[]>([]);
+  const [linkedAccounts, setLinkedAccounts] = React.useState<LinkedAccount[]>([]);
+  const [linkedAccountsBusyProvider, setLinkedAccountsBusyProvider] = React.useState<string | null>(null);
+  const [socialPasswordForm, setSocialPasswordForm] = React.useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [socialPasswordBusy, setSocialPasswordBusy] = React.useState(false);
+  const [socialPasswordError, setSocialPasswordError] = React.useState<string | null>(null);
   const [exportingData, setExportingData] = React.useState(false);
   const [exportPayload, setExportPayload] = React.useState<DataExportResponse | null>(null);
   const [exportSummary, setExportSummary] = React.useState<DataExportSummary | null>(null);
@@ -331,6 +382,50 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
   }, [token]);
 
   React.useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        setPrivacyLoading(true);
+        const [documentsRes, acceptancesRes, linkedAccountsRes] = await Promise.allSettled([
+          getRequiredLegalDocuments(token),
+          getLegalAcceptances(token),
+          getLinkedAccounts(token),
+        ]);
+
+        if (!alive) return;
+
+        if (documentsRes.status === "fulfilled") {
+          setLegalDocuments(documentsRes.value.documents);
+        }
+        if (acceptancesRes.status === "fulfilled") {
+          setLegalAcceptances(acceptancesRes.value.acceptances);
+        }
+        if (linkedAccountsRes.status === "fulfilled") {
+          setLinkedAccounts(linkedAccountsRes.value.linked_accounts);
+        }
+
+        const allRejected =
+          documentsRes.status === "rejected" &&
+          acceptancesRes.status === "rejected" &&
+          linkedAccountsRes.status === "rejected";
+
+        if (allRejected) {
+          setPrivacyMessage("Não foi possível carregar o bloco de privacidade e contas vinculadas.");
+        }
+      } finally {
+        if (alive) {
+          setPrivacyLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  React.useEffect(() => {
     setProfileForm({
       name: profile?.name || "",
       profession: profile?.profession || "",
@@ -341,10 +436,30 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
     });
   }, [profile?.avatar_url, profile?.name, profile?.profession]);
 
+  React.useEffect(() => {
+    if (initialPanel) {
+      setActivePanel(initialPanel);
+    }
+  }, [initialPanel]);
+
+  React.useEffect(() => {
+    if (privacyNotice) {
+      setPrivacyMessage(privacyNotice);
+    }
+  }, [privacyNotice]);
+
   const displayName = (profile?.name || "").trim() || "Nome não informado";
   const displayProfession = (profile?.profession || "").trim() || "Profissão não informada";
   const displayEmail = (profile?.email || "").trim() || "-";
   const displayAvatarUrl = sanitizeAvatarUrl(profile?.avatar_url);
+  const hasPendingLegalDocuments = legalDocuments.some((document) => !document.accepted);
+  const authMethodsLabel = profile?.auth_methods?.length
+    ? profile.auth_methods.map((method) => formatAuthMethodLabel(method)).join(", ")
+    : "Nenhum";
+  const canSubmitSetPassword =
+    !socialPasswordBusy &&
+    socialPasswordForm.newPassword.trim().length >= 8 &&
+    socialPasswordForm.newPassword === socialPasswordForm.confirmPassword;
   const isWidePlansLayout = width >= 920;
   const avatarCropViewportSize = Math.min(Math.max(width - 72, 220), 340);
   const avatarCropBaseOffsetRef = React.useRef({ x: 0, y: 0 });
@@ -677,6 +792,123 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
       setPasswordSaving(false);
     }
   }, [passwordForm.confirmPassword, passwordForm.currentPassword, passwordForm.nextPassword, passwordSaving, token]);
+
+  const handleAcceptCurrentLegalDocuments = React.useCallback(async () => {
+    if (!legalDocuments.length) {
+      setPrivacyMessage("Nenhum documento vigente foi retornado pela API.");
+      return;
+    }
+
+    try {
+      setPrivacyMessage(null);
+      const response = await acceptLegalDocuments(token, {
+        document_ids: legalDocuments.map((document) => document.id),
+        source: "account_settings",
+        app_platform: getAppPlatform(),
+        app_version: getAppVersion(),
+      });
+      const documentsResponse = await getRequiredLegalDocuments(token);
+      const acceptancesResponse = await getLegalAcceptances(token);
+      setLegalDocuments(documentsResponse.documents);
+      setLegalAcceptances(acceptancesResponse.acceptances);
+      setProfile((current) => {
+        if (!current) return current;
+        const nextProfile = {
+          ...current,
+          legal_status: response.legal_status,
+        };
+        onProfileUpdated?.(nextProfile);
+        return nextProfile;
+      });
+      setPrivacyMessage("Documentos legais atualizados com sucesso.");
+    } catch (err) {
+      setPrivacyMessage(extractApiErrorMessage(err, "Não foi possível atualizar os consentimentos agora."));
+    }
+  }, [legalDocuments, onProfileUpdated, token]);
+
+  const handleStartLinkedAccount = React.useCallback(
+    async (provider: string) => {
+      const redirectUri = getCurrentWebRedirectUri();
+      if (!redirectUri) {
+        Alert.alert("Disponível no web", "O vínculo de contas sociais desta fase está habilitado primeiro no web.");
+        return;
+      }
+
+      try {
+        setPrivacyMessage(null);
+        setLinkedAccountsBusyProvider(provider);
+        const response = await startSocialAuth(
+          provider,
+          {
+            redirect_uri: redirectUri,
+            intent: "link",
+          },
+          token
+        );
+        redirectToSocialAuthorization(response.authorization_url);
+      } catch (err) {
+        setPrivacyMessage(extractApiErrorMessage(err, "Não foi possível iniciar o vínculo desta conta agora."));
+        setLinkedAccountsBusyProvider(null);
+      }
+    },
+    [token]
+  );
+
+  const handleUnlinkAccount = React.useCallback(
+    async (provider: string) => {
+      try {
+        setPrivacyMessage(null);
+        setLinkedAccountsBusyProvider(provider);
+        const response = await unlinkLinkedAccount(token, provider);
+        setLinkedAccounts(response.linked_accounts);
+        setProfile((current) => {
+          if (!current) return current;
+          const nextProfile = {
+            ...current,
+            has_usable_password: response.has_usable_password,
+            auth_methods: response.auth_methods,
+          };
+          onProfileUpdated?.(nextProfile);
+          return nextProfile;
+        });
+        setPrivacyMessage("Conta desvinculada com sucesso.");
+      } catch (err) {
+        setPrivacyMessage(extractApiErrorMessage(err, "Não foi possível desvincular esta conta agora."));
+      } finally {
+        setLinkedAccountsBusyProvider(null);
+      }
+    },
+    [onProfileUpdated, token]
+  );
+
+  const handleSetPassword = React.useCallback(async () => {
+    if (!canSubmitSetPassword) {
+      setSocialPasswordError("Confirme a nova senha com pelo menos 8 caracteres.");
+      return;
+    }
+
+    try {
+      setSocialPasswordBusy(true);
+      setSocialPasswordError(null);
+      setPrivacyMessage(null);
+      const response = await setPasswordFromSocialOnlyAccount(token, socialPasswordForm.newPassword);
+      setLinkedAccounts(response.linked_accounts);
+      const nextProfile: MeProfileResponse = {
+        ...response.user,
+        has_usable_password: response.has_usable_password,
+        auth_methods: response.auth_methods,
+        legal_status: response.legal_status,
+      };
+      setProfile(nextProfile);
+      onProfileUpdated?.(nextProfile);
+      setSocialPasswordForm({ newPassword: "", confirmPassword: "" });
+      setPrivacyMessage(response.detail || "Senha definida com sucesso.");
+    } catch (err) {
+      setSocialPasswordError(extractApiErrorMessage(err, "Não foi possível definir a senha agora."));
+    } finally {
+      setSocialPasswordBusy(false);
+    }
+  }, [canSubmitSetPassword, onProfileUpdated, socialPasswordForm.newPassword, token]);
 
   const canSubmitErasure = deleteConfirmation.trim().toUpperCase() === "DELETE" && !deletingData;
 
@@ -1389,7 +1621,7 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
 
   const renderPrivacyPanel = () => (
     <View style={styles.panelStack}>
-      {renderPanelHeader("Privacidade (LGPD)", "Tela pronta para concentrar dados, consentimentos e políticas do titular.")}
+      {renderPanelHeader("Privacidade (LGPD)", "Centralize consentimentos, documentos vigentes e métodos de acesso da sua conta.")}
 
       <View
         style={[
@@ -1410,6 +1642,9 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
         <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
           Profissão: {displayProfession}
         </Text>
+        <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+          Métodos de acesso: {authMethodsLabel}
+        </Text>
       </View>
 
       <View
@@ -1421,10 +1656,250 @@ export function AccountScreen({ token, onBack, onLogout, onProfileUpdated, pushS
           },
         ]}
       >
-        <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>Consentimentos</Text>
-        <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
-          O detalhamento jurídico de consentimento ainda será fechado. A estrutura da tela já está pronta para plugar os blocos de bases legais, histórico de aceite e preferências específicas.
-        </Text>
+        <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>Documentos vigentes</Text>
+        {privacyLoading ? (
+          <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>Carregando documentos e vínculos...</Text>
+        ) : null}
+        {legalDocuments.length ? (
+          <View style={styles.actionsColumn}>
+            {legalDocuments.map((document) => (
+              <View
+                key={document.id}
+                style={[
+                  styles.summaryBox,
+                  { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+                ]}
+              >
+                <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>
+                  {formatLegalDocumentType(document.document_type)}
+                </Text>
+                {isEditorialLegalTitle(document) ? (
+                  <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+                    {document.title}
+                  </Text>
+                ) : null}
+                <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+                  Versão {document.version} · Vigente em {document.enforcement_starts_at ? formatDateTime(document.enforcement_starts_at) : "-"}
+                </Text>
+                <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+                  Status: {document.accepted ? `Aceito em ${formatDateTime(document.accepted_at)}` : "Pendente de aceite"}
+                </Text>
+                <LegalRichText contentHtml={document.content_html} />
+              </View>
+            ))}
+
+            {hasPendingLegalDocuments ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void handleAcceptCurrentLegalDocuments()}
+                style={[
+                  styles.primaryAction,
+                  { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                ]}
+              >
+                <Text style={[styles.primaryActionText, { color: theme.colors.textInverse }]}>Aceitar versões vigentes</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : (
+          <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+            Nenhum documento legal vigente foi retornado pela API.
+          </Text>
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.formCard,
+          {
+            borderColor: theme.colors.border,
+            backgroundColor: theme.colors.surface,
+          },
+        ]}
+      >
+        <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>Contas vinculadas</Text>
+        {linkedAccounts.length ? (
+          <View style={styles.actionsColumn}>
+            {linkedAccounts.map((account) => {
+              const isBusy = linkedAccountsBusyProvider === account.provider;
+              const canConnect = account.enabled && !account.connected;
+              const canDisconnect = account.connected;
+              return (
+                <View
+                  key={account.provider}
+                  style={[
+                    styles.summaryBox,
+                    { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+                  ]}
+                >
+                  <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>{account.label}</Text>
+                  <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+                    Status: {account.connected
+                      ? `Vinculada${account.email ? ` ao e-mail ${account.email}` : ""}`
+                      : account.enabled
+                        ? "Pronta para vínculo"
+                        : "Ainda não habilitada neste ambiente"}
+                  </Text>
+                  {account.connected && account.linked_at ? (
+                    <Text style={[styles.helperText, { color: theme.colors.textMuted }]}>
+                      Vinculada em {formatDateTime(account.linked_at)}
+                    </Text>
+                  ) : null}
+                  <View style={styles.actionsColumn}>
+                    {canConnect ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isBusy}
+                        onPress={() => void handleStartLinkedAccount(account.provider)}
+                        style={[
+                          styles.secondaryAction,
+                          { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
+                          isBusy ? styles.disabledAction : null,
+                        ]}
+                      >
+                        <Text style={[styles.secondaryActionText, { color: theme.colors.text }]}>
+                          {isBusy ? "Redirecionando..." : `Vincular ${account.label}`}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                    {canDisconnect ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={isBusy}
+                        onPress={() => void handleUnlinkAccount(account.provider)}
+                        style={[
+                          styles.secondaryAction,
+                          { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
+                          isBusy ? styles.disabledAction : null,
+                        ]}
+                      >
+                        <Text style={[styles.secondaryActionText, { color: theme.colors.text }]}>
+                          {isBusy ? "Processando..." : `Desvincular ${account.label}`}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+            Nenhum provider social foi carregado para esta conta.
+          </Text>
+        )}
+
+        {!profile?.has_usable_password ? (
+          <View
+            style={[
+              styles.summaryBox,
+              { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+            ]}
+          >
+            <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>Definir senha local</Text>
+            <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+              Esta conta ainda depende de um login social. Defina uma senha antes de remover o último provider vinculado.
+            </Text>
+            <TextInput
+              accessibilityLabel="Nova senha local"
+              value={socialPasswordForm.newPassword}
+              onChangeText={(value) => {
+                setSocialPasswordError(null);
+                setSocialPasswordForm((current) => ({ ...current, newPassword: value }));
+              }}
+              placeholder="Nova senha"
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.input,
+                {
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.surface,
+                  color: theme.colors.text,
+                },
+              ]}
+            />
+            <TextInput
+              accessibilityLabel="Confirmar nova senha local"
+              value={socialPasswordForm.confirmPassword}
+              onChangeText={(value) => {
+                setSocialPasswordError(null);
+                setSocialPasswordForm((current) => ({ ...current, confirmPassword: value }));
+              }}
+              placeholder="Confirmar nova senha"
+              placeholderTextColor={theme.colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.input,
+                {
+                  borderColor: theme.colors.borderStrong,
+                  backgroundColor: theme.colors.surface,
+                  color: theme.colors.text,
+                },
+              ]}
+            />
+            {socialPasswordError ? (
+              <Text style={[styles.feedbackText, { color: theme.colors.danger }]}>{socialPasswordError}</Text>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={!canSubmitSetPassword}
+              onPress={() => void handleSetPassword()}
+              style={[
+                styles.primaryAction,
+                { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+                !canSubmitSetPassword ? styles.disabledAction : null,
+              ]}
+            >
+              <Text style={[styles.primaryActionText, { color: theme.colors.textInverse }]}>
+                {socialPasswordBusy ? "Definindo senha..." : "Definir senha local"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+      <View
+        style={[
+          styles.formCard,
+          {
+            borderColor: theme.colors.border,
+            backgroundColor: theme.colors.surface,
+          },
+        ]}
+      >
+        <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>Histórico de aceite</Text>
+        {legalAcceptances.length ? (
+          <View style={styles.actionsColumn}>
+            {legalAcceptances.map((acceptance) => (
+              <View
+                key={acceptance.id}
+                style={[
+                  styles.summaryBox,
+                  { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted },
+                ]}
+              >
+                <Text style={[styles.sectionHeading, { color: theme.colors.text }]}>{acceptance.document_title}</Text>
+                <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+                  {formatLegalDocumentType(acceptance.document_type)} · versão {acceptance.document_version}
+                </Text>
+                <Text style={[styles.helperText, { color: theme.colors.textMuted }]}>
+                  Aceito em {formatDateTime(acceptance.accepted_at)} no fluxo {formatLegalAcceptanceSource(acceptance.source)} ({formatLegalPlatform(acceptance.app_platform)})
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.panelDescription, { color: theme.colors.textMuted }]}>
+            Ainda não há aceites históricos registrados para esta conta.
+          </Text>
+        )}
+
+        {privacyMessage ? <Text style={[styles.feedbackText, { color: theme.colors.textMuted }]}>{privacyMessage}</Text> : null}
       </View>
     </View>
   );

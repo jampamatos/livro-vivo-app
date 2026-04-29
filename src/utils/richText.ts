@@ -44,7 +44,7 @@ type InlineMarks = {
   href?: string;
 };
 
-const BLOCK_TAGS = new Set(["p", "aside", "h2", "h3", "ul", "ol", "li", "blockquote"]);
+const BLOCK_TAGS = new Set(["p", "aside", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote"]);
 const INLINE_TAGS = new Set(["a", "strong", "b", "em", "i", "u", "sup", "sub", "br"]);
 const DROP_TAGS = new Set(["script", "style", "iframe", "object", "embed"]);
 const VOID_TAGS = new Set(["br", "hr", "img", "input", "meta", "link"]);
@@ -405,16 +405,26 @@ export function buildRichTextBlocks(
       continue;
     }
 
-    if (node.tag === "p" || node.tag === "aside" || node.tag === "h2" || node.tag === "h3" || node.tag === "blockquote") {
+    if (
+      node.tag === "p" ||
+      node.tag === "aside" ||
+      node.tag === "h1" ||
+      node.tag === "h2" ||
+      node.tag === "h3" ||
+      node.tag === "h4" ||
+      node.tag === "h5" ||
+      node.tag === "h6" ||
+      node.tag === "blockquote"
+    ) {
       flushInlineBuffer();
       const inlines = trimInlineNodes(collectInlines(node.children));
       if (inlines.length === 0) continue;
 
       if (node.tag === "aside") {
         blocks.push({ type: "footnote", inlines });
-      } else if (node.tag === "h2") {
+      } else if (node.tag === "h1" || node.tag === "h2") {
         blocks.push({ type: "heading2", inlines });
-      } else if (node.tag === "h3") {
+      } else if (node.tag === "h3" || node.tag === "h4" || node.tag === "h5" || node.tag === "h6") {
         blocks.push({ type: "heading3", inlines });
       } else if (node.tag === "blockquote") {
         blocks.push({ type: "blockquote", inlines });

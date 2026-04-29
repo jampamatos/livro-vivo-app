@@ -1,5 +1,6 @@
 import { apiFetch } from "./http";
 import type { AuthSession } from "../auth/authSession";
+import { normalizeAccountState, type AccountState } from "./accountState";
 
 export type ModerationNotice = {
     level: "info" | "warning" | "danger";
@@ -8,7 +9,14 @@ export type ModerationNotice = {
 };
 
 type LoginRegisterResponse = 
-    | { access: string; refresh?: string; moderation_notice?: ModerationNotice }
+    | {
+        access: string;
+        refresh?: string;
+        moderation_notice?: ModerationNotice;
+        user: Omit<AccountState, "has_usable_password" | "auth_methods" | "legal_status">;
+        auth_methods: AccountState["auth_methods"];
+        legal_status: AccountState["legal_status"];
+      }
     | { token: string}
     | { key: string};
 
@@ -42,7 +50,24 @@ function normalizeModerationNotice(res: LoginRegisterResponse): ModerationNotice
 export type AuthResponse = {
     session: AuthSession;
     moderationNotice: ModerationNotice | null;
+    accountState: AccountState | null;
 };
+
+function normalizeAccountStateFromAuthResponse(res: LoginRegisterResponse): AccountState | null {
+    if (!("access" in res) || typeof res.access !== "string") {
+        return null;
+    }
+
+    if (!("user" in res) || !res.user || typeof res.user !== "object") {
+        return null;
+    }
+
+    return normalizeAccountState({
+        ...res.user,
+        auth_methods: Array.isArray(res.auth_methods) ? res.auth_methods : [],
+        legal_status: res.legal_status,
+    });
+}
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
     const res = await apiFetch<LoginRegisterResponse>("/auth/login/", {
@@ -52,6 +77,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
     return {
         session: normalizeAuthResponse(res),
         moderationNotice: normalizeModerationNotice(res),
+        accountState: normalizeAccountStateFromAuthResponse(res),
     };
 }
 
@@ -68,6 +94,7 @@ export async function register(payload: {
     return {
         session: normalizeAuthResponse(res),
         moderationNotice: normalizeModerationNotice(res),
+        accountState: normalizeAccountStateFromAuthResponse(res),
     };
 }
 
