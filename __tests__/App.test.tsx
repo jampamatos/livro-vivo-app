@@ -8,7 +8,7 @@ import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/to
 import { setSessionListener } from "../src/auth/sessionBus";
 import { logout } from "../src/api/auth";
 import { completeSocialAuth, normalizeSocialCompleteResponse } from "../src/api/social";
-import { clearWebSocialResultToken, readWebSocialResultToken } from "../src/auth/socialWeb";
+import { clearWebSocialResultToken, readSocialResultTokenFromUrl, readWebSocialResultToken } from "../src/auth/socialWeb";
 import { useNotificationCenter } from "../src/notifications/useNotificationCenter";
 import type { BookChapter } from "../src/api/books";
 import type { AuthSession } from "../src/auth/authSession";
@@ -40,6 +40,7 @@ jest.mock("../src/api/social", () => ({
 
 jest.mock("../src/auth/socialWeb", () => ({
   readWebSocialResultToken: jest.fn(),
+  readSocialResultTokenFromUrl: jest.fn(),
   clearWebSocialResultToken: jest.fn(),
 }));
 
@@ -381,9 +382,12 @@ const logoutMock = logout as unknown as jest.Mock;
 const completeSocialAuthMock = completeSocialAuth as unknown as jest.Mock;
 const normalizeSocialCompleteResponseMock = normalizeSocialCompleteResponse as unknown as jest.Mock;
 const readWebSocialResultTokenMock = readWebSocialResultToken as unknown as jest.Mock;
+const readSocialResultTokenFromUrlMock = readSocialResultTokenFromUrl as unknown as jest.Mock;
 const clearWebSocialResultTokenMock = clearWebSocialResultToken as unknown as jest.Mock;
 const useNotificationCenterMock = useNotificationCenter as unknown as jest.Mock;
 const addBackHandlerListenerMock = jest.spyOn(BackHandler, "addEventListener");
+const getInitialUrlMock = jest.spyOn(Linking, "getInitialURL");
+const addLinkingListenerMock = jest.spyOn(Linking, "addEventListener");
 
 async function flushEffects(cycles = 2) {
   for (let i = 0; i < cycles; i += 1) {
@@ -421,13 +425,19 @@ describe("App", () => {
     completeSocialAuthMock.mockReset();
     normalizeSocialCompleteResponseMock.mockReset();
     readWebSocialResultTokenMock.mockReset();
+    readSocialResultTokenFromUrlMock.mockReset();
     clearWebSocialResultTokenMock.mockReset();
     addBackHandlerListenerMock.mockReset();
+    getInitialUrlMock.mockReset();
+    addLinkingListenerMock.mockReset();
 
     setAuthSessionMock.mockResolvedValue(undefined);
     clearAuthSessionMock.mockResolvedValue(undefined);
     readWebSocialResultTokenMock.mockReturnValue(null);
+    readSocialResultTokenFromUrlMock.mockReturnValue(null);
     clearWebSocialResultTokenMock.mockImplementation(() => undefined);
+    getInitialUrlMock.mockResolvedValue(null);
+    addLinkingListenerMock.mockReturnValue({ remove: jest.fn() } as any);
     getMeProfileMock.mockResolvedValue({
       id: 1,
       email: "conta@example.com",
@@ -471,6 +481,8 @@ describe("App", () => {
 
   afterAll(() => {
     addBackHandlerListenerMock.mockRestore();
+    getInitialUrlMock.mockRestore();
+    addLinkingListenerMock.mockRestore();
     Object.defineProperty(Platform, "OS", {
       configurable: true,
       value: originalPlatform,
@@ -531,6 +543,45 @@ describe("App", () => {
     expect(serialized).not.toContain("Carregando ambiente");
     expect(completeSocialAuthMock).toHaveBeenCalledWith("social-result-token", null);
     expect(clearWebSocialResultTokenMock).toHaveBeenCalled();
+  });
+
+  it("conclui callback social recebido por deep link nativo", async () => {
+    let handleNativeUrl: ((event: { url: string }) => void) | null = null;
+    getAuthSessionMock.mockResolvedValue(null);
+    readSocialResultTokenFromUrlMock.mockImplementation((url: string | null | undefined) =>
+      url?.includes("native-result-token") ? "native-result-token" : null
+    );
+    addLinkingListenerMock.mockImplementation((_eventName: "url", handler: (event: { url: string }) => void) => {
+      handleNativeUrl = handler;
+      return { remove: jest.fn() } as any;
+    });
+    completeSocialAuthMock.mockResolvedValue({ access: "social-access", refresh: "social-refresh" });
+    normalizeSocialCompleteResponseMock.mockReturnValue({
+      kind: "session",
+      session: {
+        accessToken: "social-access",
+        refreshToken: "social-refresh",
+      },
+      moderationNotice: null,
+    });
+
+    const tree = await renderApp();
+    await flushEffects();
+
+    expect(JSON.stringify(tree.toJSON())).toContain("LoginScreen");
+
+    await act(async () => {
+      handleNativeUrl?.({ url: "livrovivo://auth/callback?result_token=native-result-token" });
+      await Promise.resolve();
+    });
+    await flushEffects(5);
+
+    expect(completeSocialAuthMock).toHaveBeenCalledWith("native-result-token", null);
+    expect(setAuthSessionMock).toHaveBeenCalledWith({
+      accessToken: "social-access",
+      refreshToken: "social-refresh",
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain("MainScreen");
   });
 
   it("usa sessão salva e permite ir para conta e voltar", async () => {

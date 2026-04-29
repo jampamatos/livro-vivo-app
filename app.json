@@ -2,6 +2,7 @@
   "expo": {
     "name": "Direito do Passageiro",
     "slug": "livro-vivo-app",
+    "scheme": "livrovivo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

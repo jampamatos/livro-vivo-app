@@ -20,7 +20,7 @@ import { ApiError } from "../api/http";
 import type { AccountState } from "../api/accountState";
 import { getSocialProviders, startSocialAuth, type SocialProvider } from "../api/social";
 import type { AuthSession } from "../auth/authSession";
-import { getCurrentWebRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
+import { getSocialRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AppTheme } from "../theme/tokens";
 import { extractApiErrorMessage } from "../utils/apiErrors";
@@ -459,16 +459,7 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
       return;
     }
 
-    const redirectUri = getCurrentWebRedirectUri();
-    if (!redirectUri) {
-      const message = "O login social desta fase está habilitado primeiro no web.";
-      if (Platform.OS === "web" && typeof globalThis.alert === "function") {
-        globalThis.alert(message);
-      } else {
-        Alert.alert("Disponível no web", message);
-      }
-      return;
-    }
+    const redirectUri = getSocialRedirectUri();
 
     setError(null);
     setNoticeState(null);
@@ -479,7 +470,7 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
         redirect_uri: redirectUri,
         intent: "login",
       });
-      redirectToSocialAuthorization(response.authorization_url);
+      await redirectToSocialAuthorization(response.authorization_url);
     } catch (err) {
       const message = extractApiErrorMessage(err, "Não foi possível iniciar o login social.");
       setError(message);
