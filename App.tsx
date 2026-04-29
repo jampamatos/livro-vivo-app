@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, BackHandler, Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -17,7 +17,7 @@ import { MainScreen } from "./src/screens/MainScreen";
 import { TemplatesBankScreen } from "./src/screens/TemplatesBankScreen";
 
 import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tokenStorage";
-import { clearWebSocialResultToken, readWebSocialResultToken } from "./src/auth/socialWeb";
+import { clearWebSocialResultToken, readSocialResultTokenFromUrl, readWebSocialResultToken } from "./src/auth/socialWeb";
 import { setSessionListener } from "./src/auth/sessionBus";
 import { logout } from "./src/api/auth";
 import { getMeProfile } from "./src/api/entitlements";
@@ -202,6 +202,27 @@ function AppRoot() {
 
     return () => subscription.remove();
   }, [loading, navigateBack, session]);
+
+  React.useEffect(() => {
+    if (Platform.OS === "web") return undefined;
+
+    const handleUrl = (url: string | null) => {
+      const token = readSocialResultTokenFromUrl(url);
+      if (token) {
+        setSocialResultToken(token);
+      }
+    };
+
+    Linking.getInitialURL()
+      .then(handleUrl)
+      .catch(() => undefined);
+
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      handleUrl(url);
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   React.useEffect(() => {
     if (route !== resolvedRoute) {

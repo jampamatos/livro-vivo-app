@@ -55,7 +55,7 @@ import {
   startSocialAuth,
   unlinkLinkedAccount,
 } from "../api/social";
-import { getCurrentWebRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
+import { getSocialRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
 import { LegalRichText } from "../components/LegalRichText";
 import { getAppPlatform, getAppVersion } from "../config/runtime";
 import { useAppTheme } from "../theme/ThemeProvider";
@@ -828,11 +828,7 @@ export function AccountScreen({
 
   const handleStartLinkedAccount = React.useCallback(
     async (provider: string) => {
-      const redirectUri = getCurrentWebRedirectUri();
-      if (!redirectUri) {
-        Alert.alert("Disponível no web", "O vínculo de contas sociais desta fase está habilitado primeiro no web.");
-        return;
-      }
+      const redirectUri = getSocialRedirectUri();
 
       try {
         setPrivacyMessage(null);
@@ -845,7 +841,7 @@ export function AccountScreen({
           },
           token
         );
-        redirectToSocialAuthorization(response.authorization_url);
+        await redirectToSocialAuthorization(response.authorization_url);
       } catch (err) {
         setPrivacyMessage(extractApiErrorMessage(err, "Não foi possível iniciar o vínculo desta conta agora."));
         setLinkedAccountsBusyProvider(null);
