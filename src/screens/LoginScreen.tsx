@@ -17,19 +17,27 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { login, register } from "../api/auth";
 import { ApiError } from "../api/http";
+import type { AccountState } from "../api/accountState";
+import { getSocialProviders, startSocialAuth, type SocialProvider } from "../api/social";
 import type { AuthSession } from "../auth/authSession";
+import { getCurrentWebRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
 import { useAppTheme } from "../theme/ThemeProvider";
 import type { AppTheme } from "../theme/tokens";
 import { extractApiErrorMessage } from "../utils/apiErrors";
 
+type ScreenNotice = {
+  tone: "info" | "danger" | "success";
+  message: string;
+};
+
 type Props = {
-  onAuthSuccess: (session: AuthSession) => Promise<void> | void;
+  onAuthSuccess: (session: AuthSession, accountState: AccountState | null) => Promise<void> | void;
+  notice?: ScreenNotice | null;
 };
 
 const SOCIAL_PROVIDERS = [
-  { icon: "google", label: "Google" },
-  { icon: "facebook", label: "Facebook" },
-  { icon: "linkedin", label: "LinkedIn" },
+  { provider: "google", icon: "google", label: "Google" },
+  { provider: "linkedin", icon: "linkedin", label: "LinkedIn" },
 ] as const;
 
 const BRAND_ICON = require("../../assets/branding/icon-1-ui.png");
@@ -237,7 +245,7 @@ function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
   });
 }
 
-export function LoginScreen({ onAuthSuccess }: Props) {
+export function LoginScreen({ onAuthSuccess, notice }: Props) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -252,12 +260,44 @@ export function LoginScreen({ onAuthSuccess }: Props) {
   const [profession, setProfession] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noticeState, setNoticeState] = useState<ScreenNotice | null>(null);
+  const [socialProviders, setSocialProviders] = useState<SocialProvider[]>([]);
+  const [socialProvidersLoading, setSocialProvidersLoading] = useState(true);
+  const [socialBusyProvider, setSocialBusyProvider] = useState<string | null>(null);
 
   const title = useMemo(() => (mode === "login" ? "Entrar" : "Criar conta"), [mode]);
   const authSubtitle =
     mode === "login"
       ? "Entre com e-mail e senha para acessar o Direito do Passageiro na plataforma Livro Vivo."
       : "Crie sua conta para acessar o Direito do Passageiro no web e no mobile.";
+
+  React.useEffect(() => {
+    let active = true;
+
+    getSocialProviders()
+      .then((response) => {
+        if (active) {
+          setSocialProviders(response.providers);
+          setSocialProvidersLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSocialProviders([]);
+          setSocialProvidersLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (notice?.message) {
+      setNoticeState(notice);
+    }
+  }, [notice]);
 
   const handleSubmit = async () => {
     const e = email.trim();
@@ -270,6 +310,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
 
     setBusy(true);
     setError(null);
+    setNoticeState(null);
 
     try {
       const session =
@@ -291,7 +332,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
         }
       }
 
-      await onAuthSuccess(session.session);
+      await onAuthSuccess(session.session, session.accountState);
     } catch (err) {
       if (err instanceof ApiError) {
         const msg = extractApiErrorMessage(err, "Não foi possível concluir a autenticação.");
@@ -301,6 +342,48 @@ export function LoginScreen({ onAuthSuccess }: Props) {
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const providerStateMap = useMemo(() => {
+    return new Map(socialProviders.map((provider) => [provider.provider.toLowerCase(), provider]));
+  }, [socialProviders]);
+
+  const handleSocialStart = async (providerName: string) => {
+    const provider = providerStateMap.get(providerName.toLowerCase());
+    if (!provider?.enabled) {
+      setNoticeState({
+        tone: "info",
+        message: `${provider?.label || providerName} ainda não foi habilitado neste ambiente.`,
+      });
+      return;
+    }
+
+    const redirectUri = getCurrentWebRedirectUri();
+    if (!redirectUri) {
+      const message = "O login social desta fase está habilitado primeiro no web.";
+      if (Platform.OS === "web" && typeof globalThis.alert === "function") {
+        globalThis.alert(message);
+      } else {
+        Alert.alert("Disponível no web", message);
+      }
+      return;
+    }
+
+    setError(null);
+    setNoticeState(null);
+    setSocialBusyProvider(provider.provider);
+
+    try {
+      const response = await startSocialAuth(provider.provider, {
+        redirect_uri: redirectUri,
+        intent: "login",
+      });
+      redirectToSocialAuthorization(response.authorization_url);
+    } catch (err) {
+      const message = extractApiErrorMessage(err, "Não foi possível iniciar o login social.");
+      setError(message);
+      setSocialBusyProvider(null);
     }
   };
 
@@ -411,6 +494,36 @@ export function LoginScreen({ onAuthSuccess }: Props) {
               </View>
             ) : null}
 
+            {noticeState ? (
+              <View
+                accessibilityRole="alert"
+                style={[
+                  styles.errorBox,
+                  noticeState.tone === "danger"
+                    ? { borderColor: theme.colors.danger, backgroundColor: theme.isDark ? "rgba(228, 118, 104, 0.14)" : "#FBEAE8" }
+                    : noticeState.tone === "success"
+                    ? { borderColor: theme.colors.success, backgroundColor: theme.isDark ? "#173726" : "#E4F5EA" }
+                    : { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceMuted },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.error,
+                    {
+                      color:
+                        noticeState.tone === "danger"
+                          ? theme.colors.danger
+                          : noticeState.tone === "success"
+                          ? theme.colors.success
+                          : theme.colors.text,
+                    },
+                  ]}
+                >
+                  {noticeState.message}
+                </Text>
+              </View>
+            ) : null}
+
             <Pressable
               testID="login-submit-real"
               style={[styles.submitButton, busy && styles.buttonDisabled]}
@@ -431,21 +544,40 @@ export function LoginScreen({ onAuthSuccess }: Props) {
               </View>
 
               <View style={styles.socialGrid}>
-                {SOCIAL_PROVIDERS.map((provider) => (
+                {SOCIAL_PROVIDERS.map((provider) => {
+                  const providerState = providerStateMap.get(provider.provider);
+                  const enabled = Boolean(providerState?.enabled);
+                  const isBusy = socialBusyProvider === provider.provider;
+                  const disabled = socialProvidersLoading || !enabled || isBusy;
+                  const accessibilityLabel = enabled
+                    ? `Entrar com ${provider.label}`
+                    : socialProvidersLoading
+                      ? `${provider.label} em verificação`
+                      : `${provider.label} ainda não habilitado neste ambiente`;
+                  const hint = isBusy
+                    ? "Redirecionando..."
+                    : socialProvidersLoading
+                      ? "Verificando..."
+                      : enabled
+                        ? "Continuar"
+                        : "Aguardando ativação";
+                  return (
                   <Pressable
                     key={provider.label}
                     accessibilityRole="button"
-                    accessibilityLabel={`Entrar com ${provider.label} em breve`}
-                    disabled
-                    style={styles.socialButton}
+                    accessibilityLabel={accessibilityLabel}
+                    disabled={disabled}
+                    style={[styles.socialButton, disabled ? styles.buttonDisabled : null]}
+                    onPress={() => void handleSocialStart(provider.provider)}
                   >
                     <View style={styles.socialButtonLeft}>
                       <MaterialCommunityIcons name={provider.icon} size={18} color={theme.colors.text} />
                       <Text style={styles.socialButtonTitle}>{provider.label}</Text>
                     </View>
-                    <Text style={styles.socialButtonHint}>Em breve</Text>
+                    <Text style={styles.socialButtonHint}>{hint}</Text>
                   </Pressable>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
@@ -455,6 +587,7 @@ export function LoginScreen({ onAuthSuccess }: Props) {
                 testID="login-toggle-mode"
                 onPress={() => {
                   setError(null);
+                  setNoticeState(null);
                   setMode((current) => (current === "login" ? "register" : "login"));
                 }}
                 accessibilityRole="button"

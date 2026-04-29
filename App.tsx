@@ -9,6 +9,7 @@ import { CommunityFeedScreen } from "./src/screens/CommunityFeedScreen";
 import { CommunityNewPostScreen } from "./src/screens/CommunityNewPostScreen";
 import { CommunityPostScreen } from "./src/screens/CommunityPostScreen";
 import { CourseScreen } from "./src/screens/CourseScreen";
+import { LegalAcceptanceScreen } from "./src/screens/LegalAcceptanceScreen";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { LibraryScreen } from "./src/screens/LibraryScreen";
 import { MainSearchScreen } from "./src/screens/MainSearchScreen";
@@ -16,8 +17,11 @@ import { MainScreen } from "./src/screens/MainScreen";
 import { TemplatesBankScreen } from "./src/screens/TemplatesBankScreen";
 
 import { clearAuthSession, getAuthSession, setAuthSession } from "./src/auth/tokenStorage";
+import { clearWebSocialResultToken, readWebSocialResultToken } from "./src/auth/socialWeb";
 import { setSessionListener } from "./src/auth/sessionBus";
 import { logout } from "./src/api/auth";
+import { getMeProfile } from "./src/api/entitlements";
+import { completeSocialAuth, normalizeSocialCompleteResponse } from "./src/api/social";
 import { hideWebBootScreen } from "./src/bootstrap/webBootScreen";
 import { AppBootScreen } from "./src/components/AppBootScreen";
 import { InAppNotificationBanner } from "./src/components/InAppNotificationBanner";
@@ -27,8 +31,11 @@ import { useNotificationCenter } from "./src/notifications/useNotificationCenter
 import { AppThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
 
 import type { AuthSession } from "./src/auth/authSession";
+import type { AccountState } from "./src/api/accountState";
 import type { CommunityPost } from "./src/api/community";
 import type { GlobalSearchResult } from "./src/api/search";
+import type { AccountPanel } from "./src/screens/AccountScreen";
+import { extractApiErrorMessage } from "./src/utils/apiErrors";
 
 type LibraryOpenRequest = {
   bookId: number;
@@ -51,10 +58,23 @@ type TemplatesBankOpenRequest = {
   query?: string;
 };
 
+type FlashMessage = {
+  tone: "info" | "danger" | "success";
+  message: string;
+};
+
 function AppRoot() {
   const { theme, isReady: themeReady } = useAppTheme();
+  const isMountedRef = React.useRef(true);
   const [loading, setLoading] = React.useState(true);
   const [session, setSession] = React.useState<AuthSession | null>(null);
+  const [accountState, setAccountState] = React.useState<AccountState | null>(null);
+  const [accountStateLoading, setAccountStateLoading] = React.useState(false);
+  const [authNotice, setAuthNotice] = React.useState<FlashMessage | null>(null);
+  const [accountPrivacyNotice, setAccountPrivacyNotice] = React.useState<string | null>(null);
+  const [accountInitialPanel, setAccountInitialPanel] = React.useState<AccountPanel | null>(null);
+  const [socialResultToken, setSocialResultToken] = React.useState<string | null>(() => readWebSocialResultToken());
+  const [socialCallbackBusy, setSocialCallbackBusy] = React.useState(false);
   const [accountRefreshSignal, setAccountRefreshSignal] = React.useState(0);
 
   const [route, setRoute] = React.useState<AppRoute>("main");
@@ -73,6 +93,12 @@ function AppRoot() {
     setRoute("main");
   }, []);
   const notificationCenter = useNotificationCenter(session?.accessToken ?? null, openMainFromNotification);
+
+  React.useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const navigateBack = React.useCallback(() => {
     switch (route) {
@@ -105,28 +131,65 @@ function AppRoot() {
     }
   }, [route]);
 
+  const applyLoggedOutShellState = React.useCallback(() => {
+    setSelectedPost(null);
+    setLibraryOpenRequest(null);
+    setCourseOpenRequest(null);
+    setTemplatesBankOpenRequest(null);
+    setRoute("account");
+    setAccountState(null);
+    setAccountInitialPanel(null);
+    setAccountPrivacyNotice(null);
+  }, []);
+
+  const loadAccountState = React.useCallback(async (accessToken: string) => {
+    setAccountStateLoading(true);
+    try {
+      const me = await getMeProfile(accessToken);
+      setAccountState(me);
+      return me;
+    } finally {
+      setAccountStateLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
+    let alive = true;
+
     (async () => {
       const stored = await getAuthSession();
+      if (!alive) return;
       setSession(stored);
-      if (stored) setRoute("main");
-      setLoading(false);
+      if (stored) {
+        setRoute("main");
+        try {
+          await loadAccountState(stored.accessToken);
+        } catch {
+          await clearAuthSession();
+          if (!alive) return;
+          setSession(null);
+          applyLoggedOutShellState();
+        }
+      }
+      if (alive) {
+        setLoading(false);
+      }
     })();
-  }, []);
+
+    return () => {
+      alive = false;
+    };
+  }, [applyLoggedOutShellState, loadAccountState]);
 
   React.useEffect(() => {
     setSessionListener((next) => {
       setSession(next);
       if (!next) {
-        setSelectedPost(null);
-        setLibraryOpenRequest(null);
-        setCourseOpenRequest(null);
-        setTemplatesBankOpenRequest(null);
-        setRoute("account");
+        applyLoggedOutShellState();
       }
     });
     return () => setSessionListener(null);
-  }, []);
+  }, [applyLoggedOutShellState]);
 
   React.useEffect(() => {
     if (Platform.OS !== "android") return undefined;
@@ -151,9 +214,82 @@ function AppRoot() {
     hideWebBootScreen();
   }, [loading, themeReady]);
 
-  const handleAuthSuccess = async (newSession: AuthSession) => {
+  React.useEffect(() => {
+    if (loading || !socialResultToken || socialCallbackBusy) {
+      return;
+    }
+    setSocialCallbackBusy(true);
+
+    (async () => {
+      try {
+        const rawResponse = await completeSocialAuth(socialResultToken, session?.accessToken ?? null);
+        const response = normalizeSocialCompleteResponse(rawResponse);
+
+        if (!isMountedRef.current) return;
+
+        if (response.kind === "session") {
+          await setAuthSession(response.session);
+          if (!isMountedRef.current) return;
+          setSession(response.session);
+          await loadAccountState(response.session.accessToken);
+          if (!isMountedRef.current) return;
+          if (response.moderationNotice?.message) {
+            setAuthNotice({
+              tone: response.moderationNotice.level === "danger" ? "danger" : "info",
+              message: response.moderationNotice.message,
+            });
+          } else {
+            setAuthNotice(null);
+          }
+          setRoute("main");
+        } else if (response.kind === "link") {
+          setAccountState(response.accountState);
+          setAccountPrivacyNotice("Conta social vinculada com sucesso.");
+          setAccountInitialPanel("privacy");
+          setRoute("account");
+        } else {
+          if (session?.accessToken) {
+            setAccountPrivacyNotice(response.message || "Não foi possível concluir o vínculo da conta social.");
+            setAccountInitialPanel("privacy");
+            setRoute("account");
+          } else {
+            setAuthNotice({
+              tone: response.resultCode === "account_exists_requires_linking" ? "info" : "danger",
+              message: response.message || "Não foi possível concluir o login social.",
+            });
+          }
+        }
+      } catch (error) {
+        if (!isMountedRef.current) return;
+        const message = extractApiErrorMessage(error, "Não foi possível concluir o login social.");
+        if (session?.accessToken) {
+          setAccountPrivacyNotice(message);
+          setAccountInitialPanel("privacy");
+          setRoute("account");
+        } else {
+          setAuthNotice({ tone: "danger", message });
+        }
+      } finally {
+        clearWebSocialResultToken();
+        if (isMountedRef.current) {
+          setSocialResultToken(null);
+          setSocialCallbackBusy(false);
+        }
+      }
+    })();
+  }, [loadAccountState, loading, session?.accessToken, socialCallbackBusy, socialResultToken]);
+
+  const handleAuthSuccess = async (newSession: AuthSession, nextAccountState: AccountState | null) => {
     await setAuthSession(newSession);
     setSession(newSession);
+    if (nextAccountState) {
+      setAccountState(nextAccountState);
+    } else {
+      await loadAccountState(newSession.accessToken);
+    }
+    setAuthNotice(null);
+    setAccountPrivacyNotice(null);
+    setAccountInitialPanel(null);
     setAccountRefreshSignal((value) => value + 1);
     setLibraryOpenRequest(null);
     setCourseOpenRequest(null);
@@ -171,12 +307,8 @@ function AppRoot() {
       // logout remoto é best-effort
     } finally {
       await clearAuthSession();
-      setSelectedPost(null);
-      setLibraryOpenRequest(null);
-      setCourseOpenRequest(null);
-      setTemplatesBankOpenRequest(null);
       setSession(null);
-      setRoute("account");
+      applyLoggedOutShellState();
     }
   };
 
@@ -337,7 +469,7 @@ function AppRoot() {
     setRoute("library");
   }, []);
 
-  if (loading || !themeReady) {
+  if (loading || !themeReady || socialCallbackBusy || (session && !accountState && accountStateLoading)) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.bg }]}>
         <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
@@ -350,7 +482,23 @@ function AppRoot() {
     return (
       <View style={[styles.loginRoot, { backgroundColor: theme.colors.bg }]}>
         <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
-        <LoginScreen onAuthSuccess={handleAuthSuccess} />
+        <LoginScreen onAuthSuccess={handleAuthSuccess} notice={authNotice} />
+      </View>
+    );
+  }
+
+  if (accountState?.legal_status.requires_acceptance) {
+    return (
+      <View style={[styles.appRoot, { backgroundColor: theme.colors.bg }]}>
+        <StatusBar style={theme.isDark ? "light" : "dark"} backgroundColor={theme.colors.bg} />
+        <LegalAcceptanceScreen
+          token={session.accessToken}
+          accountState={accountState}
+          onAccepted={(nextLegalStatus) => {
+            setAccountState((current) => (current ? { ...current, legal_status: nextLegalStatus } : current));
+          }}
+          onLogout={handleLogout}
+        />
       </View>
     );
   }
@@ -393,8 +541,13 @@ function AppRoot() {
         token={token}
         onBack={navigateBack}
         onLogout={handleLogout}
-        onProfileUpdated={() => setAccountRefreshSignal((value) => value + 1)}
+        onProfileUpdated={(nextProfile) => {
+          setAccountRefreshSignal((value) => value + 1);
+          setAccountState(nextProfile);
+        }}
         pushStatusMessage={pushStatusMessage}
+        initialPanel={accountInitialPanel}
+        privacyNotice={accountPrivacyNotice}
       />
     );
   } else if (resolvedRoute === "caselaw") {
