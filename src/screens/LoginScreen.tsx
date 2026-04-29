@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { login, register } from "../api/auth";
+import { confirmPasswordReset, login, register, requestPasswordReset } from "../api/auth";
 import { ApiError } from "../api/http";
 import type { AccountState } from "../api/accountState";
 import { getSocialProviders, startSocialAuth, type SocialProvider } from "../api/social";
@@ -35,12 +35,35 @@ type Props = {
   notice?: ScreenNotice | null;
 };
 
+type AuthMode = "login" | "register" | "forgot-password" | "reset-password";
+
 const SOCIAL_PROVIDERS = [
   { provider: "google", icon: "google", label: "Google" },
   { provider: "linkedin", icon: "linkedin", label: "LinkedIn" },
 ] as const;
 
 const BRAND_ICON = require("../../assets/branding/icon-1-ui.png");
+
+function readWebPasswordResetParams(): { uid: string; token: string } | null {
+  if (Platform.OS !== "web" || typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const isResetPath = url.pathname.endsWith("/reset-password") || url.pathname.includes("/reset-password/");
+  const isResetQuery = url.searchParams.get("password_reset") === "1";
+  const uid = url.searchParams.get("uid")?.trim();
+  const token = url.searchParams.get("token")?.trim();
+  if ((!isResetPath && !isResetQuery) || !uid || !token) return null;
+  return { uid, token };
+}
+
+function clearWebPasswordResetParams() {
+  if (Platform.OS !== "web" || typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("uid");
+  url.searchParams.delete("token");
+  url.searchParams.delete("password_reset");
+  const pathname = url.pathname.endsWith("/reset-password") ? "/" : url.pathname;
+  window.history.replaceState({}, "", `${pathname}${url.search}${url.hash}`);
+}
 
 function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
   return StyleSheet.create({
@@ -246,7 +269,8 @@ function createStyles(theme: AppTheme, isCompact: boolean, isWide: boolean) {
 }
 
 export function LoginScreen({ onAuthSuccess, notice }: Props) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const initialResetParams = useMemo(() => readWebPasswordResetParams(), []);
+  const [mode, setMode] = useState<AuthMode>(initialResetParams ? "reset-password" : "login");
   const { theme } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -256,6 +280,8 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [resetParams, setResetParams] = useState<{ uid: string; token: string } | null>(initialResetParams);
   const [name, setName] = useState("");
   const [profession, setProfession] = useState("");
   const [busy, setBusy] = useState(false);
@@ -265,11 +291,20 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
   const [socialProvidersLoading, setSocialProvidersLoading] = useState(true);
   const [socialBusyProvider, setSocialBusyProvider] = useState<string | null>(null);
 
-  const title = useMemo(() => (mode === "login" ? "Entrar" : "Criar conta"), [mode]);
+  const title = useMemo(() => {
+    if (mode === "register") return "Criar conta";
+    if (mode === "forgot-password") return "Recuperar senha";
+    if (mode === "reset-password") return "Definir nova senha";
+    return "Entrar";
+  }, [mode]);
   const authSubtitle =
-    mode === "login"
-      ? "Entre com e-mail e senha para acessar o Direito do Passageiro na plataforma Livro Vivo."
-      : "Crie sua conta para acessar o Direito do Passageiro no web e no mobile.";
+    mode === "register"
+      ? "Crie sua conta para acessar o Direito do Passageiro no web e no mobile."
+      : mode === "forgot-password"
+        ? "Informe seu e-mail para receber o link de redefinição de senha."
+        : mode === "reset-password"
+          ? "Escolha uma nova senha para voltar a acessar sua conta."
+          : "Entre com e-mail e senha para acessar o Direito do Passageiro na plataforma Livro Vivo.";
 
   React.useEffect(() => {
     let active = true;
@@ -302,6 +337,71 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
   const handleSubmit = async () => {
     const e = email.trim();
     const p = password.trim();
+
+    if (mode === "forgot-password") {
+      if (!e) {
+        setError("Informe seu e-mail.");
+        return;
+      }
+
+      setBusy(true);
+      setError(null);
+      setNoticeState(null);
+
+      try {
+        const response = await requestPasswordReset(e);
+        setNoticeState({
+          tone: "success",
+          message: response.detail || "Se o e-mail estiver cadastrado, enviaremos as instruções.",
+        });
+      } catch (err) {
+        setError(extractApiErrorMessage(err, "Não foi possível solicitar a redefinição de senha."));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (mode === "reset-password") {
+      if (!resetParams?.uid || !resetParams.token) {
+        setError("Link de redefinição inválido ou expirado.");
+        return;
+      }
+      if (!p || !passwordConfirm.trim()) {
+        setError("Informe e confirme a nova senha.");
+        return;
+      }
+      if (p !== passwordConfirm.trim()) {
+        setError("As senhas não conferem.");
+        return;
+      }
+
+      setBusy(true);
+      setError(null);
+      setNoticeState(null);
+
+      try {
+        const response = await confirmPasswordReset({
+          uid: resetParams.uid,
+          token: resetParams.token,
+          new_password: p,
+        });
+        clearWebPasswordResetParams();
+        setResetParams(null);
+        setPassword("");
+        setPasswordConfirm("");
+        setMode("login");
+        setNoticeState({
+          tone: "success",
+          message: response.detail || "Senha redefinida. Entre com sua nova senha.",
+        });
+      } catch (err) {
+        setError(extractApiErrorMessage(err, "Não foi possível redefinir a senha."));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
 
     if (!e || !p) {
       setError("Informe e-mail e senha.");
@@ -419,41 +519,65 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
             <Text style={styles.subtitle}>{authSubtitle}</Text>
 
             <View style={styles.fieldStack}>
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>E-mail</Text>
-                <TextInput
-                  testID="login-email-input"
-                  accessibilityLabel="E-mail"
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="seuemail@exemplo.com"
-                  placeholderTextColor={theme.colors.textMuted}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="username"
-                  autoComplete="email"
-                  style={styles.input}
-                />
-              </View>
+              {mode !== "reset-password" ? (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>E-mail</Text>
+                  <TextInput
+                    testID="login-email-input"
+                    accessibilityLabel="E-mail"
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="seuemail@exemplo.com"
+                    placeholderTextColor={theme.colors.textMuted}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="username"
+                    autoComplete="email"
+                    style={styles.input}
+                  />
+                </View>
+              ) : null}
 
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Senha</Text>
-                <TextInput
-                  testID="login-password-input"
-                  accessibilityLabel="Senha"
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={theme.colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="password"
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
-                  style={styles.input}
-                />
-              </View>
+              {mode !== "forgot-password" ? (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>{mode === "reset-password" ? "Nova senha" : "Senha"}</Text>
+                  <TextInput
+                    testID="login-password-input"
+                    accessibilityLabel={mode === "reset-password" ? "Nova senha" : "Senha"}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="••••••••"
+                    placeholderTextColor={theme.colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="password"
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    style={styles.input}
+                  />
+                </View>
+              ) : null}
+
+              {mode === "reset-password" ? (
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.label}>Confirmar nova senha</Text>
+                  <TextInput
+                    testID="login-password-confirm-input"
+                    accessibilityLabel="Confirmar nova senha"
+                    value={passwordConfirm}
+                    onChangeText={setPasswordConfirm}
+                    placeholder="••••••••"
+                    placeholderTextColor={theme.colors.textMuted}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="password"
+                    autoComplete="new-password"
+                    style={styles.input}
+                  />
+                </View>
+              ) : null}
 
               {mode === "register" ? (
                 <View style={styles.registerGrid}>
@@ -530,64 +654,94 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
               onPress={handleSubmit}
               disabled={busy}
               accessibilityRole="button"
-              accessibilityLabel={mode === "login" ? "Enviar formulário de login" : "Enviar formulário de cadastro"}
-              accessibilityHint={mode === "login" ? "Autentica sua conta" : "Cria sua conta e autentica em seguida"}
+              accessibilityLabel={
+                mode === "register"
+                  ? "Enviar formulário de cadastro"
+                  : mode === "forgot-password"
+                    ? "Enviar solicitação de recuperação de senha"
+                    : mode === "reset-password"
+                      ? "Enviar nova senha"
+                      : "Enviar formulário de login"
+              }
+              accessibilityHint={
+                mode === "register"
+                  ? "Cria sua conta e autentica em seguida"
+                  : mode === "forgot-password"
+                    ? "Solicita um link de redefinição"
+                    : mode === "reset-password"
+                      ? "Redefine a senha da sua conta"
+                      : "Autentica sua conta"
+              }
             >
               <Text style={styles.submitButtonText}>{busy ? "Aguarde..." : title}</Text>
             </Pressable>
 
-            <View style={styles.socialSection}>
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>ou continue com</Text>
-                <View style={styles.dividerLine} />
-              </View>
+            {mode === "login" || mode === "register" ? (
+              <View style={styles.socialSection}>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>ou continue com</Text>
+                  <View style={styles.dividerLine} />
+                </View>
 
-              <View style={styles.socialGrid}>
-                {SOCIAL_PROVIDERS.map((provider) => {
-                  const providerState = providerStateMap.get(provider.provider);
-                  const enabled = Boolean(providerState?.enabled);
-                  const isBusy = socialBusyProvider === provider.provider;
-                  const disabled = socialProvidersLoading || !enabled || isBusy;
-                  const accessibilityLabel = enabled
-                    ? `Entrar com ${provider.label}`
-                    : socialProvidersLoading
-                      ? `${provider.label} em verificação`
-                      : `${provider.label} ainda não habilitado neste ambiente`;
-                  const hint = isBusy
-                    ? "Redirecionando..."
-                    : socialProvidersLoading
-                      ? "Verificando..."
-                      : enabled
-                        ? "Continuar"
-                        : "Aguardando ativação";
-                  return (
-                  <Pressable
-                    key={provider.label}
-                    accessibilityRole="button"
-                    accessibilityLabel={accessibilityLabel}
-                    disabled={disabled}
-                    style={[styles.socialButton, disabled ? styles.buttonDisabled : null]}
-                    onPress={() => void handleSocialStart(provider.provider)}
-                  >
-                    <View style={styles.socialButtonLeft}>
-                      <MaterialCommunityIcons name={provider.icon} size={18} color={theme.colors.text} />
-                      <Text style={styles.socialButtonTitle}>{provider.label}</Text>
-                    </View>
-                    <Text style={styles.socialButtonHint}>{hint}</Text>
-                  </Pressable>
-                  );
-                })}
+                <View style={styles.socialGrid}>
+                  {SOCIAL_PROVIDERS.map((provider) => {
+                    const providerState = providerStateMap.get(provider.provider);
+                    const enabled = Boolean(providerState?.enabled);
+                    const isBusy = socialBusyProvider === provider.provider;
+                    const disabled = socialProvidersLoading || !enabled || isBusy;
+                    const accessibilityLabel = enabled
+                      ? `Entrar com ${provider.label}`
+                      : socialProvidersLoading
+                        ? `${provider.label} em verificação`
+                        : `${provider.label} ainda não habilitado neste ambiente`;
+                    const hint = isBusy
+                      ? "Redirecionando..."
+                      : socialProvidersLoading
+                        ? "Verificando..."
+                        : enabled
+                          ? "Continuar"
+                          : "Aguardando ativação";
+                    return (
+                      <Pressable
+                        key={provider.label}
+                        accessibilityRole="button"
+                        accessibilityLabel={accessibilityLabel}
+                        disabled={disabled}
+                        style={[styles.socialButton, disabled ? styles.buttonDisabled : null]}
+                        onPress={() => void handleSocialStart(provider.provider)}
+                      >
+                        <View style={styles.socialButtonLeft}>
+                          <MaterialCommunityIcons name={provider.icon} size={18} color={theme.colors.text} />
+                          <Text style={styles.socialButtonTitle}>{provider.label}</Text>
+                        </View>
+                        <Text style={styles.socialButtonHint}>{hint}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
+            ) : null}
 
             <View style={styles.footerRow}>
-              <Text style={styles.footerHint}>{mode === "login" ? "Primeiro acesso?" : "Já tem credenciais?"}</Text>
+              <Text style={styles.footerHint}>
+                {mode === "login"
+                  ? "Primeiro acesso?"
+                  : mode === "register"
+                    ? "Já tem credenciais?"
+                    : "Lembrou a senha?"}
+              </Text>
               <Pressable
                 testID="login-toggle-mode"
                 onPress={() => {
                   setError(null);
                   setNoticeState(null);
+                  setPassword("");
+                  setPasswordConfirm("");
+                  if (mode === "reset-password") {
+                    clearWebPasswordResetParams();
+                    setResetParams(null);
+                  }
                   setMode((current) => (current === "login" ? "register" : "login"));
                 }}
                 accessibilityRole="button"
@@ -597,6 +751,22 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
                 <Text style={styles.link}>{mode === "login" ? "Criar conta agora" : "Entrar com conta existente"}</Text>
               </Pressable>
             </View>
+
+            {mode === "login" ? (
+              <Pressable
+                testID="login-forgot-password"
+                onPress={() => {
+                  setError(null);
+                  setNoticeState(null);
+                  setPassword("");
+                  setMode("forgot-password");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Recuperar senha"
+              >
+                <Text style={styles.link}>Esqueci minha senha</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </ScrollView>
