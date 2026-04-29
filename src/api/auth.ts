@@ -98,6 +98,24 @@ export async function register(payload: {
     };
 }
 
+export async function requestPasswordReset(email: string): Promise<{ detail: string }> {
+    return apiFetch<{ detail: string }>("/auth/password-reset/request/", {
+        method: "POST",
+        body: { email },
+    });
+}
+
+export async function confirmPasswordReset(payload: {
+    uid: string;
+    token: string;
+    new_password: string;
+}): Promise<{ detail: string }> {
+    return apiFetch<{ detail: string }>("/auth/password-reset/confirm/", {
+        method: "POST",
+        body: payload,
+    });
+}
+
 export async function refresh(refreshToken: string): Promise<{ accessToken: string }> {
     const res = await apiFetch<{ access: string }>("/auth/refresh/", {
         method: "POST",
