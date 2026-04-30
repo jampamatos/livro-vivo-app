@@ -284,11 +284,12 @@ Workflow app (`.github/workflows/ci.yml`) executa:
 - validacao de release config
 - export web de sanity
 
-## Deploy beta web no Cloudflare Pages
+## Deploy beta web no Cloudflare Workers & Pages
 
 Configuracao oficial deste repo para beta:
 
-- provider: `Cloudflare Pages`
+- provider: `Cloudflare Workers & Pages`
+- modo atual: Worker com Static Assets, publicado em `workers.dev`
 - branch publicada: `main`
 - build command: `npm run export:web`
 - output directory: `dist`
@@ -301,11 +302,11 @@ Dominio alvo quando existir:
 Arquivos operacionais incluidos no export:
 
 - `public/_headers`: headers de seguranca e cache para assets do export
-- o fallback SPA fica por conta do proprio Cloudflare Pages, sem `_redirects`, para evitar loop de roteamento no deploy estatico atual
+- o fallback SPA deve continuar validado no deploy estatico atual, sem `_redirects`, para evitar loop de roteamento
 
-Checklist minimo no Pages:
+Checklist minimo no Cloudflare:
 
-1. conectar a repo `livro-vivo-app`
+1. conectar a repo `livro-vivo-app` em Workers & Pages
 2. apontar production branch para `main`
 3. configurar `EXPO_PUBLIC_API_BASE_URL`
 4. validar que o deploy publica `dist`
