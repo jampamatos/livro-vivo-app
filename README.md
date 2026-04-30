@@ -7,6 +7,10 @@ Cliente Expo/React Native do Livro Vivo.
 Implementado e ativo em `main`:
 
 - Login/registro com JWT, refresh silencioso e logout.
+- Reset de senha por e-mail.
+- Login social Google no web e no Android beta, com deep link nativo `livrovivo://auth/callback`.
+- Vinculo/desvinculo de contas sociais em Minha Conta.
+- Aceite obrigatorio de documentos legais vigentes antes de liberar o uso da plataforma.
 - Persistencia de sessao nativa com `expo-secure-store`; na web a sessao fica apenas em memoria.
 - Shell principal com gating por tier (`essential` / `professional`) e bloqueios de moderacao.
 - Biblioteca chapter-first com sumario, leitura, busca por capitulo, progresso local e cache offline parcial.
@@ -18,17 +22,25 @@ Implementado e ativo em `main`:
 - Comunidade com feed, detalhe, novo post, comentario, denuncia e follow/unfollow de posts para notificacoes.
 - Minha Conta com perfil, assinatura, resumo de moderacao, preferencias de notificacao, estado do push e fluxo LGPD (exportacao/exclusao).
 - Banner in-app, registro de device para push nativo e endurecimento defensivo de URLs remotas no cliente.
+- Build Android beta via EAS `preview` em formato APK para distribuicao fora da loja.
 - Rotas criticas com baseline automatizada de a11y e telas-chave endurecidas contra falhas parciais de API.
 
-## Status pre-deploy
+## Status operacional beta
 
-Ultima varredura completa validada em `2026-04-15`:
+Ultima revisao documental validada em `2026-04-30`:
 
-- `npm audit` zerado para dependencias de producao e desenvolvimento.
-- `npm run gate:predeploy` aprovado.
-- `37` suites / `194` testes passando.
-- Coverage global no gate: statements `67.6%`, branches `54.67%`, functions `68.8%`, lines `70.93%`.
-- `npm` definido como package manager canonico e `package-lock.json` como lockfile oficial.
+- App web beta publico: `https://livro-vivo-app.jampa-matos.workers.dev`.
+- API beta publica: `https://api-178-104-197-8.nip.io`.
+- Android beta distribuido por APK via LP com gate por codigo.
+- Google login validado no Android beta com callback nativo.
+- `npm` e o package manager canonico e `package-lock.json` e o lockfile oficial.
+
+Checks de referencia antes de PR/deploy:
+
+- `npm run typecheck`
+- `npm test -- --runInBand --ci`
+- `npm run validate:release-config`
+- `npm run gate:predeploy` quando a mudanca afetar rotas criticas
 
 ## Stack
 
@@ -163,6 +175,33 @@ Com validacao de build de release:
 RELEASE_BUILD=true EXPO_PUBLIC_API_BASE_URL=https://api.example.com npm run validate:release-config
 ```
 
+## Android beta APK
+
+Perfil oficial:
+
+```bash
+npx eas-cli build --platform android --profile preview --non-interactive
+```
+
+Configuracao atual:
+
+- `eas.json` perfil `preview` gera `apk`;
+- `EXPO_PUBLIC_API_BASE_URL=https://api-178-104-197-8.nip.io`;
+- `RELEASE_BUILD=true`;
+- scheme nativo: `livrovivo://`;
+- callback social nativo: `livrovivo://auth/callback`.
+
+Checklist minimo apos gerar APK:
+
+1. instalar em dispositivo Android real;
+2. abrir app;
+3. testar login por e-mail/senha;
+4. testar login Google;
+5. aceitar documentos legais se solicitado;
+6. abrir livro/capitulo;
+7. baixar uma peca;
+8. registrar o link e a expiracao do artefato EAS na LP ou no runbook.
+
 ## Estrutura principal
 
 - `src/api/`: `auth`, `books`, `annotations`, `caselaw`, `community`, `courses`, `entitlements`, `notifications`, `privacy`, `search`, `templatesBank`
@@ -275,7 +314,19 @@ Checklist minimo no Pages:
 
 Observacao operacional:
 
-- o Android beta continua fora deste fluxo; builds mobile seguem manuais via `eas build --platform android --profile preview`
+- o Android beta continua fora do deploy web automatico; builds mobile seguem manuais via `eas build --platform android --profile preview`
+
+## Monitoramento beta
+
+Fonte da verdade:
+
+- `livro-vivo-api/docs/FONTE_DA_VERDADE_MONITORAMENTO_BETA_2026-04-30.md`
+
+Decisao atual:
+
+- Grafana Cloud sera o painel unico do beta.
+- App web e LP devem usar Grafana Faro quando a fase de frontend observability for implementada.
+- Android beta deve enviar telemetria leve para a API via endpoint proprio planejado, evitando Sentry como painel separado neste ciclo.
 
 Convencao operacional:
 
