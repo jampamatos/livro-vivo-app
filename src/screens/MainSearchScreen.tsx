@@ -14,6 +14,7 @@ import {
 import { ApiError } from "../api/http";
 import { GlobalSearchResult, searchGlobal } from "../api/search";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { trackClientEvent } from "../telemetry/client";
 
 type Props = {
   token: string;
@@ -70,6 +71,15 @@ export function MainSearchScreen({ token, onOpenResult }: Props) {
           limit: LIMIT,
           offset: nextOffset,
         });
+        if (mode === "replace") {
+          void trackClientEvent({
+            eventName: "search_global",
+            route: "MainSearchScreen",
+            properties: {
+              source: "global_search",
+            },
+          });
+        }
         setSubmittedQuery(normalized);
         setCount(response.count ?? 0);
         setOffset(response.offset ?? nextOffset);

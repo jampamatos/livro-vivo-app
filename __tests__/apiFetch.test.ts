@@ -13,9 +13,16 @@ jest.mock("../src/auth/sessionBus", () => ({
   emitSessionChanged: jest.fn(),
 }));
 
+jest.mock("../src/telemetry/client", () => ({
+  getSlowRequestThresholdMs: jest.fn(() => 1500),
+  sanitizeTelemetryPath: jest.fn((path: string) => path),
+  trackClientEvent: jest.fn(),
+}));
+
 import { ApiError, apiFetch, buildAuthHeader } from "../src/api/http";
 import { clearAuthSession, getAuthSession, setAuthSession } from "../src/auth/tokenStorage";
 import { emitSessionChanged } from "../src/auth/sessionBus";
+import { trackClientEvent } from "../src/telemetry/client";
 
 type MockResponse = {
   ok: boolean;
@@ -59,6 +66,7 @@ const getAuthSessionMock = getAuthSession as unknown as jest.Mock;
 const setAuthSessionMock = setAuthSession as unknown as jest.Mock;
 const clearAuthSessionMock = clearAuthSession as unknown as jest.Mock;
 const emitSessionChangedMock = emitSessionChanged as unknown as jest.Mock;
+const trackClientEventMock = trackClientEvent as unknown as jest.Mock;
 
 describe("apiFetch", () => {
   beforeEach(() => {
@@ -66,6 +74,7 @@ describe("apiFetch", () => {
     setAuthSessionMock.mockReset();
     clearAuthSessionMock.mockReset();
     emitSessionChangedMock.mockReset();
+    trackClientEventMock.mockReset();
   });
 
   it("buildAuthHeader usa Bearer para JWT e Token para chave legada", () => {
@@ -153,6 +162,30 @@ describe("apiFetch", () => {
           "Content-Type": "application/json",
         }),
         body: JSON.stringify({ a: 1 }),
+      })
+    );
+  });
+
+  it("registra telemetria quando a API retorna erro HTTP", async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 500,
+      contentType: "application/json",
+      jsonData: { detail: "erro" },
+    });
+
+    await expect(apiFetch("/boom/", { method: "POST" })).rejects.toBeInstanceOf(ApiError);
+
+    expect(trackClientEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "api_error",
+        route: "apiFetch",
+        severity: "error",
+        properties: expect.objectContaining({
+          api_endpoint: "/boom/",
+          api_method: "POST",
+          http_status: 500,
+        }),
       })
     );
   });
