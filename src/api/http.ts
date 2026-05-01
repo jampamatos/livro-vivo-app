@@ -2,6 +2,7 @@ import { API_BASE_URL } from "../config/api";
 
 import { getAuthSession, setAuthSession, clearAuthSession } from "../auth/tokenStorage";
 import { emitSessionChanged } from "../auth/sessionBus";
+import { getSlowRequestThresholdMs, sanitizeTelemetryPath, trackClientEvent } from "../telemetry/client";
 
 import type { AuthSession } from "../auth/authSession";
 
@@ -27,6 +28,36 @@ type ApiFetchOptions = {
 
 function isFormDataBody(value: unknown): value is FormData {
   return typeof FormData !== "undefined" && value instanceof FormData;
+}
+
+function recordApiError(path: string, method: string, status: number, durationMs: number, reason = "http_error") {
+  void trackClientEvent({
+    eventName: "api_error",
+    route: "apiFetch",
+    severity: status >= 500 || status === 0 ? "error" : "warning",
+    properties: {
+      api_endpoint: sanitizeTelemetryPath(path),
+      api_method: method,
+      http_status: status,
+      duration_ms: durationMs,
+      reason,
+    },
+  });
+}
+
+function recordApiSlowRequest(path: string, method: string, status: number, durationMs: number) {
+  if (durationMs < getSlowRequestThresholdMs()) return;
+  void trackClientEvent({
+    eventName: "api_slow_request",
+    route: "apiFetch",
+    severity: "warning",
+    properties: {
+      api_endpoint: sanitizeTelemetryPath(path),
+      api_method: method,
+      http_status: status,
+      duration_ms: durationMs,
+    },
+  });
 }
 
 export function buildAuthHeader(token: string) : string {
@@ -88,6 +119,8 @@ export async function apiFetch<T>(
   options: ApiFetchOptions = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+  const method = options.method ?? "GET";
+  const startedAt = Date.now();
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -108,11 +141,18 @@ export async function apiFetch<T>(
     }
   }
 
-  const res = await fetch(url, {
-    method: options.method ?? "GET",
-    headers,
-    body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body,
+    });
+  } catch (error) {
+    recordApiError(path, method, 0, Date.now() - startedAt, "network_error");
+    throw error;
+  }
+  const durationMs = Date.now() - startedAt;
 
   // Se access JWT expirar, tentar refresh 1 vez e refaz a request
   if (res.status === 401 && options.token) {
@@ -136,17 +176,20 @@ export async function apiFetch<T>(
       }
 
       let retryRes: Response;
+      const retryStartedAt = Date.now();
       try {
         retryRes = await fetch(url, {
-          method: options.method ?? "GET",
+          method,
           headers: retryHeaders,
           body: retryBody,
         });
       } catch (error) {
+        recordApiError(path, method, 0, Date.now() - retryStartedAt, "network_error");
         await clearAuthSession();
         emitSessionChanged(null);
         throw error;
       }
+      const retryDurationMs = Date.now() - retryStartedAt;
 
       const retryContentType = retryRes.headers.get("content-type") ?? "";
       const retryParsed = retryContentType.includes("application/json")
@@ -154,10 +197,13 @@ export async function apiFetch<T>(
         : await retryRes.text().catch(() => null);
 
       if (!retryRes.ok) {
+        recordApiError(path, method, retryRes.status, retryDurationMs);
         await clearAuthSession();
         emitSessionChanged(null);
         throw new ApiError(`HTTP ${retryRes.status} em ${path}`, retryRes.status, retryParsed);
       }
+
+      recordApiSlowRequest(path, method, retryRes.status, retryDurationMs);
 
       if (retryRes.status === 204 && options.allowNoContent) {
         return null as T;
@@ -173,8 +219,11 @@ export async function apiFetch<T>(
     : await res.text().catch(() => null);
 
   if (!res.ok) {
+    recordApiError(path, method, res.status, durationMs);
     throw new ApiError(`HTTP ${res.status} em ${path}`, res.status, parsed);
   }
+
+  recordApiSlowRequest(path, method, res.status, durationMs);
 
   if (res.status === 204 && options.allowNoContent) {
     return null as T;

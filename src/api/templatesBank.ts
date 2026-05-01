@@ -41,6 +41,7 @@ export type TemplateDownloadPayload = {
   file_size_bytes: number;
   file_sha256: string;
   file_url: string;
+  file_source: string;
 };
 
 type ListFilters = {

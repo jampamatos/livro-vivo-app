@@ -44,6 +44,7 @@ import {
   safeTimestamp,
 } from "./library/libraryUi";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { trackClientEvent } from "../telemetry/client";
 import { getReadingProgress, saveReadingProgress } from "../storage/readingProgress";
 import { formatBookChapterCitation } from "../utils/citations";
 import {
@@ -445,6 +446,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
         });
         setReaderFocus(params.focus ?? null);
         setReaderInitialOffset(Math.max(0, params.restoreOffset ?? 0));
+        void trackClientEvent({
+          eventName: "chapter_open",
+          route: "LibraryScreen",
+          properties: {
+            source: response.cache_source === "cache" ? "cache" : "network",
+          },
+        });
         scheduleReadingProgressSave({
           bookId: params.bookId,
           versionId: params.versionId,
@@ -524,6 +532,13 @@ export function LibraryScreen({ token, initialOpenRequest = null }: Props) {
           bookId,
           version: versionResponse.version,
           chapters,
+        });
+        void trackClientEvent({
+          eventName: "book_open",
+          route: "LibraryScreen",
+          properties: {
+            source: versionResponse.cache_source === "cache" ? "cache" : "network",
+          },
         });
 
         if (chapters.length === 0) {

@@ -22,6 +22,7 @@ import { getSocialProviders, startSocialAuth, type SocialProvider } from "../api
 import type { AuthSession } from "../auth/authSession";
 import { getSocialRedirectUri, redirectToSocialAuthorization } from "../auth/socialWeb";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { trackClientEvent } from "../telemetry/client";
 import type { AppTheme } from "../theme/tokens";
 import { extractApiErrorMessage } from "../utils/apiErrors";
 
@@ -405,6 +406,14 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
 
     if (!e || !p) {
       setError("Informe e-mail e senha.");
+      if (mode === "login") {
+        void trackClientEvent({
+          eventName: "login_failed",
+          route: "LoginScreen",
+          severity: "warning",
+          properties: { reason: "missing_credentials" },
+        });
+      }
       return;
     }
 
@@ -413,6 +422,9 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
     setNoticeState(null);
 
     try {
+      if (mode === "login") {
+        void trackClientEvent({ eventName: "login_attempt", route: "LoginScreen" });
+      }
       const session =
         mode === "login"
           ? await login(e, p)
@@ -432,13 +444,35 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
         }
       }
 
+      if (mode === "login") {
+        void trackClientEvent({ eventName: "login_success", route: "LoginScreen" });
+      }
       await onAuthSuccess(session.session, session.accountState);
     } catch (err) {
       if (err instanceof ApiError) {
         const msg = extractApiErrorMessage(err, "Não foi possível concluir a autenticação.");
         setError(`Falha no ${mode === "login" ? "login" : "registro"}: ${msg}`);
+        if (mode === "login") {
+          void trackClientEvent({
+            eventName: "login_failed",
+            route: "LoginScreen",
+            severity: "warning",
+            properties: {
+              http_status: err.status,
+              reason: err.status === 401 ? "invalid_credentials" : "api_error",
+            },
+          });
+        }
       } else {
         setError("Falha inesperada. Tente novamente.");
+        if (mode === "login") {
+          void trackClientEvent({
+            eventName: "login_failed",
+            route: "LoginScreen",
+            severity: "error",
+            properties: { reason: "unexpected_error" },
+          });
+        }
       }
     } finally {
       setBusy(false);
@@ -452,6 +486,15 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
   const handleSocialStart = async (providerName: string) => {
     const provider = providerStateMap.get(providerName.toLowerCase());
     if (!provider?.enabled) {
+      void trackClientEvent({
+        eventName: "social_login_failed",
+        route: "LoginScreen",
+        severity: "warning",
+        properties: {
+          provider: provider?.provider || providerName,
+          reason: "provider_disabled",
+        },
+      });
       setNoticeState({
         tone: "info",
         message: `${provider?.label || providerName} ainda não foi habilitado neste ambiente.`,
@@ -466,6 +509,11 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
     setSocialBusyProvider(provider.provider);
 
     try {
+      void trackClientEvent({
+        eventName: "social_login_start",
+        route: "LoginScreen",
+        properties: { provider: provider.provider },
+      });
       const response = await startSocialAuth(provider.provider, {
         redirect_uri: redirectUri,
         intent: "login",
@@ -474,6 +522,15 @@ export function LoginScreen({ onAuthSuccess, notice }: Props) {
     } catch (err) {
       const message = extractApiErrorMessage(err, "Não foi possível iniciar o login social.");
       setError(message);
+      void trackClientEvent({
+        eventName: "social_login_failed",
+        route: "LoginScreen",
+        severity: "warning",
+        properties: {
+          provider: provider.provider,
+          reason: "start_failed",
+        },
+      });
       setSocialBusyProvider(null);
     }
   };

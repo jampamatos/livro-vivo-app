@@ -15,6 +15,7 @@ import { ApiError } from "../api/http";
 import { LegalRichText } from "../components/LegalRichText";
 import { getAppPlatform, getAppVersion } from "../config/runtime";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { trackClientEvent } from "../telemetry/client";
 import { extractApiErrorMessage } from "../utils/apiErrors";
 import { formatLegalDocumentType } from "../utils/legalText";
 
@@ -34,6 +35,16 @@ export function LegalAcceptanceScreen({ token, accountState, onAccepted, onLogou
   const [loading, setLoading] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    void trackClientEvent({
+      eventName: "legal_gate_shown",
+      route: "LegalAcceptanceScreen",
+      properties: {
+        source: "login_gate",
+      },
+    });
+  }, []);
 
   React.useEffect(() => {
     let active = true;
@@ -94,6 +105,13 @@ export function LegalAcceptanceScreen({ token, accountState, onAccepted, onLogou
         source: "login_gate",
         app_platform: getAppPlatform(),
         app_version: getAppVersion(),
+      });
+      void trackClientEvent({
+        eventName: "legal_acceptance_success",
+        route: "LegalAcceptanceScreen",
+        properties: {
+          source: "login_gate",
+        },
       });
       onAccepted(response.legal_status);
     } catch (err) {

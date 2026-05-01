@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -29,6 +29,12 @@ import { AppShell } from "./src/layout/AppShell";
 import { AppRoute } from "./src/navigation/routes";
 import { useNotificationCenter } from "./src/notifications/useNotificationCenter";
 import { AppThemeProvider, useAppTheme } from "./src/theme/ThemeProvider";
+import {
+  installGlobalTelemetryErrorHandler,
+  trackAppStateChange,
+  trackClientEvent,
+  trackScreenView,
+} from "./src/telemetry/client";
 
 import type { AuthSession } from "./src/auth/authSession";
 import type { AccountState } from "./src/api/accountState";
@@ -85,6 +91,7 @@ function AppRoot() {
     null
   );
   const resolvedRoute = route === "communityPost" && !selectedPost ? "community" : route;
+  const previousTelemetryRouteRef = React.useRef<string | null>(null);
   const openMainFromNotification = React.useCallback(() => {
     setSelectedPost(null);
     setLibraryOpenRequest(null);
@@ -98,6 +105,17 @@ function AppRoot() {
     return () => {
       isMountedRef.current = false;
     };
+  }, []);
+
+  React.useEffect(() => {
+    installGlobalTelemetryErrorHandler();
+    void trackClientEvent({ eventName: "app_open", route: "AppRoot" });
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      void trackAppStateChange(nextState);
+    });
+
+    return () => subscription.remove();
   }, []);
 
   const navigateBack = React.useCallback(() => {
@@ -209,6 +227,10 @@ function AppRoot() {
     const handleUrl = (url: string | null) => {
       const token = readSocialResultTokenFromUrl(url);
       if (token) {
+        void trackClientEvent({
+          eventName: "social_login_callback_received",
+          route: "SocialAuthCallback",
+        });
         setSocialResultToken(token);
       }
     };
@@ -236,6 +258,19 @@ function AppRoot() {
   }, [loading, themeReady]);
 
   React.useEffect(() => {
+    if (loading || !themeReady) return;
+    const telemetryRoute = !session
+      ? "login"
+      : accountState?.legal_status.requires_acceptance
+        ? "legal_acceptance"
+        : resolvedRoute;
+    const previousRoute = previousTelemetryRouteRef.current;
+    if (previousRoute === telemetryRoute) return;
+    previousTelemetryRouteRef.current = telemetryRoute;
+    void trackScreenView(telemetryRoute, previousRoute);
+  }, [accountState?.legal_status.requires_acceptance, loading, resolvedRoute, session, themeReady]);
+
+  React.useEffect(() => {
     if (loading || !socialResultToken || socialCallbackBusy) {
       return;
     }
@@ -249,6 +284,14 @@ function AppRoot() {
         if (!isMountedRef.current) return;
 
         if (response.kind === "session") {
+          void trackClientEvent({
+            eventName: "social_login_success",
+            route: "SocialAuthCallback",
+            properties: {
+              provider: response.provider,
+              flow: response.resultCode,
+            },
+          });
           await setAuthSession(response.session);
           if (!isMountedRef.current) return;
           setSession(response.session);
@@ -269,6 +312,15 @@ function AppRoot() {
           setAccountInitialPanel("privacy");
           setRoute("account");
         } else {
+          void trackClientEvent({
+            eventName: "social_login_failed",
+            route: "SocialAuthCallback",
+            severity: "warning",
+            properties: {
+              provider: response.provider,
+              reason: response.resultCode,
+            },
+          });
           if (session?.accessToken) {
             setAccountPrivacyNotice(response.message || "Não foi possível concluir o vínculo da conta social.");
             setAccountInitialPanel("privacy");
@@ -283,6 +335,14 @@ function AppRoot() {
       } catch (error) {
         if (!isMountedRef.current) return;
         const message = extractApiErrorMessage(error, "Não foi possível concluir o login social.");
+        void trackClientEvent({
+          eventName: "social_login_failed",
+          route: "SocialAuthCallback",
+          severity: "warning",
+          properties: {
+            reason: "complete_failed",
+          },
+        });
         if (session?.accessToken) {
           setAccountPrivacyNotice(message);
           setAccountInitialPanel("privacy");

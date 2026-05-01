@@ -327,7 +327,24 @@ Decisao atual:
 
 - Grafana Cloud sera o painel unico do beta.
 - App web e LP devem usar Grafana Faro quando a fase de frontend observability for implementada.
-- Android beta deve enviar telemetria leve para a API via endpoint proprio planejado, evitando Sentry como painel separado neste ciclo.
+- Android beta envia telemetria leve para `POST /telemetry/client-events/`, evitando Sentry como painel separado neste ciclo.
+
+Eventos Android instrumentados neste app:
+
+- ciclo do app: `app_open`, `app_foreground`, `app_background`;
+- navegacao: `screen_view`;
+- API: `api_error`, `api_slow_request`;
+- auth: `login_attempt`, `login_success`, `login_failed`, `social_login_start`, `social_login_callback_received`, `social_login_success`, `social_login_failed`;
+- juridico: `legal_gate_shown`, `legal_acceptance_success`;
+- conteudo: `book_open`, `chapter_open`, `search_global`;
+- banco de pecas: `template_download_start`, `template_download_success`, `template_download_failed`.
+
+Variaveis:
+
+- `EXPO_PUBLIC_OBSERVABILITY_ENABLED=true` habilita envio no Android.
+- `EXPO_PUBLIC_TELEMETRY_ENDPOINT` aponta para o endpoint da API.
+- `EXPO_PUBLIC_TELEMETRY_SHARED_SECRET` envia o header opcional `X-Client-Telemetry-Secret`.
+- `EXPO_PUBLIC_TELEMETRY_SLOW_REQUEST_MS` define o limiar de API lenta.
 
 Convencao operacional:
 

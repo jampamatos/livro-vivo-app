@@ -19,6 +19,7 @@ import {
 } from "../api/templatesBank";
 import { ApiError } from "../api/http";
 import { useAppTheme } from "../theme/ThemeProvider";
+import { trackClientEvent } from "../telemetry/client";
 import { extractApiErrorMessage } from "../utils/apiErrors";
 import { openExternalUrl } from "../utils/externalUrl";
 
@@ -252,13 +253,37 @@ export function TemplatesBankScreen({ token, initialOpenRequest = null }: Props)
       try {
         setDownloadingId(piece.id);
         setDownloadFeedback(null);
+        void trackClientEvent({
+          eventName: "template_download_start",
+          route: "TemplatesBankScreen",
+          properties: {
+            template_code: piece.template_code,
+          },
+        });
 
         const tokenPayload = await getTemplateDownloadToken(token, piece.id);
         const resolvedPayload = await resolveTemplateDownload(token, piece.id, tokenPayload.token);
 
         await openExternalUrl(resolvedPayload.file_url);
+        void trackClientEvent({
+          eventName: "template_download_success",
+          route: "TemplatesBankScreen",
+          properties: {
+            template_code: piece.template_code,
+            file_source: resolvedPayload.file_source,
+          },
+        });
         setDownloadFeedback("Download iniciado.");
       } catch (e) {
+        void trackClientEvent({
+          eventName: "template_download_failed",
+          route: "TemplatesBankScreen",
+          severity: "warning",
+          properties: {
+            template_code: piece.template_code,
+            reason: e instanceof ApiError ? `http_${e.status}` : "open_failed",
+          },
+        });
         setDownloadFeedback(normalizeApiError(e, "Não foi possível iniciar o download da peça."));
       } finally {
         setDownloadingId(null);
