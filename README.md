@@ -34,6 +34,7 @@ Ultima revisao documental validada em `2026-04-30`:
 - Android beta distribuido por APK via LP com gate por codigo.
 - Google login validado no Android beta com callback nativo.
 - `npm` e o package manager canonico e `package-lock.json` e o lockfile oficial.
+- Inventario consolidado do beta: `../livro-vivo-api/docs/FONTE_DA_VERDADE_ESTADO_BETA_2026-05-04.md`.
 
 Checks de referencia antes de PR/deploy:
 
